@@ -167,9 +167,19 @@ export default function App() {
   }
 
   async function checkAgent(role: string) {
+    const agent = agents.find((item) => item.role === role);
+    if (!agent) return;
     setChecking(role);
     try {
-      const result = await api.checkAgent(targetSystemId, role);
+      // Send the fields as typed: the saved key comes back only as hasApiKey, so a
+      // draft is the only way to try a model before saving it.
+      const result = await api.checkAgent(targetSystemId, role, {
+        provider: agent.provider,
+        baseUrl: agent.baseUrl,
+        model: agent.model,
+        apiKey: agent.apiKey,
+        temperature: Number.parseFloat(agent.temperature) || 0,
+      });
       setChecks((previous) => ({
         ...previous,
         [role]: `ответ модели · ${result.model} · ${result.answer.slice(0, 200)}`,

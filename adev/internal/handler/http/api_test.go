@@ -61,11 +61,20 @@ type api struct {
 
 // fakeModelCheck is the double of the model checker behind the agent check route.
 type fakeModelCheck struct {
-	result usecase.ModelCheckResult
-	err    error
+	result  usecase.ModelCheckResult
+	err     error
+	draft   *domain.AgentConfig
+	checked int
 }
 
 func (f *fakeModelCheck) Check(context.Context, int64, domain.Role) (usecase.ModelCheckResult, error) {
+	f.checked++
+	return f.result, f.err
+}
+
+func (f *fakeModelCheck) CheckDraft(_ context.Context, draft domain.AgentConfig) (usecase.ModelCheckResult, error) {
+	f.checked++
+	f.draft = &draft
 	return f.result, f.err
 }
 
@@ -316,6 +325,26 @@ func TestCheckAgentRejectsAnUnknownRole(t *testing.T) {
 	response := newAPI().do(t, http.MethodPost, "/api/v1/targetsystems/1/agents/mystery/check", "")
 
 	assert.Equal(t, http.StatusUnprocessableEntity, response.Code)
+}
+
+// The button must test the fields as typed: the browser cannot show the saved key,
+// so an operator who edits the model has no other way to try it.
+func TestCheckAgentTestsTheDraftConfigFromTheBody(t *testing.T) {
+	fixture := newAPI()
+	fixture.models.result = usecase.ModelCheckResult{Role: domain.RoleAnalyst, Model: "qwen/qwen3-coder", HasAPIKey: true, Answer: `{"ok":true}`}
+
+	response := fixture.do(t, http.MethodPost, "/api/v1/targetsystems/1/agents/analyst/check",
+		`{"provider":"openrouter","baseUrl":"","model":"qwen/qwen3-coder","apiKey":""}`)
+
+	assert.Equal(t, http.StatusOK, response.Code)
+	require.NotNil(t, fixture.models.draft, "a body must be checked as a draft")
+	assert.Equal(t, "qwen/qwen3-coder", fixture.models.draft.Model)
+	assert.Equal(t, domain.ProviderOpenRouter, fixture.models.draft.Provider)
+
+	// Without a body the saved config is checked.
+	fixture.models.draft = nil
+	assert.Equal(t, http.StatusOK, fixture.do(t, http.MethodPost, "/api/v1/targetsystems/1/agents/analyst/check", "").Code)
+	assert.Nil(t, fixture.models.draft)
 }
 
 func TestSetAgentRejectsACloudProviderWithoutKey(t *testing.T) {

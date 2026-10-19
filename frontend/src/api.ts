@@ -138,8 +138,8 @@ export function createApi(onLog: (entry: LogEntry) => void) {
     setAgent: (id: number, role: string, agent: AgentInput) =>
       call<AgentView>('PUT', `/targetsystems/${id}/agents/${role}`, agent),
     listAgents: (id: number) => call<{ agents: AgentView[] }>('GET', `/targetsystems/${id}/agents`),
-    checkAgent: (id: number, role: string) =>
-      call<ModelCheckResult>('POST', `/targetsystems/${id}/agents/${role}/check`),
+    checkAgent: (id: number, role: string, draft: AgentInput) =>
+      call<ModelCheckResult>('POST', `/targetsystems/${id}/agents/${role}/check`, draft),
     plan: (id: number) => call<Plan>('GET', `/targetsystems/${id}/plan`),
     createPipeline: (id: number) => call<Pipeline>('POST', `/targetsystems/${id}/pipelines`, { route: 'greenfield' }),
     submitForm: (form: unknown) => call<FormDetail>('POST', '/forms', form),

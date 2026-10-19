@@ -30,12 +30,30 @@ func NewModelCheck(settings *SettingsService, llm LLMFactory) *ModelCheck {
 	return &ModelCheck{settings: settings, llm: llm}
 }
 
-// Check calls the model of one role once.
+// Check calls the saved model of one role once.
 func (c *ModelCheck) Check(ctx context.Context, targetSystemID int64, role domain.Role) (ModelCheckResult, error) {
 	agent, err := c.settings.Agent(ctx, targetSystemID, role)
 	if err != nil {
 		return ModelCheckResult{}, fmt.Errorf("%w: role %q: %v", ErrAgentNotConfigured, role, err)
 	}
+	return c.call(ctx, agent)
+}
+
+// CheckDraft calls a config the operator typed but has not saved. A stage uses the
+// saved config, and the browser shows the saved key only as hasApiKey, so a draft
+// must be provable without overwriting the stored one.
+func (c *ModelCheck) CheckDraft(ctx context.Context, draft domain.AgentConfig) (ModelCheckResult, error) {
+	if !draft.Role.Valid() {
+		return ModelCheckResult{}, domain.ErrInvalidRole
+	}
+	draft = c.settings.withStoredKey(ctx, draft)
+	if err := draft.Validate(); err != nil {
+		return ModelCheckResult{}, err
+	}
+	return c.call(ctx, draft)
+}
+
+func (c *ModelCheck) call(ctx context.Context, agent domain.AgentConfig) (ModelCheckResult, error) {
 	client, err := c.llm.For(ctx, agent)
 	if err != nil {
 		return ModelCheckResult{}, err
@@ -48,7 +66,7 @@ func (c *ModelCheck) Check(ctx context.Context, targetSystemID int64, role domai
 		Context:     json.RawMessage(`{}`),
 	})
 	if err != nil {
-		return ModelCheckResult{}, fmt.Errorf("model of role %q: %w", role, err)
+		return ModelCheckResult{}, fmt.Errorf("model of role %q: %w", agent.Role, err)
 	}
 
 	// The key stays on the server: the result only reports that one is set.

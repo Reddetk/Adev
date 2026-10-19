@@ -53,16 +53,24 @@ func (s *SettingsService) SetAgent(ctx context.Context, config domain.AgentConfi
 	}
 	// The API never sends a stored key back, so an empty key in a request means
 	// "keep the saved one". Otherwise every save without retyping the key failed.
-	if strings.TrimSpace(config.APIKey) == "" {
-		if existing, err := s.store.Agent(ctx, config.TargetSystemID, config.Role); err == nil &&
-			existing.Provider == config.Provider {
-			config.APIKey = existing.APIKey
-		}
-	}
+	config = s.withStoredKey(ctx, config)
 	if err := config.Validate(); err != nil {
 		return err
 	}
 	return s.store.UpsertAgent(ctx, config)
+}
+
+// withStoredKey fills an empty api key from the saved config of the same role and
+// provider. A browser never receives the key, so an empty field means "keep it".
+func (s *SettingsService) withStoredKey(ctx context.Context, config domain.AgentConfig) domain.AgentConfig {
+	if strings.TrimSpace(config.APIKey) != "" {
+		return config
+	}
+	if existing, err := s.store.Agent(ctx, config.TargetSystemID, config.Role); err == nil &&
+		existing.Provider == config.Provider {
+		config.APIKey = existing.APIKey
+	}
+	return config
 }
 
 // Agents reads the agent configs of a target system.

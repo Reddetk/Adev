@@ -22,9 +22,11 @@ type SettingsHandler struct {
 	models          ModelChecker
 }
 
-// ModelChecker calls the model of one role once.
+// ModelChecker calls the model of one role once. CheckDraft tests the values the
+// operator typed without saving them.
 type ModelChecker interface {
 	Check(ctx context.Context, targetSystemID int64, role domain.Role) (usecase.ModelCheckResult, error)
+	CheckDraft(ctx context.Context, draft domain.AgentConfig) (usecase.ModelCheckResult, error)
 }
 
 // NewSettingsHandler builds the settings handler.
@@ -157,7 +159,28 @@ func (h *SettingsHandler) CheckAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(5 * time.Minute))
 
-	result, err := h.models.Check(r.Context(), id, role)
+	// A body carries the fields as typed, so a model can be tried without saving it.
+	var body AgentRequest
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	var (
+		result usecase.ModelCheckResult
+		err    error
+	)
+	if body.Provider == "" {
+		result, err = h.models.Check(r.Context(), id, role)
+	} else {
+		result, err = h.models.CheckDraft(r.Context(), domain.AgentConfig{
+			TargetSystemID: id,
+			Role:           role,
+			Provider:       domain.Provider(body.Provider),
+			BaseURL:        body.BaseURL,
+			Model:          body.Model,
+			APIKey:         body.APIKey,
+			Temperature:    body.Temperature,
+			MaxTokens:      body.MaxTokens,
+		})
+	}
 	if err != nil {
 		writeError(w, modelCheckStatus(err), err.Error())
 		return
