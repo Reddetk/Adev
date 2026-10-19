@@ -46,3 +46,4 @@ Thumbs.db
 bin/
 coverage.out
 coverage.html
+.opencode\commands

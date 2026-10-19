@@ -12,6 +12,31 @@ type Projection map[Role][]string
 
 // Project returns the part of a form that the role may see.
 func (p Projection) Project(role Role, form any) (any, error) {
+	return ProjectFields(p[role], form)
+}
+
+// ProjectionFor returns the field allowlist of a form type for a role.
+// A type without a projection cannot be read by an agent: the caller gets an error
+// instead of the whole form.
+func ProjectionFor(formType FormType, role Role) ([]string, error) {
+	var table Projection
+	switch formType {
+	case TypeBRD:
+		table = BRDProjection
+	case TypeUserInput:
+		table = userInputProjection
+	default:
+		return nil, fmt.Errorf("no projection for form type %q yet", formType)
+	}
+	fields, ok := table[role]
+	if !ok {
+		return nil, fmt.Errorf("no projection of %s for role %q", formType, role)
+	}
+	return fields, nil
+}
+
+// ProjectFields keeps only the JSON Pointers in the allowlist.
+func ProjectFields(fields []string, form any) (any, error) {
 	raw, err := json.Marshal(form)
 	if err != nil {
 		return nil, fmt.Errorf("project: marshal form: %w", err)
@@ -22,7 +47,7 @@ func (p Projection) Project(role Role, form any) (any, error) {
 	}
 
 	var out any
-	for _, pointer := range p[role] {
+	for _, pointer := range fields {
 		parts, err := parsePointer(pointer)
 		if err != nil {
 			return nil, err
@@ -135,6 +160,17 @@ func mergeValue(left, right any) any {
 		return result
 	}
 	return right
+}
+
+// userInputProjection is the role projection for the USER_INPUT form.
+// The analyst sees the request itself; the operator sees everything.
+var userInputProjection = Projection{
+	RoleOperator: {
+		"/*",
+	},
+	RoleAnalyst: {
+		"/formId", "/formType", "/formVersion", "/status", "/payload",
+	},
 }
 
 // BRDProjection is the role projection for the BRD form.
