@@ -43,6 +43,7 @@ type Container struct {
 	settingsService *usecase.SettingsService
 	pipelineService *usecase.Planner
 	stageService    *usecase.StageService
+	modelCheck      *usecase.ModelCheck
 	formHandler     *http.FormHandler
 	stageHandler    *http.StageHandler
 }
@@ -67,8 +68,10 @@ func (c *Container) setupAdEvServices() {
 
 	// Stage runs need a model client. The run recorder stays nil until the run table
 	// takes the string pipeline id of the forms.
-	c.stageService = usecase.NewStageService(c.formService, c.settingsService, repository.NewOpenAICompatibleFactory(), nil)
+	factory := repository.NewOpenAICompatibleFactory()
+	c.stageService = usecase.NewStageService(c.formService, c.settingsService, factory, nil)
 	c.stageHandler = http.NewStageHandler(c.stageService)
+	c.modelCheck = usecase.NewModelCheck(c.settingsService, factory)
 }
 
 func (c *Container) setupRepositories() {
@@ -193,6 +196,9 @@ func (c *Container) FormHandler() *http.FormHandler { return c.formHandler }
 
 // StageHandler returns the stage handler.
 func (c *Container) StageHandler() *http.StageHandler { return c.stageHandler }
+
+// ModelCheck returns the model checker.
+func (c *Container) ModelCheck() *usecase.ModelCheck { return c.modelCheck }
 
 // SettingsService returns the target system settings service.
 func (c *Container) SettingsService() *usecase.SettingsService { return c.settingsService }

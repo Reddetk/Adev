@@ -1842,6 +1842,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/targetsystems/{id}/agents/{role}/check": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "settings"
+                ],
+                "summary": "Check the model of one agent role",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Target system ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "analyst",
+                            "architect",
+                            "qa",
+                            "dev",
+                            "devops",
+                            "operator"
+                        ],
+                        "type": "string",
+                        "description": "Agent role",
+                        "name": "role",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/usecase.ModelCheckResult"
+                        }
+                    },
+                    "409": {
+                        "description": "No agent config for this role",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "The provider refused the call",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/targetsystems/{id}/pipelines": {
             "post": {
                 "consumes": [
@@ -3401,6 +3462,26 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "usecase.ModelCheckResult": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "hasApiKey": {
+                    "type": "boolean"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "provider": {
+                    "$ref": "#/definitions/domain.Provider"
+                },
+                "role": {
+                    "$ref": "#/definitions/domain.Role"
                 }
             }
         },

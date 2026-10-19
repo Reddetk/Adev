@@ -28,22 +28,55 @@ const initialAgents: AgentDraft[] = [
   { role: 'architect', provider: 'ollama', baseUrl: 'http://localhost:11434', model: 'qwen3-coder:30b', apiKey: '', temperature: '0.2' },
 ];
 
+// The console remembers the operator input, so a reload does not lose the setup.
+// The api key is not kept in the browser: the server already holds it and an empty
+// field means "keep the saved key".
+const STORAGE_KEY = 'adev.console';
+
+type SavedState = {
+  targetSystemId: number | null;
+  pipeline: { id: number; stage: string } | null;
+  name: string;
+  description: string;
+  workspaceDir: string;
+  agents: Omit<AgentDraft, 'apiKey'>[];
+  request: string;
+};
+
+function loadSaved(): Partial<SavedState> {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Partial<SavedState>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function App() {
   const [entries, setEntries] = useState<LogEntry[]>([
     { kind: 'request', text: 'Готово. Идите по шагам 1→7; каждая ошибка видна ниже и в журнале.' },
   ]);
   const api = useMemo(() => createApi((entry) => setEntries((previous) => [...previous, entry])), []);
 
-  const [targetSystem, setTargetSystem] = useState<{ id: number } | null>(null);
-  const [name, setName] = useState('library');
-  const [description, setDescription] = useState('Library accounting system');
-  const [workspaceDir, setWorkspaceDir] = useState('D:\\work\\library');
+  const saved = useMemo(loadSaved, []);
+  const [targetSystem, setTargetSystem] = useState<{ id: number } | null>(
+    saved.targetSystemId ? { id: saved.targetSystemId } : null,
+  );
+  const [name, setName] = useState(saved.name ?? 'library');
+  const [description, setDescription] = useState(saved.description ?? 'Library accounting system');
+  const [workspaceDir, setWorkspaceDir] = useState(saved.workspaceDir ?? 'D:\\work\\library');
   const [workspace, setWorkspace] = useState('');
-  const [agents, setAgents] = useState<AgentDraft[]>(initialAgents);
+  const [agents, setAgents] = useState<AgentDraft[]>(() =>
+    saved.agents?.length ? saved.agents.map((agent) => ({ ...agent, apiKey: '' })) : initialAgents,
+  );
+  const [checks, setChecks] = useState<Record<string, string>>({});
+  const [checking, setChecking] = useState('');
   const [agentsSaved, setAgentsSaved] = useState<string[]>([]);
   const [plan, setPlan] = useState<Plan | null>(null);
-  const [pipeline, setPipeline] = useState<{ id: number; stage: string } | null>(null);
-  const [request, setRequest] = useState('The operator needs a library accounting system for two branches.');
+  const [pipeline, setPipeline] = useState<{ id: number; stage: string } | null>(saved.pipeline ?? null);
+  const [request, setRequest] = useState(
+    saved.request ?? 'The operator needs a library accounting system for two branches.',
+  );
   const [inputForm, setInputForm] = useState<FormDetail | null>(null);
   const [outcome, setOutcome] = useState<StageOutcome | null>(null);
   const [runError, setRunError] = useState('');
@@ -55,6 +88,60 @@ export default function App() {
 
   const targetSystemId = targetSystem?.id ?? 0;
   const pipelineId = pipeline ? String(pipeline.id) : '';
+
+  // Keep the operator input across reloads.
+  useEffect(() => {
+    const state: SavedState = {
+      targetSystemId: targetSystem?.id ?? null,
+      pipeline: pipeline ?? null,
+      name,
+      description,
+      workspaceDir,
+      agents: agents.map(({ role, provider, baseUrl, model, temperature }) => ({
+        role,
+        provider,
+        baseUrl,
+        model,
+        temperature,
+      })),
+      request,
+    };
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      // A browser in private mode has no storage. The console still works.
+    }
+  }, [targetSystem, pipeline, name, description, workspaceDir, agents, request]);
+
+  // A restored target system has agent configs on the server: show which keys are set.
+  useEffect(() => {
+    if (!targetSystemId) return;
+    void api
+      .listAgents(targetSystemId)
+      .then((list) =>
+        setAgentsSaved(
+          list.agents.map(
+            (view) => `${view.role} · ${view.provider} · ${view.model} · ключ: ${view.hasApiKey ? 'задан' : 'нет'}`,
+          ),
+        ),
+      )
+      .catch(() => undefined);
+  }, [api, targetSystemId]);
+
+  async function checkAgent(role: string) {
+    setChecking(role);
+    try {
+      const result = await api.checkAgent(targetSystemId, role);
+      setChecks((previous) => ({
+        ...previous,
+        [role]: `ответ модели · ${result.model} · ${result.answer.slice(0, 200)}`,
+      }));
+    } catch (error) {
+      setChecks((previous) => ({ ...previous, [role]: `ошибка: ${String(error)}` }));
+    } finally {
+      setChecking('');
+    }
+  }
 
   async function createTargetSystem() {
     try {
@@ -232,7 +319,7 @@ export default function App() {
                 </Field>
                 <div className="row">
                   <input
-                    placeholder="apiKey (для облачных)"
+                    placeholder="apiKey (пусто = оставить сохранённый)"
                     value={agent.apiKey}
                     onChange={(event) => updateAgent(index, { apiKey: event.target.value })}
                   />
@@ -241,6 +328,20 @@ export default function App() {
                     value={agent.temperature}
                     onChange={(event) => updateAgent(index, { temperature: event.target.value })}
                   />
+                </div>
+                <div className="agent-foot">
+                  <button
+                    className="ghost"
+                    disabled={!ready || checking === agent.role}
+                    onClick={() => checkAgent(agent.role)}
+                  >
+                    {checking === agent.role ? 'Проверяю…' : 'Проверить модель'}
+                  </button>
+                  {checks[agent.role] && (
+                    <span className={checks[agent.role].startsWith('ошибка') ? 'check bad' : 'check ok'}>
+                      {checks[agent.role]}
+                    </span>
+                  )}
                 </div>
               </div>
             ))}

@@ -1,10 +1,12 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 
@@ -17,11 +19,17 @@ type SettingsHandler struct {
 	settingsService *usecase.SettingsService
 	pipelineService *usecase.Planner
 	pipelines       usecase.PipelineUseCase
+	models          ModelChecker
+}
+
+// ModelChecker calls the model of one role once.
+type ModelChecker interface {
+	Check(ctx context.Context, targetSystemID int64, role domain.Role) (usecase.ModelCheckResult, error)
 }
 
 // NewSettingsHandler builds the settings handler.
-func NewSettingsHandler(settingsService *usecase.SettingsService, pipelineService *usecase.Planner, pipelines usecase.PipelineUseCase) *SettingsHandler {
-	return &SettingsHandler{settingsService: settingsService, pipelineService: pipelineService, pipelines: pipelines}
+func NewSettingsHandler(settingsService *usecase.SettingsService, pipelineService *usecase.Planner, pipelines usecase.PipelineUseCase, models ModelChecker) *SettingsHandler {
+	return &SettingsHandler{settingsService: settingsService, pipelineService: pipelineService, pipelines: pipelines, models: models}
 }
 
 // SetupSettingsRoutes registers the settings and plan routes.
@@ -30,6 +38,7 @@ func SetupSettingsRoutes(router *mux.Router, handler *SettingsHandler) {
 	router.HandleFunc("/targetsystems/{id}/workspace", handler.GetWorkspace).Methods(http.MethodGet)
 	router.HandleFunc("/targetsystems/{id}/agents", handler.ListAgents).Methods(http.MethodGet)
 	router.HandleFunc("/targetsystems/{id}/agents/{role}", handler.SetAgent).Methods(http.MethodPut)
+	router.HandleFunc("/targetsystems/{id}/agents/{role}/check", handler.CheckAgent).Methods(http.MethodPost)
 	router.HandleFunc("/targetsystems/{id}/plan", handler.Plan).Methods(http.MethodGet)
 	router.HandleFunc("/targetsystems/{id}/pipelines", handler.CreatePipeline).Methods(http.MethodPost)
 }
@@ -125,6 +134,46 @@ func (h *SettingsHandler) GetWorkspace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, WorkspaceResponse{Dir: dir})
 }
 
+// CheckAgent calls the model of one role once and reports the answer or the real
+// error of the provider. A stage hides both behind one failure.
+// @Summary Check the model of one agent role
+// @Tags settings
+// @Produce json
+// @Param id path int true "Target system ID"
+// @Param role path string true "Agent role" Enums(analyst, architect, qa, dev, devops, operator)
+// @Success 200 {object} usecase.ModelCheckResult
+// @Failure 409 {object} map[string]string "No agent config for this role"
+// @Failure 502 {object} map[string]string "The provider refused the call"
+// @Router /targetsystems/{id}/agents/{role}/check [post]
+func (h *SettingsHandler) CheckAgent(w http.ResponseWriter, r *http.Request) {
+	id, ok := targetSystemID(w, r)
+	if !ok {
+		return
+	}
+	role := domain.Role(mux.Vars(r)["role"])
+	if !role.Valid() {
+		writeError(w, http.StatusUnprocessableEntity, "unknown role")
+		return
+	}
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(5 * time.Minute))
+
+	result, err := h.models.Check(r.Context(), id, role)
+	if err != nil {
+		writeError(w, modelCheckStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func modelCheckStatus(err error) int {
+	switch {
+	case errors.Is(err, usecase.ErrAgentNotConfigured), errors.Is(err, domain.ErrSettingNotFound):
+		return http.StatusConflict
+	default:
+		return http.StatusBadGateway
+	}
+}
+
 // SetAgent stores one agent config. The api key is accepted and never returned.
 // @Summary Set an agent model config
 // @Tags settings
@@ -169,7 +218,14 @@ func (h *SettingsHandler) SetAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, settingsStatus(err), err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, config.Masked())
+	// Answer with the stored config: an empty key in the request kept the saved one,
+	// so the request alone would report hasApiKey false.
+	stored, err := h.settingsService.Agent(r.Context(), id, role)
+	if err != nil {
+		writeError(w, settingsStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, stored.Masked())
 }
 
 // ListAgents returns the agent configs without secrets.

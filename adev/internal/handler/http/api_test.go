@@ -1,6 +1,7 @@
 package http_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -55,6 +56,17 @@ type api struct {
 	targets *fakeTargetSystem
 	pipes   *mocks.MockPipelineUseCase
 	runs    *mocks.MockRunUseCase
+	models  *fakeModelCheck
+}
+
+// fakeModelCheck is the double of the model checker behind the agent check route.
+type fakeModelCheck struct {
+	result usecase.ModelCheckResult
+	err    error
+}
+
+func (f *fakeModelCheck) Check(context.Context, int64, domain.Role) (usecase.ModelCheckResult, error) {
+	return f.result, f.err
 }
 
 func newAPI() *api {
@@ -62,6 +74,7 @@ func newAPI() *api {
 		targets: &fakeTargetSystem{},
 		pipes:   mocks.NewMockPipelineUseCase(),
 		runs:    mocks.NewMockRunUseCase(),
+		models:  &fakeModelCheck{},
 	}
 
 	router := mux.NewRouter()
@@ -71,7 +84,7 @@ func newAPI() *api {
 	apphttp.SetupRunRoutes(version, fixture.runs)
 
 	settings := usecase.NewSettingsService(repository.NewMemoryAgentConfigStore(targetSystemID))
-	handler := apphttp.NewSettingsHandler(settings, usecase.NewPlanner(settings), fixture.pipes)
+	handler := apphttp.NewSettingsHandler(settings, usecase.NewPlanner(settings), fixture.pipes, fixture.models)
 	apphttp.SetupSettingsRoutes(version, handler)
 
 	fixture.router = router
@@ -263,6 +276,46 @@ func TestListAgentsNeverReturnsTheKey(t *testing.T) {
 	assert.Equal(t, http.StatusOK, response.Code)
 	assert.NotContains(t, response.Body.String(), "sk-secret")
 	assert.Contains(t, response.Body.String(), `"role":"architect"`)
+}
+
+func TestCheckAgentReportsTheModelAnswer(t *testing.T) {
+	fixture := newAPI()
+	fixture.models.result = usecase.ModelCheckResult{
+		Role: domain.RoleAnalyst, Provider: domain.ProviderOpenRouter,
+		Model: "qwen/qwen3-235b", HasAPIKey: true, Answer: `{"ok":true}`,
+	}
+
+	response := fixture.do(t, http.MethodPost, "/api/v1/targetsystems/1/agents/analyst/check", "")
+
+	assert.Equal(t, http.StatusOK, response.Code)
+	assert.Contains(t, response.Body.String(), `"hasApiKey":true`)
+	assert.Contains(t, response.Body.String(), `"model":"qwen/qwen3-235b"`)
+	assert.NotContains(t, response.Body.String(), "sk-secret", "a check never returns the key")
+}
+
+func TestCheckAgentReportsAMissingConfig(t *testing.T) {
+	fixture := newAPI()
+	fixture.models.err = usecase.ErrAgentNotConfigured
+
+	response := fixture.do(t, http.MethodPost, "/api/v1/targetsystems/1/agents/analyst/check", "")
+
+	assert.Equal(t, http.StatusConflict, response.Code)
+}
+
+func TestCheckAgentReportsAProviderFailure(t *testing.T) {
+	fixture := newAPI()
+	fixture.models.err = errors.New(`model of role "analyst": model call to https://openrouter.ai/api/v1 failed: 401 Unauthorized: {"error":{"message":"No auth credentials found"}}`)
+
+	response := fixture.do(t, http.MethodPost, "/api/v1/targetsystems/1/agents/analyst/check", "")
+
+	assert.Equal(t, http.StatusBadGateway, response.Code)
+	assert.Contains(t, response.Body.String(), "No auth credentials found")
+}
+
+func TestCheckAgentRejectsAnUnknownRole(t *testing.T) {
+	response := newAPI().do(t, http.MethodPost, "/api/v1/targetsystems/1/agents/mystery/check", "")
+
+	assert.Equal(t, http.StatusUnprocessableEntity, response.Code)
 }
 
 func TestSetAgentRejectsACloudProviderWithoutKey(t *testing.T) {

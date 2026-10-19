@@ -337,3 +337,33 @@ tbody tr:hover {
 .toggle input {
   width: auto;
 }
+
+.agent-foot {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.agent-foot button {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.check {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  word-break: break-word;
+}
+
+.check.ok {
+  background: #eaf5ec;
+  color: var(--ok);
+}
+
+.check.bad {
+  background: #f7e4de;
+  color: var(--bad);
+}

@@ -72,3 +72,55 @@ func TestSettingsStoresAgentsOrderedByRole(t *testing.T) {
 		t.Fatal("the store lost the api key")
 	}
 }
+
+// The API never returns a stored key, so a save with an empty key field must keep
+// it. Otherwise the operator sees "api key is required" after every page reload.
+func TestSettingsKeepsTheStoredAPIKeyWhenTheRequestOmitsIt(t *testing.T) {
+	service := NewSettingsService(newFakeAgentConfigStore())
+	ctx := context.Background()
+
+	cloud := domain.AgentConfig{
+		TargetSystemID: 1, Role: domain.RoleArchitect, Provider: domain.ProviderOpenRouter,
+		Model: "qwen/qwen3-235b", APIKey: "secret-key",
+	}
+	if err := service.SetAgent(ctx, cloud); err != nil {
+		t.Fatalf("set cloud agent: %v", err)
+	}
+
+	// The operator edits the model and leaves the key field empty.
+	edited := cloud
+	edited.APIKey = ""
+	edited.Model = "qwen/qwen3-coder"
+	if err := service.SetAgent(ctx, edited); err != nil {
+		t.Fatalf("save without the key: %v", err)
+	}
+
+	agents, err := service.Agents(ctx, 1)
+	if err != nil {
+		t.Fatalf("agents: %v", err)
+	}
+	if agents[0].APIKey != "secret-key" || agents[0].Model != "qwen/qwen3-coder" {
+		t.Fatalf("want the stored key and the new model, got %+v", agents[0])
+	}
+}
+
+// A key of another provider must not travel to a new one.
+func TestSettingsDoesNotReuseAKeyOfAnotherProvider(t *testing.T) {
+	service := NewSettingsService(newFakeAgentConfigStore())
+	ctx := context.Background()
+
+	stored := domain.AgentConfig{
+		TargetSystemID: 1, Role: domain.RoleAnalyst, Provider: domain.ProviderOpenRouter,
+		Model: "qwen/qwen3-235b", APIKey: "secret-key",
+	}
+	if err := service.SetAgent(ctx, stored); err != nil {
+		t.Fatalf("set cloud agent: %v", err)
+	}
+
+	switched := stored
+	switched.Provider = domain.ProviderOpenAI
+	switched.APIKey = ""
+	if err := service.SetAgent(ctx, switched); !errors.Is(err, domain.ErrAPIKeyRequired) {
+		t.Fatalf("want ErrAPIKeyRequired after a provider switch, got %v", err)
+	}
+}

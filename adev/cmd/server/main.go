@@ -91,7 +91,7 @@ func main() {
 	apphttp.SetupAuditEventRoutes(apiRouter, container.AuditEventUseCase())           // auditevent routes
 
 	// adev settings and pipeline plan
-	apphttp.SetupSettingsRoutes(apiRouter, apphttp.NewSettingsHandler(container.SettingsService(), container.Planner(), container.PipelineUseCase()))
+	apphttp.SetupSettingsRoutes(apiRouter, apphttp.NewSettingsHandler(container.SettingsService(), container.Planner(), container.PipelineUseCase(), container.ModelCheck()))
 	// adev form contract
 	apphttp.SetupFormRoutes(apiRouter, container.FormHandler())
 	// adev stage runs

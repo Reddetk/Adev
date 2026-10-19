@@ -51,6 +51,14 @@ func (s *SettingsService) SetAgent(ctx context.Context, config domain.AgentConfi
 	if !config.Role.Valid() {
 		return domain.ErrInvalidRole
 	}
+	// The API never sends a stored key back, so an empty key in a request means
+	// "keep the saved one". Otherwise every save without retyping the key failed.
+	if strings.TrimSpace(config.APIKey) == "" {
+		if existing, err := s.store.Agent(ctx, config.TargetSystemID, config.Role); err == nil &&
+			existing.Provider == config.Provider {
+			config.APIKey = existing.APIKey
+		}
+	}
 	if err := config.Validate(); err != nil {
 		return err
 	}

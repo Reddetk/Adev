@@ -687,6 +687,19 @@ definitions:
       total:
         type: integer
     type: object
+  usecase.ModelCheckResult:
+    properties:
+      answer:
+        type: string
+      hasApiKey:
+        type: boolean
+      model:
+        type: string
+      provider:
+        $ref: '#/definitions/domain.Provider'
+      role:
+        $ref: '#/definitions/domain.Role'
+    type: object
   usecase.Plan:
     properties:
       readiness:
@@ -2030,6 +2043,48 @@ paths:
               type: string
             type: object
       summary: Set an agent model config
+      tags:
+      - settings
+  /targetsystems/{id}/agents/{role}/check:
+    post:
+      parameters:
+      - description: Target system ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Agent role
+        enum:
+        - analyst
+        - architect
+        - qa
+        - dev
+        - devops
+        - operator
+        in: path
+        name: role
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/usecase.ModelCheckResult'
+        "409":
+          description: No agent config for this role
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: The provider refused the call
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Check the model of one agent role
       tags:
       - settings
   /targetsystems/{id}/pipelines:
