@@ -98,7 +98,11 @@ func main() {
 	apphttp.SetupStageRoutes(apiRouter, container.StageHandler())
 
 	// Minimal frontend: target system setup and the first stage run.
-	router.PathPrefix("/app/").Handler(http.StripPrefix("/app/", http.FileServer(http.Dir("frontend"))))
+	// The UI lives in the frontend folder next to the Go module (FRONTEND_DIR).
+	router.PathPrefix("/app/").Handler(http.StripPrefix("/app/", http.FileServer(http.Dir(cfg.FrontendDir))))
+	if _, err := os.Stat(cfg.FrontendDir); err != nil {
+		log.Printf("Warning: no frontend in %s, /app/ answers 404: %v", cfg.FrontendDir, err)
+	}
 	// goca:routes -- feature routes are registered above this line
 
 	// Swagger UI at /swagger/index.html

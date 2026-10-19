@@ -9,9 +9,10 @@ import (
 )
 
 // CreateTargetSystemInput is the DTO for creating a new targetsystem.
+// repoURL is optional: a target system does not need a GitHub repository.
 type CreateTargetSystemInput struct {
 	Name        string `json:"name" validate:"required,min=1"`
-	RepoURL     string `json:"repourl" validate:"required,min=1"`
+	RepoURL     string `json:"repourl,omitempty"`
 	Description string `json:"description" validate:"required,min=1"`
 }
 
@@ -19,9 +20,6 @@ type CreateTargetSystemInput struct {
 func (r *CreateTargetSystemInput) Validate() error {
 	if strings.TrimSpace(r.Name) == "" {
 		return errors.New("name is required")
-	}
-	if strings.TrimSpace(r.RepoURL) == "" {
-		return errors.New("repourl is required")
 	}
 	if strings.TrimSpace(r.Description) == "" {
 		return errors.New("description is required")
@@ -33,7 +31,7 @@ func (r *CreateTargetSystemInput) Validate() error {
 type CreateTargetSystemOutput struct {
 	ID          uint   `json:"id"`
 	Name        string `json:"name"`
-	RepoURL     string `json:"repourl"`
+	RepoURL     string `json:"repourl,omitempty"`
 	Description string `json:"description"`
 	Message     string `json:"message"`
 }

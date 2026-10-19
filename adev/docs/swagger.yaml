@@ -278,7 +278,6 @@ definitions:
     required:
     - description
     - name
-    - repourl
     type: object
   domain.Task:
     properties:
@@ -559,12 +558,10 @@ definitions:
         minLength: 1
         type: string
       repourl:
-        minLength: 1
         type: string
     required:
     - description
     - name
-    - repourl
     type: object
   usecase.CreateTargetSystemOutput:
     properties:

@@ -27,8 +27,8 @@ COPY --from=builder /app/bin/adev .
 # Copy migrations if they exist
 COPY --from=builder /app/migrations ./migrations
 
-# Copy the UI the server serves from ./frontend
-COPY --from=builder /app/frontend ./frontend
+# shortcut: the UI lives in ../frontend, outside the docker build context, so the
+# image serves no /app/. Mount it with -v and set FRONTEND_DIR when needed.
 
 # Expose port
 EXPOSE 8080

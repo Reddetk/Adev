@@ -12,6 +12,9 @@ type Config struct {
 	Port        string
 	Environment string
 	LogLevel    string
+	// FrontendDir holds index.html and the assets of the operator UI. The frontend
+	// lives next to the Go module, so the default is the sibling folder.
+	FrontendDir string
 	Database    DatabaseConfig
 	Server      ServerConfig
 }
@@ -39,6 +42,7 @@ func Load() *Config {
 		Port:        getEnv("PORT", "8080"),
 		Environment: getEnv("ENVIRONMENT", "development"),
 		LogLevel:    getEnv("LOG_LEVEL", "info"),
+		FrontendDir: getEnv("FRONTEND_DIR", "../frontend"),
 		Database: DatabaseConfig{
 			Host:         getEnv("DB_HOST", "localhost"),
 			Port:         getEnv("DB_PORT", "5432"),

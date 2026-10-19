@@ -55,10 +55,9 @@
   <div>
     <section>
       <h2>1. Target system</h2>
-      <p class="hint">Мнимая система, которую разрабатывает adev.</p>
-      <div class="row three">
+      <p class="hint">Мнимая система, которую разрабатывает adev. GitHub-репозиторий не нужен.</p>
+      <div class="row">
         <div><label>Имя</label><input id="ts-name" value="library"></div>
-        <div><label>Repo URL</label><input id="ts-repo" value="github.com/example/library"></div>
         <div><label>Описание</label><input id="ts-desc" value="Library accounting system"></div>
       </div>
       <div class="actions"><button id="btn-create-ts">Создать</button></div>
@@ -180,7 +179,6 @@ function requireTarget() {
 document.getElementById('btn-create-ts').onclick = async () => {
   const result = await call('POST', '/api/v1/targetsystems', {
     name: document.getElementById('ts-name').value,
-    repourl: document.getElementById('ts-repo').value,
     description: document.getElementById('ts-desc').value,
   });
   if (!result.ok) return;

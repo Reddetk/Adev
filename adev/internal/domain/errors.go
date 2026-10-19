@@ -12,7 +12,6 @@ var (
 	ErrInvalidTargetSystemData               = errors.New("invalid targetsystem data")
 	ErrInvalidTargetSystemName               = errors.New("name is required")
 	ErrInvalidTargetSystemNameLength         = errors.New("name must be between 2 and 100 characters")
-	ErrInvalidTargetSystemRepoURL            = errors.New("repourl is required")
 	ErrInvalidTargetSystemDescription        = errors.New("description is required")
 	ErrInvalidPipelineTargetSystemID         = errors.New("targetsystemid is required")
 	ErrInvalidPipelineTargetSystemIDRange    = errors.New("targetsystemid must be a positive number")

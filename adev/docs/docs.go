@@ -2774,8 +2774,7 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "description",
-                "name",
-                "repourl"
+                "name"
             ],
             "properties": {
                 "description": {
@@ -3198,8 +3197,7 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "description",
-                "name",
-                "repourl"
+                "name"
             ],
             "properties": {
                 "description": {
@@ -3211,8 +3209,7 @@ const docTemplate = `{
                     "minLength": 1
                 },
                 "repourl": {
-                    "type": "string",
-                    "minLength": 1
+                    "type": "string"
                 }
             }
         },

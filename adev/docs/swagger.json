@@ -2767,8 +2767,7 @@
             "type": "object",
             "required": [
                 "description",
-                "name",
-                "repourl"
+                "name"
             ],
             "properties": {
                 "description": {
@@ -3191,8 +3190,7 @@
             "type": "object",
             "required": [
                 "description",
-                "name",
-                "repourl"
+                "name"
             ],
             "properties": {
                 "description": {
@@ -3204,8 +3202,7 @@
                     "minLength": 1
                 },
                 "repourl": {
-                    "type": "string",
-                    "minLength": 1
+                    "type": "string"
                 }
             }
         },

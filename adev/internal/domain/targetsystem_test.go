@@ -34,14 +34,13 @@ func TestTargetSystem_Validate(t *testing.T) {
 			errMsg:  "name",
 		},
 		{
-			name: "invalid targetSystem - empty string",
+			name: "valid entity - no repository",
 			targetSystem: TargetSystem{
 				Name:        "John Doe",
 				RepoURL:     "",
 				Description: "A valid description",
 			},
-			wantErr: true,
-			errMsg:  "repourl",
+			wantErr: false,
 		},
 		{
 			name: "invalid targetSystem - empty string",
@@ -99,35 +98,6 @@ func TestTargetSystem_Name_EdgeCases(t *testing.T) {
 			targetSystem := &TargetSystem{
 				Name:        tt.value,
 				RepoURL:     "valid value",
-				Description: "A valid description",
-			}
-
-			err := targetSystem.Validate()
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-// TestTargetSystem_RepoURL_EdgeCases tests edge cases for RepoURL field
-func TestTargetSystem_RepoURL_EdgeCases(t *testing.T) {
-	tests := []struct {
-		name    string
-		value   string
-		wantErr bool
-	}{
-		{name: "empty string", value: "", wantErr: true},
-		{name: "valid value", value: "Valid Name", wantErr: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			targetSystem := &TargetSystem{
-				Name:        "John Doe",
-				RepoURL:     tt.value,
 				Description: "A valid description",
 			}
 

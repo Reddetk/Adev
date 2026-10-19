@@ -105,9 +105,10 @@ func (a *api) configure(t *testing.T) {
 
 func TestCreateTargetSystemHappyPath(t *testing.T) {
 	fixture := newAPI()
-	fixture.targets.createdOutput = usecase.CreateTargetSystemOutput{ID: 1, Name: "library", RepoURL: "github.com/x/library", Message: "targetsystem created successfully"}
+	fixture.targets.createdOutput = usecase.CreateTargetSystemOutput{ID: 1, Name: "library", Message: "targetsystem created successfully"}
 
-	response := fixture.do(t, http.MethodPost, "/api/v1/targetsystems", `{"name":"library","repourl":"github.com/x/library","description":"books"}`)
+	// No repourl: a target system does not ask for a GitHub repository.
+	response := fixture.do(t, http.MethodPost, "/api/v1/targetsystems", `{"name":"library","description":"books"}`)
 
 	assert.Equal(t, http.StatusCreated, response.Code)
 	var body map[string]any
