@@ -6,6 +6,8 @@ export type LogEntry = { kind: 'request' | 'ok' | 'error'; text: string };
 
 export type TargetSystem = { id: number; name: string; description: string };
 
+export type TargetSystemSummary = { id: number; name: string; description: string };
+
 export type Readiness = { ready: boolean; missing?: string[] };
 
 export type Stage = {
@@ -131,6 +133,7 @@ export function createApi(onLog: (entry: LogEntry) => void) {
   return {
     createTargetSystem: (input: { name: string; description: string }) =>
       call<TargetSystem>('POST', '/targetsystems', input),
+    listTargetSystems: () => call<{ targetsystems: TargetSystemSummary[] }>('GET', '/targetsystems'),
     setWorkspace: (id: number, dir: string) => call<{ dir: string }>('PUT', `/targetsystems/${id}/workspace`, { dir }),
     setAgent: (id: number, role: string, agent: AgentInput) =>
       call<AgentView>('PUT', `/targetsystems/${id}/agents/${role}`, agent),

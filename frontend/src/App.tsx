@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { FormDocument } from './FormDocument';
 import {
+  ApiError,
   createApi,
   type AgentInput,
   type FormDetail,
@@ -8,6 +9,7 @@ import {
   type LogEntry,
   type Plan,
   type StageOutcome,
+  type TargetSystemSummary,
 } from './api';
 
 const PROVIDERS = ['ollama', 'openrouter', 'openai', 'deepseek', 'qwen'];
@@ -70,6 +72,7 @@ export default function App() {
     saved.agents?.length ? saved.agents.map((agent) => ({ ...agent, apiKey: '' })) : initialAgents,
   );
   const [checks, setChecks] = useState<Record<string, string>>({});
+  const [systems, setSystems] = useState<TargetSystemSummary[]>([]);
   const [checking, setChecking] = useState('');
   const [agentsSaved, setAgentsSaved] = useState<string[]>([]);
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -120,13 +123,48 @@ export default function App() {
       .listAgents(targetSystemId)
       .then((list) =>
         setAgentsSaved(
-          list.agents.map(
-            (view) => `${view.role} · ${view.provider} · ${view.model} · ключ: ${view.hasApiKey ? 'задан' : 'нет'}`,
-          ),
+          list.agents.length === 0
+            ? ['агенты не заданы: заполните поля ниже и нажмите «Сохранить агентов»']
+            : list.agents.map(
+                (view) =>
+                  `${view.role} · ${view.provider} · ${view.model} · ключ: ${view.hasApiKey ? 'задан' : 'нет'}`,
+              ),
         ),
       )
+      .catch((error) => {
+        setAgentsSaved(
+          error instanceof ApiError && error.status === 409
+            ? ['агенты не заданы: заполните поля ниже и нажмите «Сохранить агентов»']
+            : [`не удалось прочитать агентов: ${String(error)}`],
+        );
+      });
+  }, [api, targetSystemId]);
+
+  // The list lets the operator switch to an already configured target system.
+  useEffect(() => {
+    void api
+      .listTargetSystems()
+      .then((list) => setSystems(list.targetsystems))
       .catch(() => undefined);
   }, [api, targetSystemId]);
+
+  // Switching the system drops everything that belongs to the old one.
+  function switchTarget(id: number) {
+    setTargetSystem({ id });
+    setPipeline(null);
+    setPlan(null);
+    setForms(null);
+    setOpened(null);
+    setChecks({});
+    setAgentsSaved([]);
+  }
+
+  function failureHint(error: unknown): string {
+    if (error instanceof ApiError && error.status === 409) {
+      return ' — сохраните агентов в разделе 2';
+    }
+    return '';
+  }
 
   async function checkAgent(role: string) {
     setChecking(role);
@@ -137,7 +175,7 @@ export default function App() {
         [role]: `ответ модели · ${result.model} · ${result.answer.slice(0, 200)}`,
       }));
     } catch (error) {
-      setChecks((previous) => ({ ...previous, [role]: `ошибка: ${String(error)}` }));
+      setChecks((previous) => ({ ...previous, [role]: `ошибка: ${String(error)}${failureHint(error)}` }));
     } finally {
       setChecking('');
     }
@@ -232,7 +270,7 @@ export default function App() {
         setOpened(await api.form(result.formId, result.formVersion).catch(() => null));
       }
     } catch (error) {
-      setRunError(String(error));
+      setRunError(`${String(error)}${failureHint(error)}`);
     } finally {
       setRunning(false);
     }
@@ -260,6 +298,19 @@ export default function App() {
       <main>
         <div>
           <Section title="1. Target system" hint="Мнимая система, которую разрабатывает adev. GitHub-репозиторий не нужен.">
+            <Field label="Уже созданные">
+              <select
+                value={targetSystemId || ''}
+                onChange={(event) => event.target.value && switchTarget(Number(event.target.value))}
+              >
+                <option value="">— не выбран —</option>
+                {systems.map((system) => (
+                  <option key={system.id} value={system.id}>
+                    {system.id} · {system.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <div className="row">
               <Field label="Имя">
                 <input value={name} onChange={(event) => setName(event.target.value)} />
@@ -274,13 +325,13 @@ export default function App() {
             <Cards>
               {targetSystem && (
                 <Card>
-                  id=<b>{targetSystem.id}</b> <Badge tone="ok">создан</Badge>
+                  работаем с id=<b>{targetSystem.id}</b> <Badge tone="ok">выбран</Badge>
                 </Card>
               )}
             </Cards>
           </Section>
 
-          <Section title="2. Окружение targetSystem" hint="Рабочая директория и модели агентов. Ключ уходит на сервер и никогда не возвращается.">
+          <Section title="2. Окружение targetSystem" hint="Рабочая директория и модели агентов. У облачных провайдеров baseUrl можно оставить пустым — подставится адрес API; ключ уходит на сервер и никогда не возвращается.">
             <Field label="Workspace directory">
               <input value={workspaceDir} onChange={(event) => setWorkspaceDir(event.target.value)} />
             </Field>
@@ -306,7 +357,7 @@ export default function App() {
                       ))}
                     </select>
                     <input
-                      placeholder="baseUrl"
+                      placeholder="baseUrl (облачным не нужен)"
                       value={agent.baseUrl}
                       onChange={(event) => updateAgent(index, { baseUrl: event.target.value })}
                     />

@@ -39,6 +39,23 @@ func TestOpenAICompatibleFactoryBuildsAProviderURL(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "http://127.0.0.1:11434/v1", client.(*openAICompatibleLLM).baseURL)
 
+	// A pasted OpenRouter model page becomes the API root: that page answers 404
+	// with HTML and hides the real problem.
+	client, err = factory.For(ctx, domain.AgentConfig{
+		Provider: domain.ProviderOpenRouter,
+		BaseURL:  "https://openrouter.ai/nvidia/nemotron:free",
+		Model:    "nvidia/nemotron:free",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://openrouter.ai/api/v1", client.(*openAICompatibleLLM).baseURL)
+
+	// A path on the provider host that already names the protocol stays as given.
+	client, err = factory.For(ctx, domain.AgentConfig{
+		Provider: domain.ProviderOpenAI, BaseURL: "https://api.openai.com/v1/", Model: "m",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://api.openai.com/v1", client.(*openAICompatibleLLM).baseURL)
+
 	_, err = factory.For(ctx, domain.AgentConfig{Provider: domain.Provider("mystery"), Model: "m"})
 	assert.Error(t, err, "a provider without a known endpoint needs a baseUrl")
 

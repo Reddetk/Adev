@@ -15,7 +15,7 @@ var (
 	// ErrStageInputMissing reports a required input form that does not exist yet.
 	ErrStageInputMissing = errors.New("a required input form is missing")
 	// ErrAgentNotConfigured reports a stage whose owner has no valid agent config.
-	ErrAgentNotConfigured = errors.New("the agent of this stage is not configured")
+	ErrAgentNotConfigured = errors.New("the agent config of this role is not set")
 )
 
 // StageRequest selects one stage of one pipeline.

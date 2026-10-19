@@ -28,28 +28,35 @@ func NewOpenAICompatibleFactory() *OpenAICompatibleFactory {
 	return &OpenAICompatibleFactory{client: &http.Client{Timeout: 10 * time.Minute}}
 }
 
+// apiEndpoint is the API root of every known provider. They all speak the same
+// chat completions protocol, so one adapter serves them.
+var apiEndpoint = map[domain.Provider]string{
+	domain.ProviderOllama:     "http://localhost:11434/v1",
+	domain.ProviderOpenAI:     "https://api.openai.com/v1",
+	domain.ProviderOpenRouter: "https://openrouter.ai/api/v1",
+	domain.ProviderDeepSeek:   "https://api.deepseek.com/v1",
+	domain.ProviderQwen:       "https://dashscope.aliyuncs.com/compatible-mode/v1",
+}
+
 // For builds the client of one agent config.
 func (f *OpenAICompatibleFactory) For(_ context.Context, agent domain.AgentConfig) (usecase.LLM, error) {
 	baseURL := strings.TrimRight(agent.BaseURL, "/")
-	if baseURL == "" {
-		switch agent.Provider {
-		case domain.ProviderOllama:
-			baseURL = "http://localhost:11434/v1"
-		case domain.ProviderOpenAI:
-			baseURL = "https://api.openai.com/v1"
-		case domain.ProviderOpenRouter:
-			baseURL = "https://openrouter.ai/api/v1"
-		case domain.ProviderDeepSeek:
-			baseURL = "https://api.deepseek.com/v1"
-		case domain.ProviderQwen:
-			baseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-		default:
+	endpoint := apiEndpoint[agent.Provider]
+
+	switch {
+	case baseURL == "":
+		if endpoint == "" {
 			return nil, fmt.Errorf("provider %q needs a baseUrl", agent.Provider)
 		}
-	} else if agent.Provider == domain.ProviderOllama && isHostOnly(baseURL) {
+		baseURL = endpoint
+	case agent.Provider == domain.ProviderOllama && isHostOnly(baseURL):
 		// Ollama serves the OpenAI-compatible API under /v1. A config with the bare
 		// host would otherwise post to /chat/completions and get a 404.
 		baseURL += "/v1"
+	case endpoint != "" && sameHost(baseURL, endpoint) && !strings.Contains(baseURL, "/v1"):
+		// A pasted model page, such as https://openrouter.ai/<model>. The provider's
+		// API root is the only useful value for that host.
+		baseURL = endpoint
 	}
 	if strings.TrimSpace(agent.Model) == "" {
 		return nil, fmt.Errorf("the agent config has no model")
@@ -61,6 +68,19 @@ func (f *OpenAICompatibleFactory) For(_ context.Context, agent domain.AgentConfi
 func isHostOnly(raw string) bool {
 	parsed, err := url.Parse(raw)
 	return err == nil && parsed.Path == ""
+}
+
+// sameHost reports whether two URLs address the same host.
+func sameHost(left, right string) bool {
+	first, err := url.Parse(left)
+	if err != nil {
+		return false
+	}
+	second, err := url.Parse(right)
+	if err != nil {
+		return false
+	}
+	return first.Host != "" && first.Host == second.Host
 }
 
 type openAICompatibleLLM struct {
