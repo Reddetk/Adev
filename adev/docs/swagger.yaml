@@ -32,7 +32,6 @@ definitions:
         minimum: 0
         type: integer
     required:
-    - createdat
     - eventtype
     - pipelineid
     - runid
@@ -71,6 +70,14 @@ definitions:
     - TypeVerdict
     - TypeRefactorSpec
     - TypeQuestion
+  domain.Mode:
+    enum:
+    - full
+    - delta
+    type: string
+    x-enum-varnames:
+    - ModeFull
+    - ModeDelta
   domain.ModelCall:
     properties:
       cost:
@@ -95,13 +102,9 @@ definitions:
         minimum: 0
         type: integer
     required:
-    - cost
-    - latencyms
     - model
     - profile
     - runid
-    - tokensin
-    - tokensout
     type: object
   domain.OperatorRequest:
     properties:
@@ -168,6 +171,19 @@ definitions:
       ready:
         type: boolean
     type: object
+  domain.Ref:
+    properties:
+      formId:
+        type: string
+      formType:
+        $ref: '#/definitions/domain.FormType'
+      formVersion:
+        type: integer
+      hash:
+        type: string
+      pointer:
+        type: string
+    type: object
   domain.Role:
     enum:
     - operator
@@ -211,9 +227,7 @@ definitions:
       status:
         type: string
     required:
-    - attempts
     - checkpointid
-    - lasterror
     - pipelineid
     - stage
     - status
@@ -235,6 +249,22 @@ definitions:
       owner:
         $ref: '#/definitions/domain.Role'
     type: object
+  domain.Status:
+    enum:
+    - draft
+    - valid
+    - waiting_operator
+    - approved
+    - rejected
+    - superseded
+    type: string
+    x-enum-varnames:
+    - StatusDraft
+    - StatusValid
+    - StatusWaitingOperator
+    - StatusApproved
+    - StatusRejected
+    - StatusSuperseded
   domain.TargetSystem:
     properties:
       description:
@@ -271,7 +301,6 @@ definitions:
     required:
     - contractref
     - owner
-    - parentid
     - pipelineid
     - status
     - tasktype
@@ -303,6 +332,8 @@ definitions:
         example: 0.2
         type: number
     type: object
+  http.FormRequest:
+    type: object
   http.PipelineCreatedResponse:
     properties:
       id:
@@ -319,6 +350,13 @@ definitions:
       route:
         example: greenfield
         type: string
+    type: object
+  http.StatusRequest:
+    properties:
+      status:
+        allOf:
+        - $ref: '#/definitions/domain.Status'
+        example: valid
     type: object
   http.WorkspaceRequest:
     properties:
@@ -919,6 +957,154 @@ paths:
       summary: Update auditevent
       tags:
       - auditevents
+  /forms:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Form envelope and payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.FormRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Stored form
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: This form version already exists
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: A gate rejected the form
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Submit a form version
+      tags:
+      - forms
+  /forms/{formId}/latest:
+    get:
+      parameters:
+      - description: Form ID
+        in: path
+        name: formId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Stored form
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Read the latest form version
+      tags:
+      - forms
+  /forms/{formId}/versions/{version}:
+    get:
+      parameters:
+      - description: Form ID
+        in: path
+        name: formId
+        required: true
+        type: string
+      - description: Form version
+        in: path
+        name: version
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Stored form
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Read one form version
+      tags:
+      - forms
+  /forms/{formId}/versions/{version}/status:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Form ID
+        in: path
+        name: formId
+        required: true
+        type: string
+      - description: Form version
+        in: path
+        name: version
+        required: true
+        type: integer
+      - description: New status
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.StatusRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: The lifecycle forbids this change
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Change the status of a form version
+      tags:
+      - forms
   /modelcalls:
     get:
       consumes:
@@ -1381,6 +1567,45 @@ paths:
       summary: Update pipeline
       tags:
       - pipelines
+  /pipelines/{pipelineId}/forms:
+    get:
+      parameters:
+      - description: Pipeline ID
+        in: path
+        name: pipelineId
+        required: true
+        type: string
+      - description: Form type
+        enum:
+        - BRD
+        - SRS
+        - HLD
+        - ADR
+        - LLD
+        - TASK_PLAN
+        in: query
+        name: type
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Stored forms, oldest first
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List the form versions of a pipeline
+      tags:
+      - forms
   /runs:
     get:
       consumes:

@@ -36,6 +36,12 @@ var knownStages = map[string]bool{
 	"06": true, "07": true, "08": true, "09": true, "08.R": true, "—": true,
 }
 
+// Valid reports whether the status is known.
+func (s Status) Valid() bool { return knownStatus(s) }
+
+// Valid reports whether the form type is known.
+func (t FormType) Valid() bool { return knownFormTypes[t] }
+
 func knownStatus(s Status) bool {
 	switch s {
 	case StatusDraft, StatusValid, StatusWaitingOperator, StatusApproved, StatusRejected, StatusSuperseded:
@@ -129,7 +135,7 @@ func (f *Form) ValidateEnvelope(resolved []ResolvedRef) error {
 		}
 		hash, ok := hashes[referenceKey(ref.FormID, ref.FormVersion)]
 		if !ok {
-			errs = append(errs, fmt.Errorf("inputs[%d]: reference %s:%d is not resolved", i, ref.FormID, ref.FormVersion))
+			errs = append(errs, invalid(fmt.Sprintf("inputs[%d]", i), fmt.Sprintf("reference %s:%d is not resolved", ref.FormID, ref.FormVersion)))
 			continue
 		}
 		if ref.Hash != "" && ref.Hash != hash {
@@ -141,7 +147,7 @@ func (f *Form) ValidateEnvelope(resolved []ResolvedRef) error {
 		hash, ok := hashes[referenceKey(f.Base.FormID, f.Base.FormVersion)]
 		switch {
 		case !ok:
-			errs = append(errs, fmt.Errorf("base: reference %s:%d is not resolved", f.Base.FormID, f.Base.FormVersion))
+			errs = append(errs, invalid("base", fmt.Sprintf("reference %s:%d is not resolved", f.Base.FormID, f.Base.FormVersion)))
 		case f.Base.Hash != "" && f.Base.Hash != hash:
 			errs = append(errs, invalid("base.hash", "does not match the referenced form"))
 		}

@@ -116,6 +116,21 @@ func (f *Form) BindPayload(v any) error {
 	return nil
 }
 
+// SetRawPayload stores an already encoded payload and computes its hash.
+// A form that arrives over the wire is not decoded into a typed value first.
+func (f *Form) SetRawPayload(raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return fmt.Errorf("payload is empty")
+	}
+	hash, err := HashPayload(raw)
+	if err != nil {
+		return err
+	}
+	f.Payload = raw
+	f.PayloadHash = hash
+	return nil
+}
+
 // ComputeHash returns the payload hash of the current payload.
 func (f *Form) ComputeHash() (string, error) {
 	return HashPayload(f.Payload)

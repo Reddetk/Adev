@@ -42,6 +42,7 @@ type Container struct {
 	formService     *usecase.FormService
 	settingsService *usecase.SettingsService
 	pipelineService *usecase.Planner
+	formHandler     *http.FormHandler
 }
 
 func NewContainer(pool *pgxpool.Pool) *Container {
@@ -60,6 +61,7 @@ func (c *Container) setupAdEvServices() {
 	c.formService = usecase.NewFormService(formsStore, nil)
 	c.settingsService = usecase.NewSettingsService(settingsStore)
 	c.pipelineService = usecase.NewPlanner(c.settingsService)
+	c.formHandler = http.NewFormHandler(c.formService)
 }
 
 func (c *Container) setupRepositories() {
@@ -178,6 +180,9 @@ func (c *Container) AuditEventRepository() usecase.AuditEventRepository {
 
 // FormService returns the form service.
 func (c *Container) FormService() *usecase.FormService { return c.formService }
+
+// FormHandler returns the form handler.
+func (c *Container) FormHandler() *http.FormHandler { return c.formHandler }
 
 // SettingsService returns the target system settings service.
 func (c *Container) SettingsService() *usecase.SettingsService { return c.settingsService }

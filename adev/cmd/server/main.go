@@ -92,6 +92,8 @@ func main() {
 
 	// adev settings and pipeline plan
 	apphttp.SetupSettingsRoutes(apiRouter, apphttp.NewSettingsHandler(container.SettingsService(), container.Planner(), container.PipelineUseCase()))
+	// adev form contract
+	apphttp.SetupFormRoutes(apiRouter, container.FormHandler())
 	// goca:routes -- feature routes are registered above this line
 
 	// Swagger UI at /swagger/index.html

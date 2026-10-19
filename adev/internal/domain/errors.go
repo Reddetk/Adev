@@ -72,4 +72,5 @@ var (
 	ErrObjectNotFound      = errors.New("object not found")
 	ErrInvalidTransition   = errors.New("invalid status transition")
 	ErrInvalidRole         = errors.New("invalid agent role")
+	ErrNoPayloadGates      = errors.New("payload gates are not implemented for this form type")
 )

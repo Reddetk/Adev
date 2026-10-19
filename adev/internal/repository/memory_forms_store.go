@@ -10,23 +10,23 @@ import (
 	"github.com/Reddetk/Adev/internal/domain"
 )
 
-// inMemoryFormsStore is an in-process form store for tests.
-type inMemoryFormsStore struct {
+// MemoryFormsStore is an in-process form store for tests and for runs without a database.
+type MemoryFormsStore struct {
 	mu      sync.RWMutex
 	forms   map[string]map[int]*domain.Form
 	created map[string]bool
 }
 
-// newInMemoryFormsStore returns an empty store.
-func newInMemoryFormsStore() *inMemoryFormsStore {
-	return &inMemoryFormsStore{
+// NewMemoryFormsStore returns an empty store.
+func NewMemoryFormsStore() *MemoryFormsStore {
+	return &MemoryFormsStore{
 		forms:   map[string]map[int]*domain.Form{},
 		created: map[string]bool{},
 	}
 }
 
 // Save appends a new form version.
-func (m *inMemoryFormsStore) Save(ctx context.Context, form *domain.Form) error {
+func (m *MemoryFormsStore) Save(ctx context.Context, form *domain.Form) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func (m *inMemoryFormsStore) Save(ctx context.Context, form *domain.Form) error 
 }
 
 // Get reads one form version.
-func (m *inMemoryFormsStore) Get(ctx context.Context, formID string, version int) (*domain.Form, error) {
+func (m *MemoryFormsStore) Get(ctx context.Context, formID string, version int) (*domain.Form, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (m *inMemoryFormsStore) Get(ctx context.Context, formID string, version int
 }
 
 // Latest reads the highest form version.
-func (m *inMemoryFormsStore) Latest(ctx context.Context, formID string) (*domain.Form, error) {
+func (m *MemoryFormsStore) Latest(ctx context.Context, formID string) (*domain.Form, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -105,7 +105,7 @@ func (m *inMemoryFormsStore) Latest(ctx context.Context, formID string) (*domain
 }
 
 // ByPipeline reads the versions of one form type in one pipeline, oldest first.
-func (m *inMemoryFormsStore) ByPipeline(ctx context.Context, pipelineID string, formType domain.FormType) ([]*domain.Form, error) {
+func (m *MemoryFormsStore) ByPipeline(ctx context.Context, pipelineID string, formType domain.FormType) ([]*domain.Form, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (m *inMemoryFormsStore) ByPipeline(ctx context.Context, pipelineID string, 
 }
 
 // SetStatus changes the status of one form version.
-func (m *inMemoryFormsStore) SetStatus(ctx context.Context, formID string, version int, status domain.Status) error {
+func (m *MemoryFormsStore) SetStatus(ctx context.Context, formID string, version int, status domain.Status) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}

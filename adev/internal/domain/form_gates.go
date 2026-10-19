@@ -39,6 +39,6 @@ func (f *Form) ValidatePayload() error {
 		}
 		return ValidateBRD(brd, f.Status)
 	default:
-		return fmt.Errorf("no payload gates for form type %q yet", f.FormType)
+		return fmt.Errorf("%w: %q", ErrNoPayloadGates, f.FormType)
 	}
 }

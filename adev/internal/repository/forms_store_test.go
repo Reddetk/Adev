@@ -47,7 +47,7 @@ func buildForm(t *testing.T, formID string, version int, pipelineID string, prev
 func floatPtr(v float64) *float64 { return &v }
 
 func TestInMemoryFormsStore(t *testing.T) {
-	runStoreSuite(t, newInMemoryFormsStore())
+	runStoreSuite(t, NewMemoryFormsStore())
 }
 
 // runStoreSuite checks the shared contract of every forms store implementation.

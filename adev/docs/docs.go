@@ -250,6 +250,230 @@ const docTemplate = `{
                 }
             }
         },
+        "/forms": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "forms"
+                ],
+                "summary": "Submit a form version",
+                "parameters": [
+                    {
+                        "description": "Form envelope and payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.FormRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Stored form",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "This form version already exists",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A gate rejected the form",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/forms/{formId}/latest": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "forms"
+                ],
+                "summary": "Read the latest form version",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Form ID",
+                        "name": "formId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Stored form",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/forms/{formId}/versions/{version}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "forms"
+                ],
+                "summary": "Read one form version",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Form ID",
+                        "name": "formId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Form version",
+                        "name": "version",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Stored form",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/forms/{formId}/versions/{version}/status": {
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "forms"
+                ],
+                "summary": "Change the status of a form version",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Form ID",
+                        "name": "formId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Form version",
+                        "name": "version",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New status",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.StatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The lifecycle forbids this change",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/modelcalls": {
             "get": {
                 "consumes": [
@@ -945,6 +1169,62 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/pipelines/{pipelineId}/forms": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "forms"
+                ],
+                "summary": "List the form versions of a pipeline",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Pipeline ID",
+                        "name": "pipelineId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "BRD",
+                            "SRS",
+                            "HLD",
+                            "ADR",
+                            "LLD",
+                            "TASK_PLAN"
+                        ],
+                        "type": "string",
+                        "description": "Form type",
+                        "name": "type",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Stored forms, oldest first",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2077,7 +2357,6 @@ const docTemplate = `{
         "domain.AuditEvent": {
             "type": "object",
             "required": [
-                "createdat",
                 "eventtype",
                 "pipelineid",
                 "runid"
@@ -2139,16 +2418,23 @@ const docTemplate = `{
                 "TypeQuestion"
             ]
         },
+        "domain.Mode": {
+            "type": "string",
+            "enum": [
+                "full",
+                "delta"
+            ],
+            "x-enum-varnames": [
+                "ModeFull",
+                "ModeDelta"
+            ]
+        },
         "domain.ModelCall": {
             "type": "object",
             "required": [
-                "cost",
-                "latencyms",
                 "model",
                 "profile",
-                "runid",
-                "tokensin",
-                "tokensout"
+                "runid"
             ],
             "properties": {
                 "cost": {
@@ -2272,6 +2558,26 @@ const docTemplate = `{
                 }
             }
         },
+        "domain.Ref": {
+            "type": "object",
+            "properties": {
+                "formId": {
+                    "type": "string"
+                },
+                "formType": {
+                    "$ref": "#/definitions/domain.FormType"
+                },
+                "formVersion": {
+                    "type": "integer"
+                },
+                "hash": {
+                    "type": "string"
+                },
+                "pointer": {
+                    "type": "string"
+                }
+            }
+        },
         "domain.Role": {
             "type": "string",
             "enum": [
@@ -2305,9 +2611,7 @@ const docTemplate = `{
         "domain.Run": {
             "type": "object",
             "required": [
-                "attempts",
                 "checkpointid",
-                "lasterror",
                 "pipelineid",
                 "stage",
                 "status"
@@ -2364,6 +2668,25 @@ const docTemplate = `{
                 }
             }
         },
+        "domain.Status": {
+            "type": "string",
+            "enum": [
+                "draft",
+                "valid",
+                "waiting_operator",
+                "approved",
+                "rejected",
+                "superseded"
+            ],
+            "x-enum-varnames": [
+                "StatusDraft",
+                "StatusValid",
+                "StatusWaitingOperator",
+                "StatusApproved",
+                "StatusRejected",
+                "StatusSuperseded"
+            ]
+        },
         "domain.TargetSystem": {
             "type": "object",
             "required": [
@@ -2391,7 +2714,6 @@ const docTemplate = `{
             "required": [
                 "contractref",
                 "owner",
-                "parentid",
                 "pipelineid",
                 "status",
                 "tasktype"
@@ -2461,6 +2783,9 @@ const docTemplate = `{
                 }
             }
         },
+        "http.FormRequest": {
+            "type": "object"
+        },
         "http.PipelineCreatedResponse": {
             "type": "object",
             "properties": {
@@ -2484,6 +2809,19 @@ const docTemplate = `{
                 "route": {
                     "type": "string",
                     "example": "greenfield"
+                }
+            }
+        },
+        "http.StatusRequest": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/domain.Status"
+                        }
+                    ],
+                    "example": "valid"
                 }
             }
         },

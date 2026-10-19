@@ -78,6 +78,21 @@ func (s *FormService) SetStatus(ctx context.Context, formID string, version int,
 	return s.store.SetStatus(ctx, formID, version, status)
 }
 
+// Get reads one stored form version.
+func (s *FormService) Get(ctx context.Context, formID string, version int) (*domain.Form, error) {
+	return s.store.Get(ctx, formID, version)
+}
+
+// Latest reads the highest stored version of a form.
+func (s *FormService) Latest(ctx context.Context, formID string) (*domain.Form, error) {
+	return s.store.Latest(ctx, formID)
+}
+
+// ByPipeline reads the versions of one form type in one pipeline, oldest first.
+func (s *FormService) ByPipeline(ctx context.Context, pipelineID string, formType domain.FormType) ([]*domain.Form, error) {
+	return s.store.ByPipeline(ctx, pipelineID, formType)
+}
+
 func (s *FormService) resolveRefs(ctx context.Context, form *domain.Form) ([]domain.ResolvedRef, error) {
 	refs := make([]domain.Ref, 0, len(form.Inputs)+1)
 	refs = append(refs, form.Inputs...)
