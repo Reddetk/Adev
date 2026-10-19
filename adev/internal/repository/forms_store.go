@@ -1,10 +1,12 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -202,20 +204,17 @@ func scanForm(row rowScanner) (*domain.Form, error) {
 		return nil, err
 	}
 
-	if len(previous) > 0 {
-		var ref domain.Ref
-		if err := json.Unmarshal(previous, &ref); err != nil {
-			return nil, fmt.Errorf("scan form: decode previousFormVersion: %w", err)
-		}
-		form.PreviousFormVersion = &ref
+	references, err := decodeOptionalRef(previous)
+	if err != nil {
+		return nil, fmt.Errorf("scan form: decode previousFormVersion: %w", err)
 	}
-	if len(base) > 0 {
-		var ref domain.Ref
-		if err := json.Unmarshal(base, &ref); err != nil {
-			return nil, fmt.Errorf("scan form: decode base: %w", err)
-		}
-		form.Base = &ref
+	form.PreviousFormVersion = references
+
+	baseForm, err := decodeOptionalRef(base)
+	if err != nil {
+		return nil, fmt.Errorf("scan form: decode base: %w", err)
 	}
+	form.Base = baseForm
 	if len(ops) > 0 {
 		form.Ops = json.RawMessage(ops)
 	}
@@ -228,8 +227,10 @@ func scanForm(row rowScanner) (*domain.Form, error) {
 	return &form, nil
 }
 
+// optionalJSON encodes a nullable value. A typed nil pointer becomes SQL NULL, not
+// the JSON literal null: otherwise a read resurrects an empty reference.
 func optionalJSON(value any) ([]byte, error) {
-	if value == nil {
+	if isNil(value) {
 		return nil, nil
 	}
 	raw, err := json.Marshal(value)
@@ -237,6 +238,32 @@ func optionalJSON(value any) ([]byte, error) {
 		return nil, fmt.Errorf("encode reference: %w", err)
 	}
 	return raw, nil
+}
+
+func isNil(value any) bool {
+	if value == nil {
+		return true
+	}
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice:
+		return reflected.IsNil()
+	default:
+		return false
+	}
+}
+
+// decodeOptionalRef reads a nullable jsonb column. A SQL NULL and the JSON literal
+// null both mean "no reference"; older rows stored the literal.
+func decodeOptionalRef(raw []byte) (*domain.Ref, error) {
+	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, nil
+	}
+	var ref domain.Ref
+	if err := json.Unmarshal(raw, &ref); err != nil {
+		return nil, err
+	}
+	return &ref, nil
 }
 
 func nullableJSON(raw json.RawMessage) []byte {

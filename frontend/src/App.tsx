@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { FormDocument } from './FormDocument';
 import {
   createApi,
   type AgentInput,
@@ -50,6 +51,7 @@ export default function App() {
   const [formType, setFormType] = useState('USER_INPUT');
   const [forms, setForms] = useState<FormSummary[] | null>(null);
   const [opened, setOpened] = useState<FormDetail | null>(null);
+  const [rawPayload, setRawPayload] = useState(false);
 
   const targetSystemId = targetSystem?.id ?? 0;
   const pipelineId = pipeline ? String(pipeline.id) : '';
@@ -393,6 +395,12 @@ export default function App() {
                 <option value="USER_INPUT">USER_INPUT</option>
                 <option value="BRD">BRD</option>
               </select>
+              {opened && (
+                <label className="toggle">
+                  <input type="checkbox" checked={rawPayload} onChange={(event) => setRawPayload(event.target.checked)} />
+                  показать JSON
+                </label>
+              )}
             </Actions>
             {forms && forms.length === 0 && <p className="hint">Форм этого типа пока нет.</p>}
             {forms && forms.length > 0 && (
@@ -421,12 +429,7 @@ export default function App() {
                 </tbody>
               </table>
             )}
-            {opened && (
-              <pre id="form-view">
-                {`${opened.formType} ${opened.formId} v${opened.formVersion} · status=${opened.status} · ${opened.payloadHash}\n\n` +
-                  JSON.stringify(opened.payload, null, 2)}
-              </pre>
-            )}
+            {opened && <FormDocument form={opened} raw={rawPayload} />}
           </Section>
         </div>
 

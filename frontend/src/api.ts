@@ -51,6 +51,7 @@ export type FormSummary = {
   formVersion: number;
   status: string;
   payloadHash: string;
+  producedBy: string;
   inputs: FormRef[] | null;
 };
 
