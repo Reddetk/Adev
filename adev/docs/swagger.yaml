@@ -351,6 +351,15 @@ definitions:
         example: greenfield
         type: string
     type: object
+  http.StageRunRequest:
+    properties:
+      pipelineId:
+        example: "1"
+        type: string
+      route:
+        example: greenfield
+        type: string
+    type: object
   http.StatusRequest:
     properties:
       status:
@@ -693,6 +702,26 @@ definitions:
         type: array
       targetSystemId:
         type: integer
+    type: object
+  usecase.StageOutcome:
+    properties:
+      attempts:
+        type: integer
+      blocked:
+        type: boolean
+      formId:
+        type: string
+      formVersion:
+        type: integer
+      gaps:
+        description: |-
+          Gaps lists why the model could not satisfy the gates. A blocked stage becomes
+          an operator question in the next slice.
+        items:
+          type: string
+        type: array
+      stage:
+        type: string
     type: object
   usecase.UpdateAuditEventInput:
     properties:
@@ -2083,6 +2112,63 @@ paths:
               type: string
             type: object
       summary: Plan a pipeline
+      tags:
+      - pipelines
+  /targetsystems/{id}/stages/{stage}/run:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Target system ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Stage ID
+        enum:
+        - "00"
+        - "01"
+        - "02"
+        - "03"
+        - "04"
+        - "05"
+        - "06"
+        in: path
+        name: stage
+        required: true
+        type: string
+      - description: Pipeline and route
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.StageRunRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/usecase.StageOutcome'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 'The stage is not ready: a form or an agent config is missing'
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: The model call failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Run a stage
       tags:
       - pipelines
   /targetsystems/{id}/workspace:

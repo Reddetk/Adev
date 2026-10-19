@@ -42,7 +42,9 @@ type Container struct {
 	formService     *usecase.FormService
 	settingsService *usecase.SettingsService
 	pipelineService *usecase.Planner
+	stageService    *usecase.StageService
 	formHandler     *http.FormHandler
+	stageHandler    *http.StageHandler
 }
 
 func NewContainer(pool *pgxpool.Pool) *Container {
@@ -62,6 +64,11 @@ func (c *Container) setupAdEvServices() {
 	c.settingsService = usecase.NewSettingsService(settingsStore)
 	c.pipelineService = usecase.NewPlanner(c.settingsService)
 	c.formHandler = http.NewFormHandler(c.formService)
+
+	// Stage runs need a model client. The run recorder stays nil until the run table
+	// takes the string pipeline id of the forms.
+	c.stageService = usecase.NewStageService(c.formService, c.settingsService, repository.NewOpenAICompatibleFactory(), nil)
+	c.stageHandler = http.NewStageHandler(c.stageService)
 }
 
 func (c *Container) setupRepositories() {
@@ -183,6 +190,9 @@ func (c *Container) FormService() *usecase.FormService { return c.formService }
 
 // FormHandler returns the form handler.
 func (c *Container) FormHandler() *http.FormHandler { return c.formHandler }
+
+// StageHandler returns the stage handler.
+func (c *Container) StageHandler() *http.StageHandler { return c.stageHandler }
 
 // SettingsService returns the target system settings service.
 func (c *Container) SettingsService() *usecase.SettingsService { return c.settingsService }

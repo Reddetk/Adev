@@ -1962,6 +1962,89 @@ const docTemplate = `{
                 }
             }
         },
+        "/targetsystems/{id}/stages/{stage}/run": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipelines"
+                ],
+                "summary": "Run a stage",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Target system ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "00",
+                            "01",
+                            "02",
+                            "03",
+                            "04",
+                            "05",
+                            "06"
+                        ],
+                        "type": "string",
+                        "description": "Stage ID",
+                        "name": "stage",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pipeline and route",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.StageRunRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/usecase.StageOutcome"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The stage is not ready: a form or an agent config is missing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "The model call failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/targetsystems/{id}/workspace": {
             "get": {
                 "produces": [
@@ -2812,6 +2895,19 @@ const docTemplate = `{
                 }
             }
         },
+        "http.StageRunRequest": {
+            "type": "object",
+            "properties": {
+                "pipelineId": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "route": {
+                    "type": "string",
+                    "example": "greenfield"
+                }
+            }
+        },
         "http.StatusRequest": {
             "type": "object",
             "properties": {
@@ -3328,6 +3424,33 @@ const docTemplate = `{
                 },
                 "targetSystemId": {
                     "type": "integer"
+                }
+            }
+        },
+        "usecase.StageOutcome": {
+            "type": "object",
+            "properties": {
+                "attempts": {
+                    "type": "integer"
+                },
+                "blocked": {
+                    "type": "boolean"
+                },
+                "formId": {
+                    "type": "string"
+                },
+                "formVersion": {
+                    "type": "integer"
+                },
+                "gaps": {
+                    "description": "Gaps lists why the model could not satisfy the gates. A blocked stage becomes\nan operator question in the next slice.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "stage": {
+                    "type": "string"
                 }
             }
         },

@@ -1,2 +1,5 @@
 # act writes downloaded artifacts here; the runner image is reused between runs.
 .act/
+
+# Playwright MCP keeps its run logs and screenshots here.
+.playwright-mcp/

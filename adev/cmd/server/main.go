@@ -94,6 +94,11 @@ func main() {
 	apphttp.SetupSettingsRoutes(apiRouter, apphttp.NewSettingsHandler(container.SettingsService(), container.Planner(), container.PipelineUseCase()))
 	// adev form contract
 	apphttp.SetupFormRoutes(apiRouter, container.FormHandler())
+	// adev stage runs
+	apphttp.SetupStageRoutes(apiRouter, container.StageHandler())
+
+	// Minimal frontend: target system setup and the first stage run.
+	router.PathPrefix("/app/").Handler(http.StripPrefix("/app/", http.FileServer(http.Dir("frontend"))))
 	// goca:routes -- feature routes are registered above this line
 
 	// Swagger UI at /swagger/index.html

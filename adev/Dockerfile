@@ -27,6 +27,9 @@ COPY --from=builder /app/bin/adev .
 # Copy migrations if they exist
 COPY --from=builder /app/migrations ./migrations
 
+# Copy the UI the server serves from ./frontend
+COPY --from=builder /app/frontend ./frontend
+
 # Expose port
 EXPOSE 8080
 

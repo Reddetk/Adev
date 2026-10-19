@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>adev · настройка и запуск</title>
+<style>
+  :root { --ink:#2d3142; --muted:#4f5d75; --line:#d7d7db; --paper:#f5f5f5; --ok:#1f7a3d; --bad:#a32c1c; --accent:#bf4520; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui, "Segoe UI", sans-serif; color:var(--ink); background:var(--paper); }
+  header { padding:16px 20px; border-bottom:1px solid var(--line); background:#fff; }
+  h1 { margin:0 0 4px; font-size:18px; font-weight:600; }
+  header p { margin:0; color:var(--muted); font-size:12px; }
+  main { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,420px); gap:20px; padding:20px; align-items:start; }
+  @media (max-width:1100px) { main { grid-template-columns:1fr; } }
+  section { background:#fff; border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:16px; }
+  section h2 { margin:0 0 4px; font-size:14px; font-weight:600; }
+  section .hint { margin:0 0 10px; color:var(--muted); font-size:12px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:8px 0 2px; }
+  input, select, textarea { width:100%; padding:6px 8px; font:inherit; color:var(--ink); background:#fff;
+    border:1px solid var(--line); border-radius:6px; }
+  textarea { min-height:70px; resize:vertical; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .row.three { grid-template-columns:1fr 1fr 1fr; }
+  .actions { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; }
+  button { font:inherit; padding:7px 12px; border-radius:6px; border:1px solid var(--ink); background:var(--ink); color:#fff; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--ink); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .cards { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .card { border:1px solid var(--line); border-radius:6px; padding:6px 10px; font-size:12px; }
+  .card b { font-weight:600; }
+  table { border-collapse:collapse; width:100%; font-size:12px; margin-top:8px; }
+  th, td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+  .mono { font-family:ui-monospace, Consolas, monospace; font-size:11px; word-break:break-all; }
+  .state { display:inline-block; padding:1px 6px; border-radius:10px; font-size:11px; border:1px solid var(--line); }
+  .state.ok { color:var(--ok); border-color:var(--ok); }
+  .state.bad { color:var(--bad); border-color:var(--bad); }
+  .state.wait { color:var(--muted); }
+  #log { background:#1f2231; color:#e6e6ea; border-radius:8px; padding:10px; height:78vh; overflow:auto;
+    font-family:ui-monospace, Consolas, monospace; font-size:11px; white-space:pre-wrap; }
+  #log .line { border-bottom:1px solid rgba(255,255,255,.08); padding:4px 0; }
+  #log .ok { color:#8fd19e; }
+  #log .bad { color:#f0a08c; }
+  #log .req { color:#9ec1f0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>adev · подготовка среды и запуск пайплайна</h1>
+  <p>Минимальный UI для проверки: targetSystem → окружение → готовность → пайплайн → стадия 00 → формы</p>
+</header>
+
+<main>
+  <div>
+    <section>
+      <h2>1. Target system</h2>
+      <p class="hint">Мнимая система, которую разрабатывает adev.</p>
+      <div class="row three">
+        <div><label>Имя</label><input id="ts-name" value="library"></div>
+        <div><label>Repo URL</label><input id="ts-repo" value="github.com/example/library"></div>
+        <div><label>Описание</label><input id="ts-desc" value="Library accounting system"></div>
+      </div>
+      <div class="actions"><button id="btn-create-ts">Создать</button></div>
+      <div class="cards" id="ts-state"></div>
+    </section>
+
+    <section>
+      <h2>2. Окружение targetSystem</h2>
+      <p class="hint">Рабочая директория и модели агентов. Ключ уходит на сервер и никогда не возвращается.</p>
+      <label>Workspace directory</label>
+      <input id="ws-dir" value="D:\work\library">
+      <div class="actions"><button id="btn-ws">Сохранить директорию</button></div>
+      <div class="cards" id="ws-state"></div>
+
+      <div id="agents"></div>
+      <div class="actions">
+        <button id="btn-agents">Сохранить агентов</button>
+        <button class="ghost" id="btn-agents-read">Показать агентов</button>
+      </div>
+      <div class="cards" id="agents-state"></div>
+    </section>
+
+    <section>
+      <h2>3. Готовность и план</h2>
+      <p class="hint">Пайплайн не стартует, пока не заданы workspace и валидный агент на каждую роль.</p>
+      <div class="actions"><button id="btn-plan">Проверить готовность</button></div>
+      <div class="cards" id="plan-state"></div>
+      <table id="plan-stages"></table>
+    </section>
+
+    <section>
+      <h2>4. Пайплайн</h2>
+      <p class="hint">Маршрут принадлежит реестру стадий; агент не выбирает следующую стадию.</p>
+      <div class="actions"><button id="btn-pipeline">Создать пайплайн</button></div>
+      <div class="cards" id="pipeline-state"></div>
+    </section>
+
+    <section>
+      <h2>5. Входная форма USER_INPUT</h2>
+      <p class="hint">Сырой запрос оператора. Сохраняется как форма, чтобы входные данные стадии были полными.</p>
+      <textarea id="request-text">The operator needs a library accounting system for two branches.</textarea>
+      <div class="actions"><button id="btn-input">Сохранить USER_INPUT</button></div>
+      <div class="cards" id="input-state"></div>
+    </section>
+
+    <section>
+      <h2>6. Запуск стадии 00</h2>
+      <p class="hint">Агент-аналитик читает USER_INPUT, заполняет BRD и сдаёт форму. До трёх попыток, ошибки гейтов уходят модели.</p>
+      <div class="actions"><button id="btn-run">Запустить стадию 00</button></div>
+      <div class="cards" id="run-state"></div>
+    </section>
+
+    <section>
+      <h2>7. Формы пайплайна</h2>
+      <div class="actions">
+        <button class="ghost" id="btn-forms">Обновить список</button>
+        <select id="forms-type" style="max-width:160px">
+          <option value="USER_INPUT">USER_INPUT</option>
+          <option value="BRD">BRD</option>
+        </select>
+      </div>
+      <table id="forms"></table>
+    </section>
+  </div>
+
+  <div>
+    <div id="log"></div>
+  </div>
+</main>
+
+<script>
+const state = { targetSystemId: null, pipelineId: null };
+
+const log = (kind, text) => {
+  const node = document.getElementById('log');
+  const line = document.createElement('div');
+  line.className = 'line ' + kind;
+  line.textContent = text;
+  node.appendChild(line);
+  node.scrollTop = node.scrollHeight;
+};
+
+async function call(method, path, body) {
+  const options = { method, headers: {} };
+  if (body !== undefined) {
+    options.headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify(body);
+  }
+  log('req', `→ ${method} ${path}` + (body ? ' ' + JSON.stringify(body) : ''));
+  let response;
+  try {
+    response = await fetch(path, options);
+  } catch (error) {
+    log('bad', `✗ сеть: ${error.message}`);
+    return { ok: false, status: 0, body: { error: String(error) } };
+  }
+  const text = await response.text();
+  let parsed;
+  try { parsed = text ? JSON.parse(text) : null; } catch { parsed = text; }
+  log(response.ok ? 'ok' : 'bad', `${response.ok ? '✓' : '✗'} ${response.status} ${path}\n   ${text.slice(0, 600)}`);
+  return { ok: response.ok, status: response.status, body: parsed };
+}
+
+const card = (id, html) => {
+  document.getElementById(id).innerHTML = html;
+};
+const escape = (value) => String(value === undefined || value === null ? '' : value)
+  .replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function requireTarget() {
+  if (!state.targetSystemId) {
+    log('bad', '✗ сначала создайте target system');
+    return false;
+  }
+  return true;
+}
+
+// 1 — target system
+document.getElementById('btn-create-ts').onclick = async () => {
+  const result = await call('POST', '/api/v1/targetsystems', {
+    name: document.getElementById('ts-name').value,
+    repourl: document.getElementById('ts-repo').value,
+    description: document.getElementById('ts-desc').value,
+  });
+  if (!result.ok) return;
+  state.targetSystemId = result.body.id;
+  card('ts-state', `<div class="card">id=<b>${result.body.id}</b> <span class="state ok">создан</span></div>`);
+};
+
+// agents block
+const agentRoles = ['ollama', 'openrouter', 'openai', 'deepseek', 'qwen'];
+const agentFields = [
+  { role: 'analyst', provider: 'ollama', baseUrl: 'http://localhost:11434', model: 'qwen3-coder:30b', apiKey: '' },
+  { role: 'architect', provider: 'ollama', baseUrl: 'http://localhost:11434', model: 'qwen3-coder:30b', apiKey: '' },
+];
+document.getElementById('agents').innerHTML = agentFields.map((agent, index) => `
+  <label>${escape(agent.role)} · provider</label>
+  <div class="row three">
+    <select id="agent-${index}-provider">
+      ${agentRoles.map((role) => `<option value="${role}"${role === agent.provider ? ' selected' : ''}>${role}</option>`).join('')}
+    </select>
+    <input id="agent-${index}-baseUrl" placeholder="baseUrl" value="${escape(agent.baseUrl)}">
+    <input id="agent-${index}-model" placeholder="model" value="${escape(agent.model)}">
+  </div>
+  <div class="row">
+    <input id="agent-${index}-apiKey" placeholder="apiKey (для облачных)" value="${escape(agent.apiKey)}">
+    <input id="agent-${index}-temperature" placeholder="temperature" value="0.2">
+  </div>`).join('');
+
+document.getElementById('btn-ws').onclick = async () => {
+  if (!requireTarget()) return;
+  const result = await call('PUT', `/api/v1/targetsystems/${state.targetSystemId}/workspace`,
+    { dir: document.getElementById('ws-dir').value });
+  if (result.ok) card('ws-state', `<div class="card">workspace: <span class="mono">${escape(result.body.dir)}</span></div>`);
+};
+
+document.getElementById('btn-agents').onclick = async () => {
+  if (!requireTarget()) return;
+  const saved = [];
+  for (let index = 0; index < agentFields.length; index++) {
+    const provider = document.getElementById(`agent-${index}-provider`).value;
+    const temperature = parseFloat(document.getElementById(`agent-${index}-temperature`).value || '0');
+    const result = await call('PUT', `/api/v1/targetsystems/${state.targetSystemId}/agents/${agentFields[index].role}`, {
+      provider,
+      baseUrl: document.getElementById(`agent-${index}-baseUrl`).value,
+      model: document.getElementById(`agent-${index}-model`).value,
+      apiKey: document.getElementById(`agent-${index}-apiKey`).value,
+      temperature: Number.isNaN(temperature) ? 0 : temperature,
+    });
+    saved.push(`${agentFields[index].role}: ${result.ok ? '✓ hasApiKey=' + result.body.hasApiKey : '✗ ' + result.body.error}`);
+  }
+  card('agents-state', saved.map((line) => `<div class="card">${escape(line)}</div>`).join(''));
+};
+
+document.getElementById('btn-agents-read').onclick = async () => {
+  if (!requireTarget()) return;
+  const result = await call('GET', `/api/v1/targetsystems/${state.targetSystemId}/agents`);
+  if (!result.ok) return;
+  card('agents-state', result.body.agents.map((agent) =>
+    `<div class="card">${escape(agent.role)} · ${escape(agent.provider)} · <span class="mono">${escape(agent.model)}</span> · ключ: ${agent.hasApiKey ? 'задан' : 'нет'}</div>`).join(''));
+};
+
+// 3 — plan
+document.getElementById('btn-plan').onclick = async () => {
+  if (!requireTarget()) return;
+  const result = await call('GET', `/api/v1/targetsystems/${state.targetSystemId}/plan`);
+  if (!result.ok) return;
+  const readiness = result.body.readiness;
+  card('plan-state', `<div class="card">готовность: <span class="state ${readiness.ready ? 'ok' : 'bad'}">${readiness.ready ? 'ready' : 'not ready'}</span></div>` +
+    (readiness.missing || []).map((item) => `<div class="card">${escape(item)}</div>`).join(''));
+  document.getElementById('plan-stages').innerHTML =
+    '<tr><th>stage</th><th>имя</th><th>владелец</th><th>вход</th><th>выход</th></tr>' +
+    result.body.stages.map((stage) => `<tr><td>${escape(stage.id)}</td><td>${escape(stage.name)}</td><td>${escape(stage.owner)}</td><td class="mono">${escape((stage.inputs || []).join(', '))}</td><td class="mono">${escape((stage.outputs || []).join(', '))}</td></tr>`).join('');
+};
+
+// 4 — pipeline
+document.getElementById('btn-pipeline').onclick = async () => {
+  if (!requireTarget()) return;
+  const result = await call('POST', `/api/v1/targetsystems/${state.targetSystemId}/pipelines`, { route: 'greenfield' });
+  if (!result.ok) {
+    log('bad', 'пайплайн не создан: сначала закройте пробелы готовности');
+    return;
+  }
+  state.pipelineId = String(result.body.id);
+  card('pipeline-state',
+    `<div class="card">pipelineId=<b>${escape(state.pipelineId)}</b> · route=${escape(result.body.route)} · stage=${escape(result.body.stage)} <span class="state ok">создан</span></div>`);
+};
+
+// 5 — input form
+document.getElementById('btn-input').onclick = async () => {
+  if (!requireTarget() || !state.pipelineId) { log('bad', '✗ сначала создайте пайплайн'); return; }
+  const result = await call('POST', '/api/v1/forms', {
+    formId: `FRM-IN-${state.pipelineId}`,
+    formType: 'USER_INPUT',
+    schemaVersion: 1,
+    formVersion: 1,
+    status: 'draft',
+    route: 'greenfield',
+    stage: '\u2014',
+    mode: 'full',
+    pipelineId: state.pipelineId,
+    targetSystemId: String(state.targetSystemId),
+    producedBy: 'operator',
+    inputs: [],
+    payload: {
+      rawRequest: { text: document.getElementById('request-text').value, lang: 'STE100' },
+      source: 'operator',
+      receivedAt: new Date().toISOString(),
+    },
+  });
+  if (result.ok) {
+    card('input-state', `<div class="card">${escape(result.body.formId)} v${escape(result.body.formVersion)} · <span class="mono">${escape(result.body.payloadHash).slice(0, 24)}…</span></div>`);
+  }
+};
+
+// 6 — run stage 00
+document.getElementById('btn-run').onclick = async () => {
+  if (!requireTarget() || !state.pipelineId) { log('bad', '✗ сначала создайте пайплайн'); return; }
+  const result = await call('POST', `/api/v1/targetsystems/${state.targetSystemId}/stages/00/run`,
+    { pipelineId: state.pipelineId, route: 'greenfield' });
+  if (!result.ok) {
+    card('run-state', `<div class="card"><span class="state bad">${result.status}</span> ${escape(result.body.error)}</div>`);
+    return;
+  }
+  const outcome = result.body;
+  const head = outcome.blocked
+    ? `<span class="state bad">blocked</span> попыток: ${outcome.attempts}`
+    : `<span class="state ok">done</span> ${escape(outcome.formId)} v${outcome.formVersion} · попыток: ${outcome.attempts}`;
+  card('run-state', `<div class="card">${head}</div>` +
+    (outcome.gaps || []).map((gap) => `<div class="card mono">${escape(gap)}</div>`).join(''));
+};
+
+// 7 — forms of the pipeline
+document.getElementById('btn-forms').onclick = async () => {
+  if (!state.pipelineId) { log('bad', '✗ сначала создайте пайплайн'); return; }
+  const type = document.getElementById('forms-type').value;
+  const result = await call('GET', `/api/v1/pipelines/${state.pipelineId}/forms?type=${type}`);
+  if (!result.ok) return;
+  if (!result.body.length) {
+    document.getElementById('forms').innerHTML = '<tr><td>форм этого типа пока нет</td></tr>';
+    return;
+  }
+  document.getElementById('forms').innerHTML =
+    '<tr><th>form</th><th>v</th><th>status</th><th>hash</th><th>inputs</th></tr>' +
+    result.body.map((form) => `<tr><td>${escape(form.formId)}</td><td>${escape(form.formVersion)}</td><td>${escape(form.status)}</td><td class="mono">${escape(form.payloadHash).slice(0, 18)}…</td><td class="mono">${escape((form.inputs || []).map((ref) => ref.formId + ':' + ref.formVersion).join(', '))}</td></tr>`).join('');
+};
+
+log('req', 'Готово. Идите по шагам 1→6; каждая ошибка видна ниже и в этом журнале.');
+</script>
+</body>
+</html>

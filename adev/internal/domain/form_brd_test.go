@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -72,5 +74,25 @@ func TestValidatePayloadDispatchesByFormType(t *testing.T) {
 	form := newBRDForm(t, validBRD())
 	if err := form.ValidatePayload(); err != nil {
 		t.Fatalf("brd payload rejected: %v", err)
+	}
+}
+
+// A payload of the wrong shape is a validation failure, not a server error: the
+// stage runner feeds it back to the model, which can repair it.
+func TestValidatePayloadReportsAMismatchedShapeAsValidationError(t *testing.T) {
+	form := &Form{Envelope: Envelope{FormType: TypeBRD, Status: StatusDraft},
+		Payload: json.RawMessage(`{"goals":["a branch library"]}`)}
+
+	err := form.ValidatePayload()
+
+	var validation *ValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("want a ValidationError, got %v", err)
+	}
+	if validation.Field != "payload" {
+		t.Fatalf("want field payload, got %q", validation.Field)
+	}
+	if !strings.Contains(validation.Problem, "goals") {
+		t.Fatalf("the problem must name the broken field, got %q", validation.Problem)
 	}
 }

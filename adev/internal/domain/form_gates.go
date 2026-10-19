@@ -29,16 +29,23 @@ func (f *Form) ValidatePayload() error {
 	case TypeUserInput:
 		var in UserInput
 		if err := f.BindPayload(&in); err != nil {
-			return err
+			return payloadMismatch(f.FormType, err)
 		}
 		return ValidateUserInput(in)
 	case TypeBRD:
 		var brd BRD
 		if err := f.BindPayload(&brd); err != nil {
-			return err
+			return payloadMismatch(f.FormType, err)
 		}
 		return ValidateBRD(brd, f.Status)
 	default:
 		return fmt.Errorf("%w: %q", ErrNoPayloadGates, f.FormType)
 	}
+}
+
+// payloadMismatch reports a payload that does not fit its form type as a validation
+// failure. The agent that wrote it can repair it, and the operator sees the reason
+// instead of an internal error.
+func payloadMismatch(formType FormType, err error) error {
+	return invalid("payload", fmt.Sprintf("does not match the %s shape: %v", formType, err))
 }

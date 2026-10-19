@@ -65,7 +65,7 @@ func newM2Fixture(t *testing.T, responses ...json.RawMessage) *m2Fixture {
 		runs:     &recordedRuns{},
 	}
 	fixture.forms = usecase.NewFormService(fixture.store, nil)
-	fixture.stages = usecase.NewStageService(fixture.forms, fixture.settings, fixture.llm, fixture.runs)
+	fixture.stages = usecase.NewStageService(fixture.forms, fixture.settings, usecase.FixedLLM(fixture.llm), fixture.runs)
 	return fixture
 }
 

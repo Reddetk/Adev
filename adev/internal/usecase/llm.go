@@ -29,3 +29,18 @@ type LLMRequest struct {
 type LLMResponse struct {
 	Payload json.RawMessage
 }
+
+// LLMFactory builds the model client of one agent config. The model gateway (M4)
+// will add quotas, routing and budgets here; today one adapter serves every
+// OpenAI-compatible provider.
+type LLMFactory interface {
+	For(ctx context.Context, agent domain.AgentConfig) (LLM, error)
+}
+
+// FixedLLM returns a factory that serves the same client for every config.
+// Tests use it; production code uses the real factory.
+func FixedLLM(llm LLM) LLMFactory { return fixedLLM{llm: llm} }
+
+type fixedLLM struct{ llm LLM }
+
+func (f fixedLLM) For(context.Context, domain.AgentConfig) (LLM, error) { return f.llm, nil }

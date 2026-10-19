@@ -28,14 +28,14 @@ type StageRequest struct {
 
 // StageOutcome is the result of one stage run.
 type StageOutcome struct {
-	Stage       string
-	FormID      string
-	FormVersion int
-	Attempts    int
-	Blocked     bool
+	Stage       string `json:"stage"`
+	FormID      string `json:"formId"`
+	FormVersion int    `json:"formVersion"`
+	Attempts    int    `json:"attempts"`
+	Blocked     bool   `json:"blocked"`
 	// Gaps lists why the model could not satisfy the gates. A blocked stage becomes
 	// an operator question in the next slice.
-	Gaps []string
+	Gaps []string `json:"gaps"`
 }
 
 // StageRun is what the orchestrator records about one attempt series.
@@ -57,13 +57,13 @@ type StageRunRecorder interface {
 type StageService struct {
 	forms    *FormService
 	settings *SettingsService
-	llm      LLM
+	llm      LLMFactory
 	runs     StageRunRecorder
 	maxTries int
 }
 
 // NewStageService builds the stage runner. maxTries defaults to three.
-func NewStageService(forms *FormService, settings *SettingsService, llm LLM, runs StageRunRecorder) *StageService {
+func NewStageService(forms *FormService, settings *SettingsService, llm LLMFactory, runs StageRunRecorder) *StageService {
 	return &StageService{forms: forms, settings: settings, llm: llm, runs: runs, maxTries: 3}
 }
 
@@ -77,6 +77,11 @@ func (s *StageService) Run(ctx context.Context, request StageRequest) (StageOutc
 	agent, err := s.settings.Agent(ctx, request.TargetSystemID, stage.Owner)
 	if err != nil {
 		return StageOutcome{}, fmt.Errorf("%w: role %q: %v", ErrAgentNotConfigured, stage.Owner, err)
+	}
+	client, err := s.llm.For(ctx, agent)
+	if err != nil {
+		s.record(ctx, request, stage, "failed", 0, err.Error())
+		return StageOutcome{}, fmt.Errorf("stage %s: model client: %w", stage.ID, err)
 	}
 
 	stageContext, refs, err := s.buildContext(ctx, request, stage)
@@ -96,7 +101,7 @@ func (s *StageService) Run(ctx context.Context, request StageRequest) (StageOutc
 	for attempt := 1; attempt <= s.maxTries; attempt++ {
 		outcome.Attempts = attempt
 
-		response, err := s.llm.Complete(ctx, LLMRequest{
+		response, err := client.Complete(ctx, LLMRequest{
 			Role:        agent.Role,
 			Instruction: stageInstruction(stage),
 			Shape:       payloadShape(stage.Outputs[0]),
@@ -233,13 +238,23 @@ func stageInstruction(stage domain.Stage) string {
 		stage.Outputs[0], stage.ID)
 }
 
-// payloadShape names the top level fields a form type expects.
+// payloadShape is the JSON skeleton of a form payload. A model that sees the item
+// fields fills the form correctly, and the gate feedback then fixes the rest.
+// shortcut: the skeleton mirrors the domain structs, update it when they change.
 func payloadShape(formType domain.FormType) string {
 	switch formType {
 	case domain.TypeBRD:
-		return "goals[], metrics[], scope{in,out}, actors[], constraints[], assumptions[], successMetrics[], openGaps[]"
+		return `{"goals":[{"id":"G1","outcome":{"text":"...","lang":"STE100"},"metricId":"M1"}],` +
+			`"metrics":[{"id":"M1","name":"...","unit":"count","baseline":0,"target":10}],` +
+			`"scope":{"in":[{"text":"...","lang":"STE100"}],"out":[{"text":"...","lang":"STE100"}]},` +
+			`"actors":[{"id":"A1","name":"...","tasks":[{"text":"...","lang":"STE100"}],"frequency":"day","businessObject":"..."}],` +
+			`"constraints":[{"id":"C1","text":"...","modality":"shall","priority":"must"}],` +
+			`"assumptions":[{"text":"...","lang":"STE100"}],` +
+			`"successMetrics":[{"metricId":"M1","threshold":"...","window":"..."}],` +
+			`"openGaps":[{"id":"GAP1","question":{"text":"...","lang":"STE100"},"blocking":false}]}`
 	case domain.TypeUserInput:
-		return "rawRequest{text,lang}, attachments[], source, receivedAt, locale"
+		return `{"rawRequest":{"text":"...","lang":"STE100"},"attachments":[],` +
+			`"source":"operator","receivedAt":"2026-01-01T00:00:00Z","locale":"en"}`
 	default:
 		return "unknown shape"
 	}
