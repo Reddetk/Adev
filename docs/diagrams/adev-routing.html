@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>adev · request routing</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #bf4520;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1280px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 1280px; display: block; }
+
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Flowchart · adev</p>
+    <h1>Request routing from input to TDD</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="adev-routing-title adev-routing-desc">
+        <title id="adev-routing-title">adev request routing</title>
+        <desc id="adev-routing-desc">Routing map for adev: a request takes the greenfield or change path, change splits into minor and major routes, and both end in the TDD loop.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- connectors: drawn before nodes -->
+        <!-- start -> request type -->
+        <path d="M 640 96 V 110" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- request type -> greenfield -->
+        <path d="M 520 160 H 218 Q 210 160 210 168 V 260" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="329" y="140" width="80" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="369" y="149" fill="#5a6580" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GREENFIELD</text>
+
+        <!-- request type -> change -->
+        <path d="M 760 160 H 1062 Q 1070 160 1070 168 V 260" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="883" y="140" width="56" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="911" y="149" fill="#5a6580" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CHANGE</text>
+
+        <!-- greenfield -> task plan -->
+        <path d="M 210 344 V 462 Q 210 470 218 470 H 492 Q 500 470 500 478 V 496" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- change -> blast radius -->
+        <path d="M 1070 344 V 368" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- blast radius -> route A -->
+        <path d="M 970 418 H 893 Q 885 418 885 426 V 496" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="858" y="455" width="20" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="868" y="464" fill="#5a6580" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">A</text>
+
+        <!-- blast radius -> route B -->
+        <path d="M 1070 468 V 474 Q 1070 482 1078 482 H 1137 Q 1145 482 1145 490 V 496" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="1097" y="462" width="20" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="1107" y="471" fill="#5a6580" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">B</text>
+
+        <!-- route A -> task plan -->
+        <path d="M 780 520 H 640" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- route B -> task plan (below route A) -->
+        <path d="M 1145 564 V 570 Q 1145 578 1137 578 H 708 Q 700 578 700 570 V 550 Q 700 542 692 542 H 640" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- task plan -> tdd -->
+        <path d="M 500 564 V 590" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- tdd fail loop -->
+        <path d="M 640 602 H 678 Q 686 602 686 610 V 628 Q 686 636 678 636 H 640" fill="none" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <rect x="694" y="613" width="54" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="721" y="622" fill="#5a6580" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">FAIL 08.R</text>
+
+        <!-- nodes -->
+        <!-- start -->
+        <ellipse cx="640" cy="68" rx="120" ry="28" fill="#f5f5f5"/>
+        <ellipse cx="640" cy="68" rx="120" ry="28" fill="rgba(79,93,117,0.10)" stroke="#5a6580" stroke-width="1"/>
+        <text x="640" y="71" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">USER INPUT</text>
+        <text x="640" y="85" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">operator request</text>
+
+        <!-- request type -->
+        <polygon points="640,110 760,160 640,210 520,160" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="640" y="163" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">REQUEST TYPE?</text>
+        <text x="640" y="179" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">greenfield or change</text>
+
+        <!-- greenfield plan -->
+        <rect x="60" y="260" width="300" height="84" rx="6" fill="#f5f5f5"/>
+        <rect x="60" y="260" width="300" height="84" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="68" y="266" width="32" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="84" y="275" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PLAN</text>
+        <text x="210" y="305" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Greenfield · 00–05</text>
+        <text x="210" y="321" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">BRD → SRS → HLD → ADR → LLD</text>
+
+        <!-- change intake -->
+        <rect x="920" y="260" width="300" height="84" rx="6" fill="#f5f5f5"/>
+        <rect x="920" y="260" width="300" height="84" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="928" y="266" width="42" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="949" y="275" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">INTAKE</text>
+        <text x="1070" y="305" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Change · 00–01</text>
+        <text x="1070" y="321" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">CR-Brief → Impact · blast radius</text>
+
+        <!-- blast radius decision -->
+        <polygon points="1070,368 1170,418 1070,468 970,418" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1"/>
+        <text x="1070" y="421" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">BLAST RADIUS?</text>
+        <text x="1070" y="437" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">minor or major</text>
+
+        <!-- route A -->
+        <rect x="780" y="496" width="210" height="68" rx="6" fill="#f5f5f5"/>
+        <rect x="780" y="496" width="210" height="68" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="788" y="502" width="34" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="805" y="511" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MINOR</text>
+        <text x="885" y="533" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Route A · minor</text>
+        <text x="885" y="549" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">SRS diff → LLD diff</text>
+
+        <!-- route B -->
+        <rect x="1040" y="496" width="210" height="68" rx="6" fill="#f5f5f5"/>
+        <rect x="1040" y="496" width="210" height="68" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="1048" y="502" width="34" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="1065" y="511" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MAJOR</text>
+        <text x="1145" y="533" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Route B · major</text>
+        <text x="1145" y="549" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">SRS → HLD → ADR → LLD</text>
+
+        <!-- task plan -->
+        <rect x="360" y="496" width="280" height="68" rx="6" fill="#f5f5f5"/>
+        <rect x="360" y="496" width="280" height="68" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="368" y="502" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="383" y="511" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PLAN</text>
+        <text x="500" y="533" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Task Plan · 06</text>
+        <text x="500" y="549" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">tasks + acceptance criteria</text>
+
+        <!-- tdd loop -->
+        <rect x="360" y="590" width="280" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="360" y="590" width="280" height="56" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1"/>
+        <rect x="368" y="596" width="28" height="12" rx="2" fill="transparent" stroke="rgba(191,69,32,0.50)" stroke-width="0.8"/>
+        <text x="382" y="605" fill="#bf4520" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LOOP</text>
+        <text x="500" y="621" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">TDD · 07–09</text>
+        <text x="500" y="637" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">test → implement → verdict</text>
+
+        <!-- legend -->
+        <line x1="40" y1="662" x2="1240" y2="662" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="40" y="684" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+
+        <rect x="140" y="675" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="162" y="684" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">STEP</text>
+
+        <polygon points="250,680 258,673 266,680 258,687" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="276" y="684" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">DECISION</text>
+
+        <rect x="390" y="675" width="14" height="10" rx="2" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1"/>
+        <text x="412" y="684" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">FOCAL</text>
+
+        <line x1="520" y1="680" x2="550" y2="680" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <text x="558" y="684" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">FAIL RETRY</text>
+
+        <line x1="680" y1="680" x2="710" y2="680" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="718" y="684" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">HANDOFF</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>
