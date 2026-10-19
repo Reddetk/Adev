@@ -98,7 +98,8 @@ func main() {
 	apphttp.SetupStageRoutes(apiRouter, container.StageHandler())
 
 	// Minimal frontend: target system setup and the first stage run.
-	// The UI lives in the frontend folder next to the Go module (FRONTEND_DIR).
+	// The UI is a Vite app in the frontend folder next to the Go module: make ui-build
+	// writes frontend/dist, which FRONTEND_DIR points at by default.
 	router.PathPrefix("/app/").Handler(http.StripPrefix("/app/", http.FileServer(http.Dir(cfg.FrontendDir))))
 	if _, err := os.Stat(cfg.FrontendDir); err != nil {
 		log.Printf("Warning: no frontend in %s, /app/ answers 404: %v", cfg.FrontendDir, err)

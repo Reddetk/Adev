@@ -3,3 +3,6 @@
 
 # Playwright MCP keeps its run logs and screenshots here.
 .playwright-mcp/
+# Node dependencies and the Vite build of the operator UI.
+frontend/node_modules/
+frontend/dist/

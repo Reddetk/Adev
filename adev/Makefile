@@ -42,7 +42,8 @@ endif
         migrate-install migrate-up migrate-down migrate-force db-reset \
         dev-db dev-db-stop \
         docker-build docker-run compose-up compose-down \
-        build-prod sec-scan api-docs mocks tag act-image ci-act ci-act-dry
+        build-prod sec-scan api-docs mocks tag act-image ci-act ci-act-dry \
+        ui-install ui-dev ui-build
 
 help:
 	@echo adev targets:
@@ -75,10 +76,23 @@ help:
 	@echo   make build-prod       build a static linux binary
 	@echo   make sec-scan         gosec, run make tools first
 	@echo   make api-docs         regenerate docs/ with swag, run make tools first
+	@echo   make ui-install       npm install in ../frontend, once after a clone
+	@echo   make ui-dev           vite dev server on 5173, proxies /api to this server
+	@echo   make ui-build         build ../frontend/dist, served by make run at /app/
 
 deps:
 	go mod download
 	go mod tidy
+
+# The operator UI is a Vite app in ../frontend, next to the Go module.
+ui-install:
+	npm --prefix ../frontend install
+
+ui-dev:
+	npm --prefix ../frontend run dev
+
+ui-build:
+	npm --prefix ../frontend run build
 
 tools:
 	go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest

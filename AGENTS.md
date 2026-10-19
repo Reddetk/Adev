@@ -38,6 +38,9 @@ make dev-db        поднять БД и дождаться healthcheck
 make migrate-up    применить миграции
 make run           запустить сервер с настройками из .env
 make tools         поставить migrate, golangci-lint, gosec, swag
+make ui-install    npm install в ../frontend, один раз после клона
+make ui-dev        Vite на 5173, проксирует /api на сервер
+make ui-build      собрать ../frontend/dist, make run отдаёт его на /app/
 ```
 
 `make` доступен через WinGet Links. `make test-race` требует cgo.
@@ -54,6 +57,17 @@ make ci-act ACT_JOB=unit        тот же job локально, ~80 с
 `ci-act` сам переходит в корень репозитория, потому что workflows и `.actrc` лежат там, а не в `adev/`.
 Postgres-job может попасть в ваш Postgres на 5432: запускайте его только когда там тестовая БД,
 либо используйте `make ci` и `make test-db`.
+
+## Frontend
+
+UI оператора — React + TypeScript + Vite в `frontend/`, рядом с модулем Go. Пока один экран:
+targetSystem → окружение → готовность → пайплайн → USER_INPUT → запуск стадии → формы.
+
+- Типы в `frontend/src/api.ts` повторяют DTO Go; единственный HTTP-слой, каждый запрос
+  попадает в журнал на экране — по нему и отлаживаем.
+- Разработка: `make ui-dev` → http://localhost:5173, Vite проксирует `/api` на :8080,
+  поэтому CORS не нужен. Сборка: `make ui-build` → `frontend/dist`, `make run` отдаёт её на `/app/`.
+- Библиотеки без нужды не добавлять: роутер, UI-кит и кеш запросов — когда экранов станет больше.
 
 ## Формы
 
