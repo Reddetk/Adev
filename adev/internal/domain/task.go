@@ -3,7 +3,7 @@ package domain
 type Task struct {
 	ID          uint   `json:"id"`
 	PipelineID  int    `json:"pipelineid" validate:"required,gte=0"`
-	ParentID    int    `json:"parentid" validate:"required,gte=0"`
+	ParentID    int    `json:"parentid" validate:"gte=0"`
 	Owner       string `json:"owner" validate:"required"`
 	TaskType    string `json:"tasktype" validate:"required"`
 	Status      string `json:"status" validate:"required"`

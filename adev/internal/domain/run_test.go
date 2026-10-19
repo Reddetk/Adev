@@ -92,7 +92,7 @@ func TestRun_Validate(t *testing.T) {
 			errMsg:  "attempts",
 		},
 		{
-			name: "invalid run - empty string",
+			name: "valid run - empty lasterror is allowed",
 			run: Run{
 				PipelineID:   1,
 				Stage:        "valid value",
@@ -101,8 +101,7 @@ func TestRun_Validate(t *testing.T) {
 				Attempts:     1,
 				LastError:    "",
 			},
-			wantErr: true,
-			errMsg:  "lasterror",
+			wantErr: false,
 		},
 	}
 
@@ -302,14 +301,15 @@ func TestRun_Attempts_NumericValidation(t *testing.T) {
 	}
 }
 
-// TestRun_LastError_EdgeCases tests edge cases for LastError field
+// TestRun_LastError_EdgeCases tests edge cases for LastError field.
+// An empty LastError is valid: a successful run has no error text.
 func TestRun_LastError_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name    string
 		value   string
 		wantErr bool
 	}{
-		{name: "empty string", value: "", wantErr: true},
+		{name: "empty string", value: "", wantErr: false},
 		{name: "valid value", value: "Valid Name", wantErr: false},
 	}
 

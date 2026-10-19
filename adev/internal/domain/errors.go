@@ -26,7 +26,6 @@ var (
 	ErrInvalidRunCheckpointID                = errors.New("checkpointid is required")
 	ErrInvalidRunAttempts                    = errors.New("attempts is required")
 	ErrInvalidRunAttemptsRange               = errors.New("attempts must be a positive number")
-	ErrInvalidRunLastError                   = errors.New("lasterror is required")
 	ErrInvalidOperatorRequestPipelineID      = errors.New("pipelineid is required")
 	ErrInvalidOperatorRequestPipelineIDRange = errors.New("pipelineid must be a positive number")
 	ErrInvalidOperatorRequestPointer         = errors.New("pointer is required")

@@ -6,10 +6,11 @@ type Run struct {
 	Stage        string `json:"stage" validate:"required"`
 	Status       string `json:"status" validate:"required"`
 	CheckpointID string `json:"checkpointid" validate:"required"`
-	Attempts     int    `json:"attempts" validate:"required,gte=0"`
-	LastError    string `json:"lasterror" validate:"required"`
+	Attempts     int    `json:"attempts" validate:"gte=0"`
+	LastError    string `json:"lasterror"`
 }
 
+// Validate checks the run. A successful run has no error text, so LastError is optional.
 func (r *Run) Validate() error {
 	if r.PipelineID < 0 {
 		return ErrInvalidRunPipelineID
@@ -25,9 +26,6 @@ func (r *Run) Validate() error {
 	}
 	if r.Attempts < 0 {
 		return ErrInvalidRunAttempts
-	}
-	if r.LastError == "" {
-		return ErrInvalidRunLastError
 	}
 	return nil
 }

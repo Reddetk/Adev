@@ -5,10 +5,10 @@ type ModelCall struct {
 	RunID     int     `json:"runid" validate:"required,gte=0"`
 	Profile   string  `json:"profile" validate:"required"`
 	Model     string  `json:"model" validate:"required"`
-	TokensIn  int     `json:"tokensin" validate:"required,gte=0"`
-	TokensOut int     `json:"tokensout" validate:"required,gte=0"`
-	Cost      float64 `json:"cost" validate:"required,gte=0"`
-	LatencyMs int     `json:"latencyms" validate:"required,gte=0"`
+	TokensIn  int     `json:"tokensin" validate:"gte=0"`
+	TokensOut int     `json:"tokensout" validate:"gte=0"`
+	Cost      float64 `json:"cost" validate:"gte=0"`
+	LatencyMs int     `json:"latencyms" validate:"gte=0"`
 }
 
 func (m *ModelCall) Validate() error {

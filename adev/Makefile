@@ -58,7 +58,7 @@ help:
 	@echo   make fmt              gofmt the tree
 	@echo   make vet              go vet the tree
 	@echo   make lint             golangci-lint, run make tools first
-	@echo   make mocks            regenerate testify mocks with goca
+	@echo   make mocks NAME=Pipeline   preview goca mock regeneration for one entity
 	@echo   make act-image      build the local runner image for act, about 700 MB
 	@echo   make ci-act ACT_JOB=unit       run a GitHub Actions job locally with act
 	@echo   make ci-act-dry ACT_JOB=unit   show the act plan, starts no container
@@ -91,8 +91,11 @@ build:
 
 ci: vet test
 
+# goca templates still assume the old internal/repository layout, so this prints the
+# plan first. Drop --dry-run, read the diff, and fix the imports before committing.
 mocks:
-	goca mocks
+	@$(if $(strip $(NAME)),,$(error pass NAME, for example: make mocks NAME=Pipeline))
+	goca mocks $(NAME) --repository --usecase --dry-run
 
 tag:
 	@$(if $(filter v%,$(VERSION)),,$(error pass a version tag, for example: make tag VERSION=v0.1.0))

@@ -9,7 +9,7 @@ type AuditEvent struct {
 	PipelineID int       `json:"pipelineid" validate:"required,gte=0"`
 	RunID      int       `json:"runid" validate:"required,gte=0"`
 	EventType  string    `json:"eventtype" validate:"required"`
-	CreatedAt  time.Time `json:"createdat" validate:"required"`
+	CreatedAt  time.Time `json:"createdat"`
 }
 
 func (a *AuditEvent) Validate() error {
