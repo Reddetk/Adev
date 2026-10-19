@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Reddetk/Adev/internal/domain"
@@ -83,6 +84,10 @@ func (s *PostgresAgentConfigStore) UpsertAgent(ctx context.Context, config domai
 		config.APIKey, config.Temperature, config.MaxTokens,
 	)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return fmt.Errorf("%w: target system %d", domain.ErrSettingNotFound, config.TargetSystemID)
+		}
 		return fmt.Errorf("upsert agent: %w", err)
 	}
 	return nil
