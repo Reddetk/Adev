@@ -315,3 +315,54 @@ func TestN6ANonJSONPayloadCountsAsARejection(t *testing.T) {
 	assert.Len(t, outcome.Gaps, 3)
 	assert.True(t, strings.Contains(strings.ToLower(outcome.Gaps[0]), "json"), "the reason must name the encoding problem")
 }
+
+// --- E2 ---------------------------------------------------------------------
+
+func TestE2AValidPayloadOnTheLastAttemptSucceeds(t *testing.T) {
+	fixture := newM2Fixture(t, brdWithoutGoals(), brdWithoutGoals(), validBRD())
+	fixture.configure(t)
+	fixture.submitUserInput(t, 1)
+
+	outcome, err := fixture.runStage00(t)
+
+	require.NoError(t, err)
+	assert.False(t, outcome.Blocked, "the last allowed attempt must not be given up on")
+	assert.Equal(t, 3, outcome.Attempts)
+	assert.Equal(t, 1, outcome.FormVersion)
+
+	require.Len(t, fixture.llm.requests, 3)
+	assert.Len(t, fixture.llm.requests[2].Problems, 2, "the last attempt must see both earlier failures")
+
+	stored, err := fixture.forms.Latest(context.Background(), stageOutput)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stored.FormVersion)
+
+	require.Len(t, fixture.runs.runs, 1)
+	assert.Equal(t, "done", fixture.runs.runs[0].Status)
+	assert.Equal(t, 3, fixture.runs.runs[0].Attempts)
+}
+
+// --- E3 ---------------------------------------------------------------------
+
+func TestE3TheStageReadsTheLatestVersionOfItsInput(t *testing.T) {
+	fixture := newM2Fixture(t, validBRD())
+	fixture.configure(t)
+	fixture.submitUserInput(t, 1)
+	latest := fixture.submitUserInput(t, 2)
+
+	outcome, err := fixture.runStage00(t)
+
+	require.NoError(t, err)
+	assert.False(t, outcome.Blocked)
+
+	stored, err := fixture.forms.Latest(context.Background(), stageOutput)
+	require.NoError(t, err)
+	require.Len(t, stored.Inputs, 1)
+	assert.Equal(t, 2, stored.Inputs[0].FormVersion, "the latest input version must be the one referenced")
+	assert.Equal(t, latest.PayloadHash, stored.Inputs[0].Hash, "the reference must carry the hash of that version")
+
+	require.Len(t, fixture.llm.requests, 1)
+	var stageContext map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(fixture.llm.requests[0].Context, &stageContext))
+	assert.Contains(t, string(stageContext["USER_INPUT"]), "two branches", "the model must see the text of the latest version")
+}
