@@ -43,6 +43,10 @@
   #log .ok { color:#8fd19e; }
   #log .bad { color:#f0a08c; }
   #log .req { color:#9ec1f0; }
+  #form-view { display:none; margin-top:10px; max-height:420px; overflow:auto; background:#1f2231; color:#e6e6ea;
+    border-radius:8px; padding:10px; font-family:ui-monospace, Consolas, monospace; font-size:11px; white-space:pre-wrap; }
+  #forms tr[data-form] { cursor:pointer; }
+  #forms tr[data-form]:hover { background:#fbf6f2; }
 </style>
 </head>
 <body>
@@ -119,7 +123,9 @@
           <option value="BRD">BRD</option>
         </select>
       </div>
+      <p class="hint">Нажмите строку — покажу содержимое формы.</p>
       <table id="forms"></table>
+      <pre id="form-view"></pre>
     </section>
   </div>
 
@@ -307,21 +313,47 @@ document.getElementById('btn-run').onclick = async () => {
     : `<span class="state ok">done</span> ${escape(outcome.formId)} v${outcome.formVersion} · попыток: ${outcome.attempts}`;
   card('run-state', `<div class="card">${head}</div>` +
     (outcome.gaps || []).map((gap) => `<div class="card mono">${escape(gap)}</div>`).join(''));
+  if (!outcome.blocked) {
+    // Show the result of the stage at once: it is what the operator came for.
+    await showForm(outcome.formId, outcome.formVersion);
+  }
 };
 
 // 7 — forms of the pipeline
+// showForm renders the stored payload of one form. The form is the result of a
+// stage, so the operator reads it here instead of opening the database.
+async function showForm(formId, version) {
+  const result = await call('GET', `/api/v1/forms/${formId}/versions/${version}`);
+  if (!result.ok) return;
+  const view = document.getElementById('form-view');
+  view.style.display = 'block';
+  view.textContent = `${result.body.formType} ${formId} v${result.body.formVersion} · status=${result.body.status} · ${result.body.payloadHash}\n\n` +
+    JSON.stringify(result.body.payload, null, 2);
+}
+
+function renderForms(forms) {
+  const table = document.getElementById('forms');
+  if (!forms.length) {
+    table.innerHTML = '<tr><td>форм этого типа пока нет</td></tr>';
+    return;
+  }
+  table.innerHTML =
+    '<tr><th>form</th><th>v</th><th>status</th><th>hash</th><th>inputs</th></tr>' +
+    forms.map((form) => `<tr data-form="${escape(form.formId)}" data-version="${escape(form.formVersion)}">` +
+      `<td>${escape(form.formId)}</td><td>${escape(form.formVersion)}</td><td>${escape(form.status)}</td>` +
+      `<td class="mono">${escape(form.payloadHash).slice(0, 18)}…</td>` +
+      `<td class="mono">${escape((form.inputs || []).map((ref) => ref.formId + ':' + ref.formVersion).join(', '))}</td></tr>`).join('');
+  table.querySelectorAll('tr[data-form]').forEach((row) => {
+    row.onclick = () => showForm(row.dataset.form, row.dataset.version);
+  });
+}
+
 document.getElementById('btn-forms').onclick = async () => {
   if (!state.pipelineId) { log('bad', '✗ сначала создайте пайплайн'); return; }
   const type = document.getElementById('forms-type').value;
   const result = await call('GET', `/api/v1/pipelines/${state.pipelineId}/forms?type=${type}`);
   if (!result.ok) return;
-  if (!result.body.length) {
-    document.getElementById('forms').innerHTML = '<tr><td>форм этого типа пока нет</td></tr>';
-    return;
-  }
-  document.getElementById('forms').innerHTML =
-    '<tr><th>form</th><th>v</th><th>status</th><th>hash</th><th>inputs</th></tr>' +
-    result.body.map((form) => `<tr><td>${escape(form.formId)}</td><td>${escape(form.formVersion)}</td><td>${escape(form.status)}</td><td class="mono">${escape(form.payloadHash).slice(0, 18)}…</td><td class="mono">${escape((form.inputs || []).map((ref) => ref.formId + ':' + ref.formVersion).join(', '))}</td></tr>`).join('');
+  renderForms(result.body);
 };
 
 log('req', 'Готово. Идите по шагам 1→6; каждая ошибка видна ниже и в этом журнале.');
