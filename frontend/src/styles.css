@@ -36,6 +36,17 @@ header p {
   font-size: 12px;
 }
 
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.tabs .hint {
+  margin: 0 0 0 4px;
+}
+
 main {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 420px);

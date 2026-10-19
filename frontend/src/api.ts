@@ -27,6 +27,14 @@ export type Plan = {
 
 export type Pipeline = { id: number; route: string; stage: string; readiness: Readiness };
 
+export type PipelineRow = {
+  id: number;
+  targetsystemid: number;
+  route: string;
+  status: string;
+  currentstage: string;
+};
+
 export type AgentView = {
   role: string;
   provider: string;
@@ -142,6 +150,7 @@ export function createApi(onLog: (entry: LogEntry) => void) {
       call<ModelCheckResult>('POST', `/targetsystems/${id}/agents/${role}/check`, draft),
     plan: (id: number) => call<Plan>('GET', `/targetsystems/${id}/plan`),
     createPipeline: (id: number) => call<Pipeline>('POST', `/targetsystems/${id}/pipelines`, { route: 'greenfield' }),
+    listPipelines: () => call<{ pipelines: PipelineRow[] }>('GET', '/pipelines'),
     submitForm: (form: unknown) => call<FormDetail>('POST', '/forms', form),
     runStage: (id: number, stage: string, pipelineId: string) =>
       call<StageOutcome>('POST', `/targetsystems/${id}/stages/${stage}/run`, { pipelineId, route: 'greenfield' }),

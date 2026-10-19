@@ -7,6 +7,7 @@ import {
   type FormDetail,
   type FormSummary,
   type LogEntry,
+  type PipelineRow,
   type Plan,
   type StageOutcome,
   type TargetSystemSummary,
@@ -37,13 +38,20 @@ const STORAGE_KEY = 'adev.console';
 
 type SavedState = {
   targetSystemId: number | null;
-  pipeline: { id: number; stage: string } | null;
+  pipeline: PipelineChoice | null;
+  view: View;
   name: string;
   description: string;
   workspaceDir: string;
   agents: Omit<AgentDraft, 'apiKey'>[];
   request: string;
 };
+
+// View is the tab the operator works in.
+type View = 'work' | 'settings';
+
+// PipelineChoice is the pipeline the work tab watches.
+type PipelineChoice = { id: number; stage: string; route: string; status: string };
 
 function loadSaved(): Partial<SavedState> {
   try {
@@ -76,7 +84,18 @@ export default function App() {
   const [checking, setChecking] = useState('');
   const [agentsSaved, setAgentsSaved] = useState<string[]>([]);
   const [plan, setPlan] = useState<Plan | null>(null);
-  const [pipeline, setPipeline] = useState<{ id: number; stage: string } | null>(saved.pipeline ?? null);
+  const [pipeline, setPipeline] = useState<PipelineChoice | null>(
+    saved.pipeline
+      ? {
+          id: saved.pipeline.id,
+          stage: saved.pipeline.stage ?? '00',
+          route: saved.pipeline.route ?? 'greenfield',
+          status: saved.pipeline.status ?? 'ready',
+        }
+      : null,
+  );
+  const [pipelines, setPipelines] = useState<PipelineRow[]>([]);
+  const [view, setView] = useState<View>(saved.view ?? 'work');
   const [request, setRequest] = useState(
     saved.request ?? 'The operator needs a library accounting system for two branches.',
   );
@@ -97,6 +116,7 @@ export default function App() {
     const state: SavedState = {
       targetSystemId: targetSystem?.id ?? null,
       pipeline: pipeline ?? null,
+      view,
       name,
       description,
       workspaceDir,
@@ -114,8 +134,7 @@ export default function App() {
     } catch {
       // A browser in private mode has no storage. The console still works.
     }
-  }, [targetSystem, pipeline, name, description, workspaceDir, agents, request]);
-
+  }, [targetSystem, pipeline, view, name, description, workspaceDir, agents, request]);
   // A restored target system has agent configs on the server: show which keys are set.
   useEffect(() => {
     if (!targetSystemId) return;
@@ -147,6 +166,29 @@ export default function App() {
       .then((list) => setSystems(list.targetsystems))
       .catch(() => undefined);
   }, [api, targetSystemId]);
+
+  // The work tab watches the pipelines of the selected system, so it reads the list
+  // and the readiness of that system without a button press.
+  useEffect(() => {
+    if (view !== 'work' || !targetSystemId) return;
+    void api
+      .listPipelines()
+      .then((list) => setPipelines(list.pipelines.filter((row) => row.targetsystemid === targetSystemId)))
+      .catch(() => setPipelines([]));
+    void api.plan(targetSystemId).then(setPlan).catch(() => setPlan(null));
+  }, [api, view, targetSystemId]);
+
+  // The work tab is a monitor: it shows the forms of the watched pipeline without a
+  // button press.
+  useEffect(() => {
+    if (view !== 'work' || !pipelineId) {
+      return;
+    }
+    void api
+      .formsByPipeline(pipelineId, formType)
+      .then(setForms)
+      .catch(() => setForms(null));
+  }, [api, view, pipelineId, formType]);
 
   // Switching the system drops everything that belongs to the old one.
   function switchTarget(id: number) {
@@ -234,7 +276,13 @@ export default function App() {
   async function createPipeline() {
     if (!targetSystemId) return;
     const created = await api.createPipeline(targetSystemId).catch(() => null);
-    if (created) setPipeline({ id: created.id, stage: created.stage });
+    if (created) {
+      setPipeline({ id: created.id, stage: created.stage, route: created.route, status: 'ready' });
+      setPipelines((previous) => [
+        ...previous,
+        { id: created.id, targetsystemid: targetSystemId, route: created.route, status: 'ready', currentstage: created.stage },
+      ]);
+    }
   }
 
   async function submitInput() {
@@ -275,10 +323,12 @@ export default function App() {
     try {
       const result = await api.runStage(targetSystemId, STAGE_BRD, pipelineId);
       setOutcome(result);
-      // The result of the stage is the form it stored: open it right away.
+      // The result of the stage is the form it stored: open it right away and refresh
+      // the list the operator watches.
       if (!result.blocked) {
         setOpened(await api.form(result.formId, result.formVersion).catch(() => null));
       }
+      void api.formsByPipeline(pipelineId, formType).then(setForms).catch(() => undefined);
     } catch (error) {
       setRunError(`${String(error)}${failureHint(error)}`);
     } finally {
@@ -297,16 +347,39 @@ export default function App() {
 
   const ready = targetSystemId > 0;
   const hasPipeline = pipeline !== null;
+  const configured = plan?.readiness.ready ?? false;
+  const currentSystem = systems.find((system) => system.id === targetSystemId);
 
   return (
     <>
       <header>
-        <h1>adev · подготовка среды и запуск пайплайна</h1>
-        <p>React + TypeScript: targetSystem → окружение → готовность → пайплайн → стадия 00 → формы</p>
+        <h1>adev · консоль оператора</h1>
+        <div className="tabs">
+          <button className={view === 'work' ? '' : 'ghost'} onClick={() => setView('work')}>
+            Работа
+          </button>
+          <button className={view === 'settings' ? '' : 'ghost'} onClick={() => setView('settings')}>
+            Настройки
+          </button>
+          <span className="hint">
+            {targetSystemId
+              ? `target system ${targetSystemId}${currentSystem ? ' · ' + currentSystem.name : ''}`
+              : 'target system не выбран'}
+          </span>
+        </div>
       </header>
 
       <main>
-        <div>
+        <div>{view === 'settings' ? settingsView() : workView()}</div>
+
+        <LogPanel entries={entries} />
+      </main>
+    </>
+  );
+
+  function settingsView() {
+    return (
+      <>
           <Section title="1. Target system" hint="Мнимая система, которую разрабатывает adev. GitHub-репозиторий не нужен.">
             <Field label="Уже созданные">
               <select
@@ -481,24 +554,80 @@ export default function App() {
               </table>
             )}
           </Section>
+        </>
+      );
+    }
 
-          <Section title="4. Пайплайн" hint="Маршрут принадлежит реестру стадий; агент не выбирает следующую стадию.">
+  function workView() {
+    if (!ready) {
+      return (
+        <Section title="Работа" hint="Нужен target system.">
+          <Cards>
+            <Card>target system не выбран — настройте его на вкладке «Настройки».</Card>
+          </Cards>
+          <Actions>
+            <button onClick={() => setView('settings')}>Перейти в настройки</button>
+          </Actions>
+        </Section>
+      );
+    }
+
+    return (
+      <>
+          {plan && !configured && (
+            <Section title="Среда не готова" hint="Пайплайн не стартует, пока на каждую роль нет валидного агента.">
+              <Cards>
+                {(plan.readiness.missing ?? []).map((item) => (
+                  <Card key={item}>{item}</Card>
+                ))}
+              </Cards>
+              <Actions>
+                <button onClick={() => setView('settings')}>Исправить в настройках</button>
+              </Actions>
+            </Section>
+          )}
+
+          <Section title="1. Пайплайн" hint="Маршрут принадлежит реестру стадий; агент не выбирает следующую стадию.">
+            <Field label="Пайплайн системы">
+              <select
+                value={pipeline?.id ?? ''}
+                onChange={(event) => {
+                  const chosen = pipelines.find((row) => row.id === Number(event.target.value));
+                  setPipeline(
+                    chosen
+                      ? { id: chosen.id, stage: chosen.currentstage, route: chosen.route, status: chosen.status }
+                      : null,
+                  );
+                  setForms(null);
+                  setOpened(null);
+                  setOutcome(null);
+                  setInputForm(null);
+                }}
+              >
+                <option value="">— не выбран —</option>
+                {pipelines.map((row) => (
+                  <option key={row.id} value={row.id}>
+                    {row.id} · {row.status} · стадия {row.currentstage}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <Actions>
-              <button disabled={!ready} onClick={createPipeline}>
+              <button disabled={!configured} onClick={createPipeline}>
                 Создать пайплайн
               </button>
             </Actions>
             <Cards>
               {pipeline && (
                 <Card>
-                  pipelineId=<b>{pipeline.id}</b> · route={ROUTE_GREENFIELD} · stage={pipeline.stage}{' '}
-                  <Badge tone="ok">создан</Badge>
+                  работаем с пайплайном <b>{pipeline.id}</b> · route={pipeline.route ?? ROUTE_GREENFIELD} · стадия{' '}
+                  {pipeline.stage} · {pipeline.status}
                 </Card>
               )}
             </Cards>
           </Section>
 
-          <Section title="5. Входная форма USER_INPUT" hint="Сырой запрос оператора. Сохраняется как форма, чтобы входные данные стадии были полными.">
+          <Section title="2. Запрос оператора" hint="Сырой запрос. Сохраняется как форма, чтобы вход стадии был полным.">
             <textarea value={request} onChange={(event) => setRequest(event.target.value)} />
             <Actions>
               <button disabled={!hasPipeline} onClick={submitInput}>
@@ -514,10 +643,13 @@ export default function App() {
             </Cards>
           </Section>
 
-          <Section title="6. Запуск стадии 00" hint="Агент-аналитик читает USER_INPUT, заполняет BRD и сдаёт форму. До трёх попыток, ошибки гейтов уходят модели.">
+          <Section title="3. Выполнение" hint="Агент-аналитик читает запрос, заполняет BRD и сдаёт форму. До трёх попыток, ошибки гейтов уходят модели.">
             <Actions>
               <button disabled={!hasPipeline || running} onClick={runStage}>
                 {running ? 'Модель работает…' : 'Запустить стадию 00'}
+              </button>
+              <button className="ghost" disabled={!hasPipeline} onClick={loadForms}>
+                Обновить формы
               </button>
             </Actions>
             <Cards>
@@ -548,11 +680,8 @@ export default function App() {
             </Cards>
           </Section>
 
-          <Section title="7. Формы пайплайна" hint="Нажмите строку — покажу содержимое формы.">
+          <Section title="4. Формы пайплайна" hint="Нажмите строку — покажу содержимое формы.">
             <Actions>
-              <button className="ghost" disabled={!hasPipeline} onClick={loadForms}>
-                Обновить список
-              </button>
               <select value={formType} onChange={(event) => setFormType(event.target.value)}>
                 <option value="USER_INPUT">USER_INPUT</option>
                 <option value="BRD">BRD</option>
@@ -593,12 +722,9 @@ export default function App() {
             )}
             {opened && <FormDocument form={opened} raw={rawPayload} />}
           </Section>
-        </div>
-
-        <LogPanel entries={entries} />
-      </main>
-    </>
-  );
+      </>
+    );
+  }
 
   function updateAgent(index: number, patch: Partial<AgentDraft>) {
     setAgents((previous) => previous.map((agent, i) => (i === index ? { ...agent, ...patch } : agent)));
