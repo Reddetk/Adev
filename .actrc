@@ -1,0 +1,11 @@
+# act runs every ubuntu-latest job in the local runner image.
+# Build it once with: make act-image
+#
+# --pull=false is required: act pulls images by default and the local runner
+# image is not in a registry.
+# --artifact-server-path gives upload-artifact@v4 the ACTIONS_RUNTIME_TOKEN it needs.
+-P ubuntu-latest=adev-act:latest
+--pull=false
+--action-offline-mode
+--artifact-server-path .act/artifacts
+--rm

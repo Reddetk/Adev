@@ -1,0 +1,50 @@
+name: Build
+
+# Build only on a version tag or a manual run.
+# A normal push runs the tests in test.yml and nothing else.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build binary and image
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: adev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # git describe needs the tags, so the shallow clone is not enough.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: adev/go.mod
+          cache-dependency-path: adev/go.sum
+
+      - name: Resolve version
+        id: version
+        run: echo "value=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary
+        run: make build-prod VERSION=${{ steps.version.outputs.value }} BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+      - name: Report the embedded version
+        run: ./bin/adev -version
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          docker build -t adev:${{ steps.version.outputs.value }} .
+          docker tag adev:${{ steps.version.outputs.value }} adev:latest
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: adev-${{ steps.version.outputs.value }}-linux-amd64
+          path: adev/bin/adev

@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS audit_events;
+DROP TABLE IF EXISTS model_calls;
+DROP TABLE IF EXISTS tasks;
+DROP TABLE IF EXISTS object_entries;
+DROP TABLE IF EXISTS form_refs;
+DROP TABLE IF EXISTS operator_requests;
+DROP TABLE IF EXISTS runs;
+DROP TABLE IF EXISTS form_records;
+DROP TABLE IF EXISTS pipelines;
+DROP TABLE IF EXISTS target_systems;

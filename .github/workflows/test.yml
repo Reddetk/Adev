@@ -1,0 +1,86 @@
+name: Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: adev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: adev/go.mod
+          cache-dependency-path: adev/go.sum
+
+      - name: Format check
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "these files need gofmt:"
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test with coverage
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Upload coverage
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: adev/coverage.out
+
+  postgres:
+    name: Postgres store tests
+    runs-on: ubuntu-latest
+    # The runner starts a throwaway database, so CI needs no server of its own.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: adev_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: adev
+    env:
+      ADEV_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/adev_test?sslmode=disable
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/adev_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: adev/go.mod
+          cache-dependency-path: adev/go.sum
+
+      - name: Install migrate
+        run: go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+      - name: Apply migrations
+        run: make migrate-up
+
+      - name: Postgres store tests
+        run: make test-db

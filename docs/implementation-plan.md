@@ -1,5 +1,14 @@
 # adev on eino — gap analysis and implementation plan
 
+> **Обновление после рефакторинга CA.** Слои приведены к каркасу goca:
+> `domain` (сущности и правила) → `usecase` (сервисы, DTO и **порты**) → `repository` (pgx-адаптеры) → `handler` (http/cli/worker) → `di` (композиция).
+> Пакеты `internal/forms`, `internal/registry`, `internal/pipeline`, `internal/settings`, `internal/constants` больше не существуют:
+> их содержимое разложено по слоям (`domain/form*.go`, `domain/stage.go`, `domain/readiness.go`, `domain/agent_config.go`, `domain/object.go`,
+> `usecase/form_service.go`, `usecase/settings_service.go`, `usecase/registry_service.go`, `usecase/planner.go`,
+> `repository/forms_store.go`, `repository/agent_config_store.go`).
+> Где ниже упоминаются старые пути, читайте их как «соответствующий слой». Детали — в `docs/ca-refactor-plan.md`.
+> Порты объявляет `usecase`; в `domain` нет ни `context.Context`, ни I/O.
+
 Дата: 2026-10-19. Статус: план, не реализация.
 Основа: `SysReq.md`, `Arhitecture.md`, `form-registry/`, `targetObjects.md`.
 

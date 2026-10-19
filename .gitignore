@@ -1,0 +1,2 @@
+# act writes downloaded artifacts here; the runner image is reused between runs.
+.act/

@@ -1,0 +1,2102 @@
+basePath: /api/v1
+definitions:
+  domain.AgentView:
+    properties:
+      baseUrl:
+        type: string
+      hasApiKey:
+        type: boolean
+      maxTokens:
+        type: integer
+      model:
+        type: string
+      provider:
+        $ref: '#/definitions/domain.Provider'
+      role:
+        $ref: '#/definitions/domain.Role'
+      temperature:
+        type: number
+    type: object
+  domain.AuditEvent:
+    properties:
+      createdat:
+        type: string
+      eventtype:
+        type: string
+      id:
+        type: integer
+      pipelineid:
+        minimum: 0
+        type: integer
+      runid:
+        minimum: 0
+        type: integer
+    required:
+    - createdat
+    - eventtype
+    - pipelineid
+    - runid
+    type: object
+  domain.FormType:
+    enum:
+    - USER_INPUT
+    - BRD
+    - FEASIBILITY
+    - CR_BRIEF
+    - IMPACT_ASSESSMENT
+    - SRS
+    - HLD
+    - ADR
+    - LLD
+    - TASK_PLAN
+    - TEST_CONTRACT
+    - IMPLEMENTATION_SPEC
+    - VERDICT
+    - REFACTOR_SPEC
+    - QUESTION
+    type: string
+    x-enum-varnames:
+    - TypeUserInput
+    - TypeBRD
+    - TypeFeasibility
+    - TypeCRBrief
+    - TypeImpactAssessment
+    - TypeSRS
+    - TypeHLD
+    - TypeADR
+    - TypeLLD
+    - TypeTaskPlan
+    - TypeTestContract
+    - TypeImplementationSpec
+    - TypeVerdict
+    - TypeRefactorSpec
+    - TypeQuestion
+  domain.ModelCall:
+    properties:
+      cost:
+        minimum: 0
+        type: number
+      id:
+        type: integer
+      latencyms:
+        minimum: 0
+        type: integer
+      model:
+        type: string
+      profile:
+        type: string
+      runid:
+        minimum: 0
+        type: integer
+      tokensin:
+        minimum: 0
+        type: integer
+      tokensout:
+        minimum: 0
+        type: integer
+    required:
+    - cost
+    - latencyms
+    - model
+    - profile
+    - runid
+    - tokensin
+    - tokensout
+    type: object
+  domain.OperatorRequest:
+    properties:
+      blocking:
+        type: boolean
+      id:
+        type: integer
+      pipelineid:
+        minimum: 0
+        type: integer
+      pointer:
+        type: string
+      question:
+        type: string
+      status:
+        type: string
+    required:
+    - pipelineid
+    - pointer
+    - question
+    - status
+    type: object
+  domain.Pipeline:
+    properties:
+      currentstage:
+        type: string
+      id:
+        type: integer
+      route:
+        type: string
+      status:
+        type: string
+      targetsystemid:
+        minimum: 0
+        type: integer
+    required:
+    - currentstage
+    - route
+    - status
+    - targetsystemid
+    type: object
+  domain.Provider:
+    enum:
+    - openai
+    - ollama
+    - openrouter
+    - qwen
+    - deepseek
+    - ark
+    type: string
+    x-enum-varnames:
+    - ProviderOpenAI
+    - ProviderOllama
+    - ProviderOpenRouter
+    - ProviderQwen
+    - ProviderDeepSeek
+    - ProviderArk
+  domain.Readiness:
+    properties:
+      missing:
+        items:
+          type: string
+        type: array
+      ready:
+        type: boolean
+    type: object
+  domain.Role:
+    enum:
+    - operator
+    - analyst
+    - architect
+    - qa
+    - dev
+    - devops
+    type: string
+    x-enum-varnames:
+    - RoleOperator
+    - RoleAnalyst
+    - RoleArchitect
+    - RoleQA
+    - RoleDev
+    - RoleDevOps
+  domain.Route:
+    enum:
+    - greenfield
+    - change
+    type: string
+    x-enum-varnames:
+    - RouteGreenfield
+    - RouteChange
+  domain.Run:
+    properties:
+      attempts:
+        minimum: 0
+        type: integer
+      checkpointid:
+        type: string
+      id:
+        type: integer
+      lasterror:
+        type: string
+      pipelineid:
+        minimum: 0
+        type: integer
+      stage:
+        type: string
+      status:
+        type: string
+    required:
+    - attempts
+    - checkpointid
+    - lasterror
+    - pipelineid
+    - stage
+    - status
+    type: object
+  domain.Stage:
+    properties:
+      id:
+        type: string
+      inputs:
+        items:
+          $ref: '#/definitions/domain.FormType'
+        type: array
+      name:
+        type: string
+      outputs:
+        items:
+          $ref: '#/definitions/domain.FormType'
+        type: array
+      owner:
+        $ref: '#/definitions/domain.Role'
+    type: object
+  domain.TargetSystem:
+    properties:
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      repourl:
+        type: string
+    required:
+    - description
+    - name
+    - repourl
+    type: object
+  domain.Task:
+    properties:
+      contractref:
+        type: string
+      id:
+        type: integer
+      owner:
+        type: string
+      parentid:
+        minimum: 0
+        type: integer
+      pipelineid:
+        minimum: 0
+        type: integer
+      status:
+        type: string
+      tasktype:
+        type: string
+    required:
+    - contractref
+    - owner
+    - parentid
+    - pipelineid
+    - status
+    - tasktype
+    type: object
+  http.AgentListResponse:
+    properties:
+      agents:
+        items:
+          $ref: '#/definitions/domain.AgentView'
+        type: array
+    type: object
+  http.AgentRequest:
+    properties:
+      apiKey:
+        type: string
+      baseUrl:
+        example: http://localhost:11434
+        type: string
+      maxTokens:
+        example: 8192
+        type: integer
+      model:
+        example: qwen3-coder:30b
+        type: string
+      provider:
+        example: ollama
+        type: string
+      temperature:
+        example: 0.2
+        type: number
+    type: object
+  http.PipelineCreatedResponse:
+    properties:
+      id:
+        type: integer
+      readiness:
+        $ref: '#/definitions/domain.Readiness'
+      route:
+        $ref: '#/definitions/domain.Route'
+      stage:
+        type: string
+    type: object
+  http.PipelineRequest:
+    properties:
+      route:
+        example: greenfield
+        type: string
+    type: object
+  http.WorkspaceRequest:
+    properties:
+      dir:
+        example: D:\work\demo
+        type: string
+    type: object
+  http.WorkspaceResponse:
+    properties:
+      dir:
+        type: string
+    type: object
+  usecase.CreateAuditEventInput:
+    properties:
+      createdat:
+        type: string
+      eventtype:
+        type: string
+      pipelineid:
+        type: integer
+      runid:
+        type: integer
+    type: object
+  usecase.CreateAuditEventOutput:
+    properties:
+      createdat:
+        type: string
+      eventtype:
+        type: string
+      id:
+        type: integer
+      message:
+        type: string
+      pipelineid:
+        type: integer
+      runid:
+        type: integer
+    type: object
+  usecase.CreateModelCallInput:
+    properties:
+      cost:
+        type: number
+      latencyms:
+        type: integer
+      model:
+        type: string
+      profile:
+        type: string
+      runid:
+        type: integer
+      tokensin:
+        type: integer
+      tokensout:
+        type: integer
+    type: object
+  usecase.CreateModelCallOutput:
+    properties:
+      cost:
+        type: number
+      id:
+        type: integer
+      latencyms:
+        type: integer
+      message:
+        type: string
+      model:
+        type: string
+      profile:
+        type: string
+      runid:
+        type: integer
+      tokensin:
+        type: integer
+      tokensout:
+        type: integer
+    type: object
+  usecase.CreateOperatorRequestInput:
+    properties:
+      blocking:
+        type: boolean
+      pipelineid:
+        minimum: 1
+        type: integer
+      pointer:
+        minLength: 1
+        type: string
+      question:
+        minLength: 1
+        type: string
+      status:
+        minLength: 1
+        type: string
+    required:
+    - pipelineid
+    - pointer
+    - question
+    - status
+    type: object
+  usecase.CreateOperatorRequestOutput:
+    properties:
+      blocking:
+        type: boolean
+      id:
+        type: integer
+      message:
+        type: string
+      pipelineid:
+        type: integer
+      pointer:
+        type: string
+      question:
+        type: string
+      status:
+        type: string
+    type: object
+  usecase.CreatePipelineInput:
+    properties:
+      currentstage:
+        minLength: 1
+        type: string
+      route:
+        minLength: 1
+        type: string
+      status:
+        minLength: 1
+        type: string
+      targetsystemid:
+        minimum: 1
+        type: integer
+    required:
+    - currentstage
+    - route
+    - status
+    - targetsystemid
+    type: object
+  usecase.CreatePipelineOutput:
+    properties:
+      currentstage:
+        type: string
+      id:
+        type: integer
+      message:
+        type: string
+      route:
+        type: string
+      status:
+        type: string
+      targetsystemid:
+        type: integer
+    type: object
+  usecase.CreateRunInput:
+    properties:
+      attempts:
+        type: integer
+      checkpointid:
+        type: string
+      lasterror:
+        type: string
+      pipelineid:
+        type: integer
+      stage:
+        type: string
+      status:
+        type: string
+    type: object
+  usecase.CreateRunOutput:
+    properties:
+      attempts:
+        type: integer
+      checkpointid:
+        type: string
+      id:
+        type: integer
+      lasterror:
+        type: string
+      message:
+        type: string
+      pipelineid:
+        type: integer
+      stage:
+        type: string
+      status:
+        type: string
+    type: object
+  usecase.CreateTargetSystemInput:
+    properties:
+      description:
+        minLength: 1
+        type: string
+      name:
+        minLength: 1
+        type: string
+      repourl:
+        minLength: 1
+        type: string
+    required:
+    - description
+    - name
+    - repourl
+    type: object
+  usecase.CreateTargetSystemOutput:
+    properties:
+      description:
+        type: string
+      id:
+        type: integer
+      message:
+        type: string
+      name:
+        type: string
+      repourl:
+        type: string
+    type: object
+  usecase.CreateTaskInput:
+    properties:
+      contractref:
+        type: string
+      owner:
+        type: string
+      parentid:
+        type: integer
+      pipelineid:
+        type: integer
+      status:
+        type: string
+      tasktype:
+        type: string
+    type: object
+  usecase.CreateTaskOutput:
+    properties:
+      contractref:
+        type: string
+      id:
+        type: integer
+      message:
+        type: string
+      owner:
+        type: string
+      parentid:
+        type: integer
+      pipelineid:
+        type: integer
+      status:
+        type: string
+      tasktype:
+        type: string
+    type: object
+  usecase.ListAuditEventOutput:
+    properties:
+      auditevents:
+        items:
+          $ref: '#/definitions/domain.AuditEvent'
+        type: array
+      message:
+        type: string
+      total:
+        type: integer
+    type: object
+  usecase.ListModelCallOutput:
+    properties:
+      message:
+        type: string
+      modelcalls:
+        items:
+          $ref: '#/definitions/domain.ModelCall'
+        type: array
+      total:
+        type: integer
+    type: object
+  usecase.ListOperatorRequestOutput:
+    properties:
+      message:
+        type: string
+      operatorrequests:
+        items:
+          $ref: '#/definitions/domain.OperatorRequest'
+        type: array
+      total:
+        type: integer
+    type: object
+  usecase.ListPipelineOutput:
+    properties:
+      message:
+        type: string
+      pipelines:
+        items:
+          $ref: '#/definitions/domain.Pipeline'
+        type: array
+      total:
+        type: integer
+    type: object
+  usecase.ListRunOutput:
+    properties:
+      message:
+        type: string
+      runs:
+        items:
+          $ref: '#/definitions/domain.Run'
+        type: array
+      total:
+        type: integer
+    type: object
+  usecase.ListTargetSystemOutput:
+    properties:
+      message:
+        type: string
+      targetsystems:
+        items:
+          $ref: '#/definitions/domain.TargetSystem'
+        type: array
+      total:
+        type: integer
+    type: object
+  usecase.ListTaskOutput:
+    properties:
+      message:
+        type: string
+      tasks:
+        items:
+          $ref: '#/definitions/domain.Task'
+        type: array
+      total:
+        type: integer
+    type: object
+  usecase.Plan:
+    properties:
+      readiness:
+        $ref: '#/definitions/domain.Readiness'
+      route:
+        $ref: '#/definitions/domain.Route'
+      stages:
+        items:
+          $ref: '#/definitions/domain.Stage'
+        type: array
+      targetSystemId:
+        type: integer
+    type: object
+  usecase.UpdateAuditEventInput:
+    properties:
+      createdat:
+        type: string
+      eventtype:
+        type: string
+      pipelineid:
+        type: integer
+      runid:
+        type: integer
+    type: object
+  usecase.UpdateModelCallInput:
+    properties:
+      cost:
+        type: number
+      latencyms:
+        type: integer
+      model:
+        type: string
+      profile:
+        type: string
+      runid:
+        type: integer
+      tokensin:
+        type: integer
+      tokensout:
+        type: integer
+    type: object
+  usecase.UpdateOperatorRequestInput:
+    properties:
+      blocking:
+        type: boolean
+      pipelineid:
+        minimum: 1
+        type: integer
+      pointer:
+        minLength: 1
+        type: string
+      question:
+        minLength: 1
+        type: string
+      status:
+        minLength: 1
+        type: string
+    type: object
+  usecase.UpdatePipelineInput:
+    properties:
+      currentstage:
+        minLength: 1
+        type: string
+      route:
+        minLength: 1
+        type: string
+      status:
+        minLength: 1
+        type: string
+      targetsystemid:
+        minimum: 1
+        type: integer
+    type: object
+  usecase.UpdateRunInput:
+    properties:
+      attempts:
+        type: integer
+      checkpointid:
+        type: string
+      lasterror:
+        type: string
+      pipelineid:
+        type: integer
+      stage:
+        type: string
+      status:
+        type: string
+    type: object
+  usecase.UpdateTargetSystemInput:
+    properties:
+      description:
+        minLength: 1
+        type: string
+      name:
+        minLength: 1
+        type: string
+      repourl:
+        minLength: 1
+        type: string
+    type: object
+  usecase.UpdateTaskInput:
+    properties:
+      contractref:
+        type: string
+      owner:
+        type: string
+      parentid:
+        type: integer
+      pipelineid:
+        type: integer
+      status:
+        type: string
+      tasktype:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: 'Control plane of adev: target systems, pipelines, forms, runs, operator
+    requests.'
+  title: adev API
+  version: "1.0"
+paths:
+  /auditevents:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/usecase.ListAuditEventOutput'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List auditevents
+      tags:
+      - auditevents
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: AuditEvent payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.CreateAuditEventInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/usecase.CreateAuditEventOutput'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create auditevent
+      tags:
+      - auditevents
+  /auditevents/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: AuditEvent ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete auditevent
+      tags:
+      - auditevents
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: AuditEvent ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.AuditEvent'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get auditevent by ID
+      tags:
+      - auditevents
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: AuditEvent ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: AuditEvent payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.UpdateAuditEventInput'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update auditevent
+      tags:
+      - auditevents
+  /modelcalls:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/usecase.ListModelCallOutput'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List modelcalls
+      tags:
+      - modelcalls
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: ModelCall payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.CreateModelCallInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/usecase.CreateModelCallOutput'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create modelcall
+      tags:
+      - modelcalls
+  /modelcalls/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: ModelCall ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete modelcall
+      tags:
+      - modelcalls
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: ModelCall ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.ModelCall'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get modelcall by ID
+      tags:
+      - modelcalls
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: ModelCall ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ModelCall payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.UpdateModelCallInput'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update modelcall
+      tags:
+      - modelcalls
+  /operatorrequests:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/usecase.ListOperatorRequestOutput'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List operatorrequests
+      tags:
+      - operatorrequests
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: OperatorRequest payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.CreateOperatorRequestInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/usecase.CreateOperatorRequestOutput'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create operatorrequest
+      tags:
+      - operatorrequests
+  /operatorrequests/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: OperatorRequest ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete operatorrequest
+      tags:
+      - operatorrequests
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: OperatorRequest ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.OperatorRequest'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get operatorrequest by ID
+      tags:
+      - operatorrequests
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: OperatorRequest ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: OperatorRequest payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.UpdateOperatorRequestInput'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update operatorrequest
+      tags:
+      - operatorrequests
+  /pipelines:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/usecase.ListPipelineOutput'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List pipelines
+      tags:
+      - pipelines
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Pipeline payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.CreatePipelineInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/usecase.CreatePipelineOutput'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create pipeline
+      tags:
+      - pipelines
+  /pipelines/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: Pipeline ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete pipeline
+      tags:
+      - pipelines
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: Pipeline ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Pipeline'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get pipeline by ID
+      tags:
+      - pipelines
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Pipeline ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pipeline payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.UpdatePipelineInput'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update pipeline
+      tags:
+      - pipelines
+  /runs:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/usecase.ListRunOutput'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List runs
+      tags:
+      - runs
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Run payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.CreateRunInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/usecase.CreateRunOutput'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create run
+      tags:
+      - runs
+  /runs/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete run
+      tags:
+      - runs
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Run'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get run by ID
+      tags:
+      - runs
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Run ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Run payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.UpdateRunInput'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update run
+      tags:
+      - runs
+  /targetsystems:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/usecase.ListTargetSystemOutput'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List targetsystems
+      tags:
+      - targetsystems
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: TargetSystem payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.CreateTargetSystemInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/usecase.CreateTargetSystemOutput'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create targetsystem
+      tags:
+      - targetsystems
+  /targetsystems/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: TargetSystem ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete targetsystem
+      tags:
+      - targetsystems
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: TargetSystem ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.TargetSystem'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get targetsystem by ID
+      tags:
+      - targetsystems
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: TargetSystem ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: TargetSystem payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.UpdateTargetSystemInput'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update targetsystem
+      tags:
+      - targetsystems
+  /targetsystems/{id}/agents:
+    get:
+      parameters:
+      - description: Target system ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.AgentListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List the agent model configs
+      tags:
+      - settings
+  /targetsystems/{id}/agents/{role}:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Target system ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Agent role
+        enum:
+        - analyst
+        - architect
+        - qa
+        - dev
+        - devops
+        - operator
+        in: path
+        name: role
+        required: true
+        type: string
+      - description: Agent model config
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.AgentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.AgentView'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Set an agent model config
+      tags:
+      - settings
+  /targetsystems/{id}/pipelines:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Target system ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pipeline route
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.PipelineRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/http.PipelineCreatedResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: The route is not ready for this target system
+          schema:
+            $ref: '#/definitions/usecase.Plan'
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create a pipeline
+      tags:
+      - pipelines
+  /targetsystems/{id}/plan:
+    get:
+      parameters:
+      - description: Target system ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pipeline route
+        enum:
+        - greenfield
+        - change
+        in: query
+        name: route
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/usecase.Plan'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Plan a pipeline
+      tags:
+      - pipelines
+  /targetsystems/{id}/workspace:
+    get:
+      parameters:
+      - description: Target system ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.WorkspaceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get the workspace directory
+      tags:
+      - settings
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Target system ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Workspace directory
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.WorkspaceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/http.WorkspaceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Set the workspace directory
+      tags:
+      - settings
+  /tasks:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/usecase.ListTaskOutput'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List tasks
+      tags:
+      - tasks
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Task payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.CreateTaskInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/usecase.CreateTaskOutput'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create task
+      tags:
+      - tasks
+  /tasks/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete task
+      tags:
+      - tasks
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Task'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get task by ID
+      tags:
+      - tasks
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Task payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/usecase.UpdateTaskInput'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update task
+      tags:
+      - tasks
+swagger: "2.0"
