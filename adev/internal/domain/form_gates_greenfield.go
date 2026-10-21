@@ -69,31 +69,25 @@ func ValidateSRS(s SRS) error {
 	if len(s.FR) == 0 && len(s.NFR) == 0 {
 		errs = append(errs, invalid("fr", "at least one of fr or nfr must have an entry"))
 	}
-	for i, fr := range s.FR {
-		if fr.ID == "" {
-			errs = append(errs, invalid(fmt.Sprintf("fr[%d].id", i), "is empty"))
-		}
-		if fr.Statement.Text == "" {
-			errs = append(errs, invalid(fmt.Sprintf("fr[%d].statement", i), "is empty"))
-		}
-		if fr.Priority != PriorityMust && fr.Priority != PriorityHigh && fr.Priority != PriorityLow {
-			errs = append(errs, invalid(fmt.Sprintf("fr[%d].priority", i), fmt.Sprintf("unknown value %q", fr.Priority)))
-		}
-		if len(fr.Acceptance) == 0 {
-			errs = append(errs, invalid(fmt.Sprintf("fr[%d].acceptance", i), "must contain at least one scenario"))
-		}
-		for j, scenario := range fr.Acceptance {
-			if scenario.Given == "" || scenario.When == "" || scenario.Then == "" {
-				errs = append(errs, invalid(fmt.Sprintf("fr[%d].acceptance[%d]", i, j), "given, when and then must be non-empty"))
-			}
+	errs = append(errs, validateFunctionalRequirements(s.FR, "fr")...)
+	errs = append(errs, validateNonFunctionalRequirements(s.NFR, "nfr")...)
+
+	// Every goal the SRS claims to trace must be closed by at least one
+	// requirement: a trace list without coverage is a promise, not a spec.
+	covered := map[string]bool{}
+	for _, fr := range s.FR {
+		if fr.TraceGoal != "" {
+			covered[fr.TraceGoal] = true
 		}
 	}
-	for i, nfr := range s.NFR {
-		if nfr.ID == "" {
-			errs = append(errs, invalid(fmt.Sprintf("nfr[%d].id", i), "is empty"))
+	for _, nfr := range s.NFR {
+		if nfr.TraceGoal != "" {
+			covered[nfr.TraceGoal] = true
 		}
-		if nfr.Metric == "" || nfr.Unit == "" || nfr.Threshold == "" || nfr.MeasurementPoint == "" || nfr.Window == "" {
-			errs = append(errs, invalid(fmt.Sprintf("nfr[%d]", i), "metric, unit, threshold, measurementPoint and window must be non-empty"))
+	}
+	for _, goal := range s.TraceToGoals {
+		if !covered[goal] {
+			errs = append(errs, invalid("traceToGoals", fmt.Sprintf("%q is not covered by any fr or nfr", goal)))
 		}
 	}
 	return errors.Join(errs...)
@@ -309,13 +303,19 @@ func ValidateTaskPlan(p TaskPlan) error {
 	}
 
 	// Gates: each parent exists, the parent chain has no cycle.
+	// A plan where every task is a root is a list, not a decomposition.
+	roots := 0
 	for i, task := range p.Tasks {
 		if task.ParentID == "" {
+			roots++
 			continue
 		}
 		if !ids[task.ParentID] {
 			errs = append(errs, invalid(fmt.Sprintf("tasks[%d].parentId", i), "does not exist in tasks"))
 		}
+	}
+	if roots == len(p.Tasks) {
+		errs = append(errs, invalid("tasks", "every task is a root: the plan must decompose, not list"))
 	}
 	for i, task := range p.Tasks {
 		seen := map[string]bool{task.ID: true}

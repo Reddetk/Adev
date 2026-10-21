@@ -47,6 +47,20 @@ var formSpecs = []formSpecEntry{
 		gaps:       func(payload any) []Gap { return payload.(*SRS).OpenGaps },
 		projection: openDesignProjection,
 	}},
+	{TypeFR, formSpec{
+		payload:    func() any { return &FR{} },
+		validate:   func(payload any, _ Status) error { return ValidateFR(*payload.(*FR)) },
+		texts:      func(payload any) []Text { return payload.(*FR).Texts() },
+		gaps:       func(payload any) []Gap { return payload.(*FR).OpenGaps },
+		projection: openDesignProjection,
+	}},
+	{TypeNFR, formSpec{
+		payload:    func() any { return &NFR{} },
+		validate:   func(payload any, _ Status) error { return ValidateNFR(*payload.(*NFR)) },
+		texts:      func(payload any) []Text { return payload.(*NFR).Texts() },
+		gaps:       func(payload any) []Gap { return payload.(*NFR).OpenGaps },
+		projection: openDesignProjection,
+	}},
 	{TypeHLD, formSpec{
 		payload:    func() any { return &HLD{} },
 		validate:   func(payload any, _ Status) error { return ValidateHLD(*payload.(*HLD)) },

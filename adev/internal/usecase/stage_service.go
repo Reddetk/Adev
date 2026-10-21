@@ -205,9 +205,15 @@ func (s *StageService) runForm(
 		s.recordModelCall(request, agent, response.Usage)
 
 		form = s.buildForm(request, stage, refs, output, formID, version, previous)
+		payload := normalizeGapPointers(response.Payload)
+		// A composite document goes out in batches: the skeleton first, then one
+		// call per entry, so no single answer has to carry the whole list.
+		if plans, ok := batchPlans[output]; ok {
+			payload = s.detailBatches(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload)
+		}
 		// Gap pointers arrive in whatever syntax the model chose; questions
 		// and answers need JSON Pointers, so they are fixed before storing.
-		if err := form.SetRawPayload(normalizeGapPointers(response.Payload)); err != nil {
+		if err := form.SetRawPayload(payload); err != nil {
 			problems = append(problems, err.Error())
 			lastProblems = append(lastProblems, err.Error())
 			continue
@@ -396,6 +402,127 @@ func (s *StageService) record(ctx context.Context, request StageRequest, stage d
 		PipelineID: request.PipelineID, Stage: stage.ID,
 		Status: status, Attempts: attempts, LastError: lastError,
 	})
+}
+
+// batchPlan names a top-level list of a composite document.
+type batchPlan struct {
+	kind string // the JSON name of the list
+}
+
+// batchPlans marks the documents that are filled entry by entry. The skeleton call
+// returns the list; every later call details one entry of it.
+var batchPlans = map[domain.FormType][]batchPlan{
+	domain.TypeSRS:      {{kind: "fr"}, {kind: "nfr"}},
+	domain.TypeTaskPlan: {{kind: "tasks"}},
+}
+
+// detailBatches asks the model to fill one entry per call and merges the answers
+// back into the skeleton. A failed detail call keeps the skeleton entry: the gates
+// still judge the document, and the operator sees what is missing.
+func (s *StageService) detailBatches(ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig, stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage, plans []batchPlan, payload json.RawMessage) json.RawMessage {
+	for _, plan := range plans {
+		entries, err := listOf(payload, plan.kind)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			id := fieldOf(entry, "id")
+			if id == "" {
+				continue
+			}
+			instruction := fmt.Sprintf(
+				"You fill the %s form of stage %s. Answer with the payload only. "+
+					"Detail exactly one entry: the %s entry with id %q. Keep every other entry unchanged.",
+				output, stage.ID, plan.kind, id)
+			system, user := promptMessages(instruction, shape, stageContext, nil)
+			response, err := client.Complete(ctx, LLMRequest{Role: agent.Role, System: system, User: user})
+			if err != nil {
+				log.Printf("stage %s: detail %s %s: %v", stage.ID, plan.kind, id, err)
+				continue
+			}
+			s.recordModelCall(request, agent, response.Usage)
+			merged, err := mergeEntry(payload, response.Payload, plan.kind, id)
+			if err != nil {
+				log.Printf("stage %s: merge %s %s: %v", stage.ID, plan.kind, id, err)
+				continue
+			}
+			payload = merged
+		}
+	}
+	return payload
+}
+
+func listOf(payload json.RawMessage, kind string) ([]json.RawMessage, error) {
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &document); err != nil {
+		return nil, err
+	}
+	raw, ok := document[kind]
+	if !ok {
+		return nil, fmt.Errorf("no %s list", kind)
+	}
+	var entries []json.RawMessage
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func fieldOf(entry json.RawMessage, field string) string {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(entry, &object); err != nil {
+		return ""
+	}
+	var value string
+	_ = json.Unmarshal(object[field], &value)
+	return value
+}
+
+// mergeEntry replaces one entry of a list with the detailed answer of the same id.
+func mergeEntry(payload, detail json.RawMessage, kind, id string) (json.RawMessage, error) {
+	entries, err := listOf(payload, kind)
+	if err != nil {
+		return nil, err
+	}
+	details, err := listOf(detail, kind)
+	if err != nil {
+		return nil, err
+	}
+	detailed, ok := entryByID(details, id)
+	if !ok {
+		return payload, nil
+	}
+	replaced := false
+	for index, entry := range entries {
+		if fieldOf(entry, "id") == id {
+			entries[index] = detailed
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		return payload, nil
+	}
+
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &document); err != nil {
+		return nil, err
+	}
+	encoded, err := json.Marshal(entries)
+	if err != nil {
+		return nil, err
+	}
+	document[kind] = encoded
+	return json.Marshal(document)
+}
+
+func entryByID(entries []json.RawMessage, id string) (json.RawMessage, bool) {
+	for _, entry := range entries {
+		if fieldOf(entry, "id") == id {
+			return entry, true
+		}
+	}
+	return nil, false
 }
 
 // markValid accepts a stored form that raised no question. A failure keeps the

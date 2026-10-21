@@ -38,6 +38,7 @@ type NonFunctionalRequirement struct {
 	MeasurementPoint string    `json:"measurementPoint"`
 	Window           string    `json:"window"`
 	VerifyMethod     string    `json:"verifyMethod"`
+	TraceGoal        string    `json:"traceGoal,omitempty"`
 }
 
 // OutOfScopeItem is a behavior that this SRS does not require.

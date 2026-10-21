@@ -16,6 +16,8 @@ const (
 	TypeCRBrief            FormType = "CR_BRIEF"
 	TypeImpactAssessment   FormType = "IMPACT_ASSESSMENT"
 	TypeSRS                FormType = "SRS"
+	TypeFR                 FormType = "FR"
+	TypeNFR                FormType = "NFR"
 	TypeHLD                FormType = "HLD"
 	TypeADR                FormType = "ADR"
 	TypeLLD                FormType = "LLD"
