@@ -25,7 +25,19 @@ type UserInput = {
   locale?: string;
 };
 
-const text = (value?: Text) => value?.text ?? '';
+// The payload is model output: a field the shape calls a sentence may arrive as a
+// plain string, and a field it calls a list may arrive as one value. The reader
+// shows what is there instead of failing to draw the whole page.
+const text = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object' && 'text' in value) return String((value as Text).text ?? '');
+  return '';
+};
+
+const list = (value: unknown): string[] => {
+  if (value === undefined || value === null) return [];
+  return (Array.isArray(value) ? value : [value]).map(text);
+};
 
 function List({ items }: { items: string[] }) {
   if (items.length === 0) {
@@ -50,12 +62,15 @@ function Block({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function BrdDocument({ payload }: { payload: Brd }) {
-  const goals = payload.goals ?? [];
-  const metrics = payload.metrics ?? [];
-  const actors = payload.actors ?? [];
-  const constraints = payload.constraints ?? [];
-  const successMetrics = payload.successMetrics ?? [];
-  const gaps = payload.openGaps ?? [];
+  const goals = Array.isArray(payload.goals) ? payload.goals : [];
+  const metrics = Array.isArray(payload.metrics) ? payload.metrics : [];
+  const actors = Array.isArray(payload.actors) ? payload.actors : [];
+  const constraints = Array.isArray(payload.constraints) ? payload.constraints : [];
+  const successMetrics = Array.isArray(payload.successMetrics) ? payload.successMetrics : [];
+  const gaps = Array.isArray(payload.openGaps) ? payload.openGaps : [];
+  const included = list(payload.scope?.in);
+  const excluded = list(payload.scope?.out);
+  const deferred = list(payload.scope?.deferred);
 
   return (
     <>
@@ -104,13 +119,13 @@ function BrdDocument({ payload }: { payload: Brd }) {
 
       <Block title="Границы">
         <h4>Входит</h4>
-        <List items={(payload.scope?.in ?? []).map(text)} />
+        <List items={included} />
         <h4>Не входит</h4>
-        <List items={(payload.scope?.out ?? []).map(text)} />
-        {(payload.scope?.deferred ?? []).length > 0 && (
+        <List items={excluded} />
+        {deferred.length > 0 && (
           <>
             <h4>Отложено</h4>
-            <List items={(payload.scope?.deferred ?? []).map(text)} />
+            <List items={deferred} />
           </>
         )}
       </Block>
@@ -123,7 +138,7 @@ function BrdDocument({ payload }: { payload: Brd }) {
             {actors.map((actor) => (
               <li key={actor.id}>
                 <b>{actor.name}</b> · {actor.frequency} · {actor.businessObject}
-                <List items={(actor.tasks ?? []).map(text)} />
+                <List items={list(actor.tasks)} />
               </li>
             ))}
           </ul>
@@ -146,7 +161,7 @@ function BrdDocument({ payload }: { payload: Brd }) {
       </Block>
 
       <Block title="Допущения">
-        <List items={(payload.assumptions ?? []).map(text)} />
+        <List items={list(payload.assumptions)} />
       </Block>
 
       <Block title="Признаки успеха">
