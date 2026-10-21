@@ -174,7 +174,7 @@ func TestH1Stage00StoresABRDOnTheFirstAttempt(t *testing.T) {
 
 	stored, err := fixture.forms.Latest(context.Background(), stageOutput)
 	require.NoError(t, err)
-	assert.Equal(t, domain.StatusDraft, stored.Status)
+	assert.Equal(t, domain.StatusValid, stored.Status, "the gates passed and no question waits for the operator")
 	require.Len(t, stored.Inputs, 1)
 	assert.Equal(t, input.PayloadHash, stored.Inputs[0].Hash, "the BRD must reference the input it was built from")
 
@@ -224,7 +224,7 @@ func TestTheModelCallOfAnAttemptIsRecorded(t *testing.T) {
 
 // --- H3 ---------------------------------------------------------------------
 
-func TestH3ARerunCreatesTheNextVersionOfTheSameForm(t *testing.T) {
+func TestH3ARerunOfAValidFormKeepsTheVersion(t *testing.T) {
 	fixture := newM2Fixture(t, validBRD(), validBRD())
 	fixture.configure(t)
 	fixture.submitUserInput(t, 1)
@@ -236,12 +236,11 @@ func TestH3ARerunCreatesTheNextVersionOfTheSameForm(t *testing.T) {
 	second, err := fixture.runStage00(t)
 	require.NoError(t, err)
 
-	assert.Equal(t, 2, second.FormVersion, "a re-run of the stage produces the next version")
+	assert.Equal(t, 1, second.FormVersion, "a valid document is accepted; a re-run confirms it")
+	assert.Equal(t, 0, second.Attempts, "the model is not called for a stored valid document")
 	stored, err := fixture.forms.Latest(context.Background(), stageOutput)
 	require.NoError(t, err)
-	require.NotNil(t, stored.PreviousFormVersion)
-	assert.Equal(t, 1, stored.PreviousFormVersion.FormVersion)
-	assert.Equal(t, first.FormVersion, stored.PreviousFormVersion.FormVersion)
+	assert.Equal(t, 1, stored.FormVersion)
 }
 
 // --- N1 ---------------------------------------------------------------------

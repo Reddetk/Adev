@@ -129,7 +129,7 @@ func (s *FormsStore) Latest(ctx context.Context, formID string) (*domain.Form, e
 
 // ByPipeline reads the versions of one form type in one pipeline, oldest first.
 func (s *FormsStore) ByPipeline(ctx context.Context, pipelineID string, formType domain.FormType) ([]*domain.Form, error) {
-	rows, err := s.pool.Query(ctx, `SELECT `+formColumns+` FROM forms WHERE pipeline_id = $1 AND form_type = $2 ORDER BY form_version ASC`, pipelineID, formType)
+	rows, err := s.pool.Query(ctx, `SELECT `+formColumns+` FROM forms WHERE pipeline_id = $1 AND form_type = $2 ORDER BY stage, form_version ASC`, pipelineID, formType)
 	if err != nil {
 		return nil, fmt.Errorf("by pipeline: %w", err)
 	}

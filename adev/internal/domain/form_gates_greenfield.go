@@ -115,6 +115,9 @@ func ValidateHLD(h HLD) error {
 		if a.Root == "" {
 			errs = append(errs, invalid(fmt.Sprintf("aggregates[%d].root", i), "is empty"))
 		}
+		if len(a.Invariants) == 0 {
+			errs = append(errs, invalid(fmt.Sprintf("aggregates[%d].invariants", i), "must contain at least one statement"))
+		}
 		if a.ContainerID == "" || !containerIDs[a.ContainerID] {
 			errs = append(errs, invalid(fmt.Sprintf("aggregates[%d].containerId", i), "does not exist in containers"))
 		}
@@ -129,6 +132,9 @@ func ValidateHLD(h HLD) error {
 		if relation.Type != RelationSync && relation.Type != RelationAsync {
 			errs = append(errs, invalid(fmt.Sprintf("contextRelations[%d].type", i), fmt.Sprintf("unknown value %q", relation.Type)))
 		}
+	}
+	if len(h.DegradationStrategy) == 0 {
+		errs = append(errs, invalid("degradationStrategy", "must contain at least one entry"))
 	}
 	for i, d := range h.DegradationStrategy {
 		if d.TimeoutMs < 0 {

@@ -129,6 +129,11 @@ func (s *StageService) Run(ctx context.Context, request StageRequest) (StageOutc
 		if err != nil {
 			return StageOutcome{}, err
 		}
+		// A stage that writes a type it also reads rewrites that document: the HLD
+		// of stage 04 is the next version of the HLD of stage 03, not a twin.
+		if input, ok := refOfType(refs, output); ok {
+			formID, finished, version, previous = input.FormID, nil, input.FormVersion+1, &input
+		}
 		if finished != nil {
 			// The operator answer already made this version valid: the run just confirms it.
 			outcome.FormID, outcome.FormVersion = finished.FormID, finished.FormVersion
@@ -242,6 +247,9 @@ func (s *StageService) runForm(
 			s.record(ctx, request, stage, "blocked", attempt, "open questions")
 			activity.Finish("blocked", "waiting for the operator answers")
 		} else {
+			// The gates passed and nothing waits for the operator: the document is
+			// accepted, not a draft.
+			s.markValid(ctx, form)
 			activity.Finish("done", "")
 		}
 		return outcome, nil
@@ -388,6 +396,26 @@ func (s *StageService) record(ctx context.Context, request StageRequest, stage d
 		PipelineID: request.PipelineID, Stage: stage.ID,
 		Status: status, Attempts: attempts, LastError: lastError,
 	})
+}
+
+// markValid accepts a stored form that raised no question. A failure keeps the
+// draft: the operator still sees the document, and a re-run tries again.
+func (s *StageService) markValid(ctx context.Context, form *domain.Form) {
+	if err := s.forms.SetStatus(ctx, form.FormID, form.FormVersion, domain.StatusValid); err != nil {
+		log.Printf("form %s v%d: set valid: %v", form.FormID, form.FormVersion, err)
+		return
+	}
+	form.Status = domain.StatusValid
+}
+
+// refOfType returns the reference of the input document of a form type.
+func refOfType(refs []domain.Ref, formType domain.FormType) (domain.Ref, bool) {
+	for _, ref := range refs {
+		if ref.FormType == formType {
+			return ref, true
+		}
+	}
+	return domain.Ref{}, false
 }
 
 // recordModelCall stores the tokens and the time of one attempt. The book must

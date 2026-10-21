@@ -117,7 +117,12 @@ func (m *MemoryFormsStore) ByPipeline(ctx context.Context, pipelineID string, fo
 			}
 		}
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].FormVersion < result[j].FormVersion })
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Stage != result[j].Stage {
+			return result[i].Stage < result[j].Stage
+		}
+		return result[i].FormVersion < result[j].FormVersion
+	})
 	return result, nil
 }
 
