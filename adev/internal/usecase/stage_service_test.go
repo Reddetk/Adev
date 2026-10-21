@@ -364,4 +364,5 @@ func TestE3TheStageReadsTheLatestVersionOfItsInput(t *testing.T) {
 
 	require.Len(t, fixture.llm.requests, 1)
 	assert.Contains(t, fixture.llm.requests[0].User, "two branches", "the model must see the text of the latest version")
+	assert.Contains(t, fixture.llm.requests[0].User, `"`+latest.FormID+`"`, "the context is keyed by the document id")
 }

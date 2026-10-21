@@ -273,7 +273,10 @@ func (s *StageService) buildContext(ctx context.Context, request StageRequest, s
 			return nil, nil, err
 		}
 
-		collected[string(inputType)] = projected
+		// The key is the document, not its type: a stage may read two versions of
+		// one type, and a change pipeline reads the as-is and the delta of the
+		// same document.
+		collected[latest.FormID] = projected
 		refs = append(refs, domain.Ref{
 			FormID: latest.FormID, FormType: latest.FormType,
 			FormVersion: latest.FormVersion, Hash: latest.PayloadHash,

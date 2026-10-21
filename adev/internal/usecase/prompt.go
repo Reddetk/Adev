@@ -35,24 +35,16 @@ func stagePrompt(stage domain.Stage, output domain.FormType, shape string, conte
 	return promptMessages(stageInstruction(stage, output), shape, context, problems)
 }
 
+// stageInstruction is one rule for every stage: fill what the context answers,
+// and turn every uncertain or missing value into an operator question with
+// options. A design stage differs in what the context gives, not in whether it
+// may ask.
 func stageInstruction(stage domain.Stage, output domain.FormType) string {
-	head := fmt.Sprintf(
-		"You fill the %s form of stage %s. Answer with the payload only. Do not add fields. ",
+	return fmt.Sprintf(
+		"You fill the %s form of stage %s. Answer with the payload only. Do not add fields. "+
+			"Fill every field that the given context answers. "+
+			"If the context does not give a concrete value or you are not sure, do not invent it: "+
+			"put one openGaps entry with the question, the pointer of the field it would fill, "+
+			"and the options when it is a choice.",
 		output, stage.ID)
-	// The question phase of the stages 00-02: the agent asks, the operator
-	// decides, the answer compiles the document. The model never invents a
-	// value the context does not give.
-	if stage.ID == "00" || stage.ID == "01" || stage.ID == "02" {
-		return head +
-			"Fill every field that the given context answers. " +
-			"For every question the context does not answer, put one openGaps entry: " +
-			"the question, the pointer of the field it would fill, and the options when it is a choice. " +
-			"Do not invent a value that the context does not give."
-	}
-	// The design stages 03-06: the design values are the model's own work, so it
-	// fills the shape itself and keeps questions for an outside fact.
-	return head +
-		"This is a design stage: the design values are yours to choose, so fill every field of the shape. " +
-		"Ask the operator only for an outside fact the context does not give: put one openGaps entry " +
-		"with the question and the pointer of the field it would fill."
 }

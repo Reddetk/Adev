@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/Reddetk/Adev/internal/domain"
 )
@@ -21,23 +22,15 @@ func TestPromptMessagesCarryTheShapeContextAndProblems(t *testing.T) {
 		user)
 }
 
-func TestStagePromptKeepsTheQuestionBranch(t *testing.T) {
-	stage, err := domain.StageByID(domain.RouteGreenfield, "00")
-	assert.NoError(t, err)
+func TestStagePromptAsksForAnUncertainValueOnEveryStage(t *testing.T) {
+	for _, id := range []string{"00", "03", "06"} {
+		stage, err := domain.StageByID(domain.RouteGreenfield, id)
+		require.NoError(t, err)
 
-	_, user := stagePrompt(stage, domain.TypeBRD, "SHAPE", nil, nil)
+		_, user := stagePrompt(stage, domain.TypeHLD, "SHAPE", nil, nil)
 
-	assert.Contains(t, user, "You fill the BRD form of stage 00.")
-	assert.Contains(t, user, "openGaps")
-	assert.NotContains(t, user, "This is a design stage")
-}
-
-func TestStagePromptKeepsTheDesignBranch(t *testing.T) {
-	stage, err := domain.StageByID(domain.RouteGreenfield, "03")
-	assert.NoError(t, err)
-
-	_, user := stagePrompt(stage, domain.TypeHLD, "SHAPE", nil, nil)
-
-	assert.Contains(t, user, "You fill the HLD form of stage 03.")
-	assert.Contains(t, user, "This is a design stage")
+		assert.Contains(t, user, "You fill the HLD form of stage "+id)
+		assert.Contains(t, user, "put one openGaps entry", "stage %s must ask instead of inventing", id)
+		assert.Contains(t, user, "the options when it is a choice", "stage %s must offer options", id)
+	}
 }
