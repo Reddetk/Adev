@@ -139,7 +139,16 @@ func (s *QuestionService) Answer(ctx context.Context, form *domain.Form, pointer
 	if pointer == "/payload" {
 		payload = value
 	} else {
-		ops := []patchOp{{Op: "replace", Path: pointer, Value: value}}
+		// A gap may name the slot right past the end of an array; RFC 6902
+		// appends there with add, while replace only rewrites an existing value.
+		op := "replace"
+		var doc any
+		if err := json.Unmarshal(form.Payload, &doc); err == nil {
+			if valueAt(doc, pointer) == nil {
+				op = "add"
+			}
+		}
+		ops := []patchOp{{Op: op, Path: pointer, Value: value}}
 		// Remove from the end, so the earlier indexes stay valid.
 		for i := len(removals) - 1; i >= 0; i-- {
 			ops = append(ops, patchOp{Op: "remove", Path: "/openGaps/" + strconv.Itoa(removals[i])})
@@ -323,6 +332,65 @@ func valueAt(doc any, pointer string) any {
 		}
 	}
 	return current
+}
+
+// Models often write gap pointers in dot syntax (scope.in[0]); questions and
+// answers work only with JSON Pointers. Normalizing at the submit border keeps
+// the stored form, the published requests and the answer patches in one format.
+func normalizeGapPointers(payload json.RawMessage) json.RawMessage {
+	var doc struct {
+		OpenGaps []map[string]any `json:"openGaps"`
+	}
+	if err := json.Unmarshal(payload, &doc); err != nil || len(doc.OpenGaps) == 0 {
+		return payload
+	}
+	changed := false
+	for _, gap := range doc.OpenGaps {
+		p, _ := gap["pointer"].(string)
+		if p == "" || strings.HasPrefix(p, "/") {
+			continue
+		}
+		gap["pointer"] = toJSONPointer(p)
+		changed = true
+	}
+	if !changed {
+		return payload
+	}
+	// Re-encode only the gaps section, so the rest of the payload bytes stay as sent.
+	var sections map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &sections); err != nil {
+		return payload
+	}
+	gaps, err := json.Marshal(doc.OpenGaps)
+	if err != nil {
+		return payload
+	}
+	sections["openGaps"] = gaps
+	out, err := json.Marshal(sections)
+	if err != nil {
+		return payload
+	}
+	return out
+}
+
+// toJSONPointer turns "scope.in[0].text" into "/scope/in/0/text".
+func toJSONPointer(p string) string {
+	// The same path also arrives in JSONPath style ($.metrics[0].baseline).
+	p = strings.TrimPrefix(strings.TrimPrefix(p, "$"), ".")
+	var b strings.Builder
+	for _, seg := range strings.Split(p, ".") {
+		name, idx := seg, ""
+		if i := strings.Index(seg, "["); i >= 0 {
+			name, idx = seg[:i], strings.Trim(seg[i:], "[]")
+		}
+		if name != "" {
+			b.WriteString("/" + name)
+		}
+		if idx != "" {
+			b.WriteString("/" + idx)
+		}
+	}
+	return b.String()
 }
 
 // gapGate drops the shared blocking-gap gate: the operator does not patch the

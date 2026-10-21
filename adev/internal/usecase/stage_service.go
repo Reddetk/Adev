@@ -183,7 +183,9 @@ func (s *StageService) runForm(
 		}
 
 		form = s.buildForm(request, stage, refs, output, formID, version, previous)
-		if err := form.SetRawPayload(response.Payload); err != nil {
+		// Gap pointers arrive in whatever syntax the model chose; questions
+		// and answers need JSON Pointers, so they are fixed before storing.
+		if err := form.SetRawPayload(normalizeGapPointers(response.Payload)); err != nil {
 			problems = append(problems, err.Error())
 			continue
 		}
