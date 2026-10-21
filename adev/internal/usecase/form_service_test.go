@@ -118,6 +118,32 @@ func TestSubmitRunsTheLanguageChecker(t *testing.T) {
 	}
 }
 
+// TestSubmitDraftRefusesAPayloadThatIsNotADocument: the model returns a string where
+// the shape is an object. Such a version serves nobody: the console cannot draw it
+// and an operator answer has no field to land in.
+func TestSubmitDraftRefusesAPayloadThatIsNotADocument(t *testing.T) {
+	store := newFakeFormStore()
+	service := NewFormService(store, nil)
+
+	broken := userInputForm(t)
+	if err := broken.SetRawPayload(json.RawMessage(`"a string, not a document"`)); err != nil {
+		t.Fatalf("set payload: %v", err)
+	}
+	if err := service.SubmitDraft(context.Background(), broken); err == nil {
+		t.Fatal("a payload that is not a document must not be stored")
+	}
+	if store.saved != 0 {
+		t.Fatalf("nothing must be stored, got %d versions", store.saved)
+	}
+
+	if err := service.SubmitDraft(context.Background(), userInputForm(t)); err != nil {
+		t.Fatalf("a document must still be stored: %v", err)
+	}
+	if store.saved != 1 {
+		t.Fatalf("want one saved draft, got %d", store.saved)
+	}
+}
+
 func TestMaterializeAppliesDelta(t *testing.T) {
 	base := userInputForm(t)
 	base.Payload = json.RawMessage(`{"rawRequest":{"text":"a","lang":"STE100"},"source":"operator","receivedAt":"2026-10-19T21:00:00Z"}`)

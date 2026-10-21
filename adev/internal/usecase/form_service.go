@@ -64,6 +64,13 @@ func (s *FormService) SubmitDraft(ctx context.Context, form *domain.Form) error 
 	if err := form.ValidateEnvelope(resolved); err != nil {
 		return err
 	}
+	// A draft with a payload that is not a JSON object is no document: the console
+	// cannot draw it and an operator answer has no field to land in. Refusing it
+	// keeps the last usable version current.
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(form.Payload, &document); err != nil || document == nil {
+		return fmt.Errorf("submit draft: the payload is not a document")
+	}
 	return s.store.Save(ctx, form)
 }
 
