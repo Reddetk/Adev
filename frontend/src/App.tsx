@@ -1067,20 +1067,35 @@ function DocumentOutline({ type }: { type?: string }) {
   );
 }
 
-function LogPanel({ entries }: { entries: LogEntry[] }) {
-  const bottom = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    bottom.current?.scrollIntoView({ block: 'end' });
-  }, [entries]);
+// Follow the newest line only while the reader is already at the bottom: the
+// panel polls every few seconds, and a reader who scrolled up is reading.
+function useStickToBottom(dependency: unknown) {
+  const box = useRef<HTMLDivElement>(null);
+  const atBottom = useRef(true);
 
+  useEffect(() => {
+    const node = box.current;
+    if (node && atBottom.current) node.scrollTop = node.scrollHeight;
+  }, [dependency]);
+
+  return {
+    ref: box,
+    onScroll: () => {
+      const node = box.current;
+      if (node) atBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 24;
+    },
+  };
+}
+
+function LogPanel({ entries }: { entries: LogEntry[] }) {
+  const stick = useStickToBottom(entries);
   return (
-    <div id="log">
+    <div id="log" ref={stick.ref} onScroll={stick.onScroll}>
       {entries.map((entry, index) => (
         <div key={index} className={`line ${entry.kind}`}>
           {entry.text}
         </div>
       ))}
-      <div ref={bottom} />
     </div>
   );
 }
@@ -1088,19 +1103,14 @@ function LogPanel({ entries }: { entries: LogEntry[] }) {
 // ServerLog shows the lines the server wrote. A server started as a background
 // process has no console, so this panel is the only view of its log.
 function ServerLog({ lines }: { lines: string[] }) {
-  const bottom = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    bottom.current?.scrollIntoView({ block: 'end' });
-  }, [lines]);
-
+  const stick = useStickToBottom(lines);
   return (
-    <div id="log">
+    <div id="log" ref={stick.ref} onScroll={stick.onScroll}>
       {lines.map((line, index) => (
         <div key={index} className="line">
           {line}
         </div>
       ))}
-      <div ref={bottom} />
     </div>
   );
 }
