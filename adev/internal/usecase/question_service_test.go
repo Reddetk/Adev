@@ -239,3 +239,30 @@ func TestOpenGapBecomesAnOperatorQuestion(t *testing.T) {
 		t.Fatalf("want the request completed, got %s", requests.saved[0].Status)
 	}
 }
+
+// TestShapeFailureIsNotAnOperatorQuestion: a payload that does not decode into the
+// document shape is the model's mistake. The operator cannot type a whole document,
+// so the run stores the draft without blocking on a question at /payload.
+func TestShapeFailureIsNotAnOperatorQuestion(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	requests := &fakeQuestionRequests{}
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), requests)
+
+	form := &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-16-00", FormType: domain.TypeBRD, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusDraft, Route: domain.RouteGreenfield, Stage: "00", Mode: domain.ModeFull,
+		PipelineID: "16", TargetSystemID: "20", ProducedBy: domain.RoleAnalyst,
+	}}
+	if err := form.SetRawPayload(json.RawMessage(`{"scope": "not an object"}`)); err != nil {
+		t.Fatalf("set payload: %v", err)
+	}
+	failures := []domain.ValidationError{{Field: "payload", Problem: "does not match the BRD shape: decode payload"}}
+
+	if err := service.Publish(ctx, form, failures, 16); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if len(requests.saved) != 0 {
+		t.Fatalf("a shape failure must not ask the operator, got %+v", requests.saved)
+	}
+}

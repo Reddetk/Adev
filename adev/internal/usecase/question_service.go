@@ -222,6 +222,7 @@ func (s *QuestionService) Answer(ctx context.Context, form *domain.Form, pointer
 
 // ask marks the form waiting and writes one operator request for the first failure.
 func (s *QuestionService) ask(ctx context.Context, form *domain.Form, failures []domain.ValidationError, pipelineID int) error {
+	failures = answerable(failures)
 	if len(failures) == 0 || s.requests == nil {
 		return nil
 	}
@@ -244,6 +245,21 @@ func (s *QuestionService) ask(ctx context.Context, form *domain.Form, failures [
 		Blocking:   true,
 		Status:     "active",
 	})
+}
+
+// answerable drops the failure that names the whole document: a payload which does
+// not decode into the shape is the model's mistake, and no operator answer can
+// supply a whole document. Asking anyway would block the stage on a question the
+// operator cannot answer.
+func answerable(failures []domain.ValidationError) []domain.ValidationError {
+	out := make([]domain.ValidationError, 0, len(failures))
+	for _, failure := range failures {
+		if failure.Field == "payload" {
+			continue
+		}
+		out = append(out, failure)
+	}
+	return out
 }
 
 // collectFailures walks a joined validation error and returns every gate failure.
