@@ -223,11 +223,13 @@ func (s *QuestionService) Answer(ctx context.Context, form *domain.Form, pointer
 // ask marks the form waiting and writes one operator request for the first failure.
 func (s *QuestionService) ask(ctx context.Context, form *domain.Form, failures []domain.ValidationError, pipelineID int) error {
 	failures = answerable(failures)
-	if len(failures) == 0 || s.requests == nil {
-		return nil
-	}
+	// The version waits even when no new question goes out: the questions already
+	// in the dashboard must find it, or the next answer dies with "no form waiting".
 	if err := s.forms.SetStatus(ctx, form.FormID, form.FormVersion, domain.StatusWaitingOperator); err != nil {
 		log.Printf("question pipeline %d: set waiting_operator: %v", pipelineID, err)
+	}
+	if len(failures) == 0 || s.requests == nil {
+		return nil
 	}
 	first := failures[0]
 	// The dashboard already holds this question: do not ask twice.

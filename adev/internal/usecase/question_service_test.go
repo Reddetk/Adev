@@ -240,6 +240,49 @@ func TestOpenGapBecomesAnOperatorQuestion(t *testing.T) {
 	}
 }
 
+// TestAnswerThatBreaksTheShapeKeepsTheVersionWaiting: the operator replaces a list
+// with one sentence. The draft no longer fits the shape and no new question goes
+// out, but the open questions must still find the version: it stays waiting.
+func TestAnswerThatBreaksTheShapeKeepsTheVersionWaiting(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	requests := &fakeQuestionRequests{}
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), requests)
+
+	form := &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-17-00", FormType: domain.TypeBRD, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusWaitingOperator, Route: domain.RouteGreenfield, Stage: "00", Mode: domain.ModeFull,
+		PipelineID: "17", TargetSystemID: "20", ProducedBy: domain.RoleAnalyst,
+	}}
+	raw := json.RawMessage(`{
+		"goals": [{"id": "G1", "outcome": {"text": "The system shall track books.", "lang": "STE100"}, "metricId": "M1"}],
+		"metrics": [{"id": "M1", "name": "accuracy", "unit": "count", "baseline": 0, "target": 95}],
+		"scope": {"in": [{"text": "Book registration", "lang": "STE100"}], "out": []}
+	}`)
+	if err := form.SetRawPayload(raw); err != nil {
+		t.Fatalf("set payload: %v", err)
+	}
+	if err := store.Save(ctx, form); err != nil {
+		t.Fatalf("save draft: %v", err)
+	}
+
+	if _, err := service.Answer(ctx, form, "/scope/in", json.RawMessage(`"every room"`), 17); err != nil {
+		t.Fatalf("answer: %v", err)
+	}
+	stored, err := store.Get(ctx, "FRM-17-00", 2)
+	if err != nil {
+		t.Fatalf("get v2: %v", err)
+	}
+	if stored.Status != domain.StatusWaitingOperator {
+		t.Fatalf("a version with open questions must keep waiting, got %s", stored.Status)
+	}
+	for _, request := range requests.saved {
+		if request.Pointer == "/payload" {
+			t.Fatalf("the shape failure must not become a question: %+v", request)
+		}
+	}
+}
+
 // TestShapeFailureIsNotAnOperatorQuestion: a payload that does not decode into the
 // document shape is the model's mistake. The operator cannot type a whole document,
 // so the run stores the draft without blocking on a question at /payload.
