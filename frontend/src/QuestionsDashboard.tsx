@@ -90,7 +90,6 @@ function QuestionCard({
         </span>
         <span className="tag">пайплайн {question.pipelineid}</span>
         <span className="mono">{question.pointer}</span>
-        <span className="hint">{question.status}</span>
       </div>
       <p className="question-text">{question.question}</p>
       {answered ? (
