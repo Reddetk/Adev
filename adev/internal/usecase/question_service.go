@@ -64,15 +64,11 @@ func (s *QuestionService) PublishGaps(ctx context.Context, form *domain.Form, pi
 			continue
 		}
 		question := fmt.Sprintf("Уточнить у оператора (%s, %s): %s", form.FormType, gap.ID, gap.Question.Value)
-		if len(gap.Options) > 0 {
-			question += fmt.Sprintf(" Options: %s.", strings.Join(gap.Options, ", "))
-		} else {
-			question += "."
-		}
 		if err := s.requests.Save(&domain.OperatorRequest{
 			PipelineID: pipelineID,
 			Pointer:    gap.Pointer,
 			Question:   question,
+			Options:    gap.Options,
 			Blocking:   gap.Blocking,
 			Status:     "active",
 		}); err != nil {
@@ -121,6 +117,15 @@ func (s *QuestionService) Answer(ctx context.Context, form *domain.Form, pointer
 	}
 	if len(value) == 0 {
 		return nil, fmt.Errorf("answer: value is empty")
+	}
+	// The operator may type anything: a value that is not JSON becomes a JSON
+	// string, because an answer is a decision and never a rejected request.
+	if !json.Valid(value) {
+		quoted, err := json.Marshal(string(value))
+		if err != nil {
+			return nil, fmt.Errorf("answer: encode value: %w", err)
+		}
+		value = quoted
 	}
 
 	// An answered gap leaves the payload: the decision went into its field.

@@ -187,8 +187,11 @@ func TestOpenGapBecomesAnOperatorQuestion(t *testing.T) {
 	if question.PipelineID != 15 || question.Pointer != "/scope/in/0" || !question.Blocking {
 		t.Fatalf("unexpected request: %+v", question)
 	}
-	if !strings.Contains(question.Question, "Choose integration method") || !strings.Contains(question.Question, "Option A") {
-		t.Fatalf("the question must carry the text and the options: %q", question.Question)
+	if !strings.Contains(question.Question, "Choose integration method") {
+		t.Fatalf("the question must carry the text: %q", question.Question)
+	}
+	if len(question.Options) != 2 || question.Options[0] != "Option A" || question.Options[1] != "Option B" {
+		t.Fatalf("the options are a field, not text: %+v", question.Options)
 	}
 	waiting, err := store.Get(ctx, "FRM-15-00", 1)
 	if err != nil {
