@@ -266,7 +266,7 @@ func TestAnswerThatBreaksTheShapeKeepsTheVersionWaiting(t *testing.T) {
 		t.Fatalf("save draft: %v", err)
 	}
 
-	if _, err := service.Answer(ctx, form, "/scope/in", json.RawMessage(`"every room"`), 17); err != nil {
+	if _, err := service.Answer(ctx, form, "/scope", json.RawMessage(`"every room"`), 17); err != nil {
 		t.Fatalf("answer: %v", err)
 	}
 	stored, err := store.Get(ctx, "FRM-17-00", 2)

@@ -136,8 +136,8 @@ func (s *QuestionService) Answer(ctx context.Context, form *domain.Form, pointer
 			removals = append(removals, position.Index)
 		}
 	}
-	// The operator answers in plain words; the field keeps the type it already has.
-	value = coerceAnswer(form.Payload, pointer, value)
+	// The operator answers in plain words; the field keeps the type it has.
+	value = coerceAnswer(form.FormType, pointer, value)
 	// A shape failure points at the whole payload; no path inside itself can
 	// name it, so the answer replaces the root directly instead of patching.
 	var payload json.RawMessage
@@ -287,50 +287,106 @@ func collectFailures(err error) []domain.ValidationError {
 	return failures
 }
 
-// coerceAnswer shapes a plain operator answer into the type the draft field
-// already holds: a text field takes a Text value, a number field takes a
-// number. A value the operator already wrote as JSON is used as is.
-func coerceAnswer(payload json.RawMessage, pointer string, value json.RawMessage) json.RawMessage {
+// coerceAnswer shapes a plain operator answer into the type the field holds: a
+// sentence becomes a Text, one sentence in a list becomes one entry, a number field
+// takes a number. A value the operator already wrote as JSON is used as is.
+func coerceAnswer(formType domain.FormType, pointer string, value json.RawMessage) json.RawMessage {
 	var answer any
 	if err := json.Unmarshal(value, &answer); err != nil {
 		return value
 	}
-	if _, isObject := answer.(map[string]any); isObject {
+	switch answer.(type) {
+	case map[string]any, []any:
 		return value
 	}
-	var doc any
-	if err := json.Unmarshal(payload, &doc); err != nil {
+	shaped, ok := answerShape(fieldShape(formType, pointer), answer)
+	if !ok {
 		return value
 	}
-	switch holder := valueAt(doc, pointer).(type) {
+	encoded, err := json.Marshal(shaped)
+	if err != nil {
+		return value
+	}
+	return encoded
+}
+
+// fieldShape is the skeleton of the field a pointer names. The shape of the payload
+// says what one entry of a list looks like even when the draft left the list out,
+// so the answer lands in the place the model asked about.
+func fieldShape(formType domain.FormType, pointer string) any {
+	raw, err := domain.PayloadShape(formType)
+	if err != nil {
+		return nil
+	}
+	var skeleton any
+	if err := json.Unmarshal([]byte(raw), &skeleton); err != nil {
+		return nil
+	}
+	current := skeleton
+	for _, raw := range strings.Split(strings.TrimPrefix(pointer, "/"), "/") {
+		segment := strings.ReplaceAll(strings.ReplaceAll(raw, "~1", "/"), "~0", "~")
+		switch node := current.(type) {
+		case map[string]any:
+			current = node[segment]
+		case []any:
+			if len(node) == 0 {
+				return nil
+			}
+			// The skeleton holds one example entry: every index names that entry.
+			current = node[0]
+		default:
+			return nil
+		}
+	}
+	return current
+}
+
+// answerShape turns a scalar answer into the value the shape expects.
+func answerShape(shape any, answer any) (any, bool) {
+	switch node := shape.(type) {
+	case []any:
+		if len(node) == 0 {
+			return nil, false
+		}
+		item, ok := answerShape(node[0], answer)
+		if !ok {
+			return nil, false
+		}
+		return []any{item}, true
 	case map[string]any:
-		// A text field: the plain words become the Text value of the shape.
-		if _, hasText := holder["text"]; hasText {
-			if text, isString := answer.(string); isString {
-				if encoded, err := json.Marshal(domain.Text{Value: text, Lang: domain.LangSTE100}); err == nil {
-					return encoded
+		if _, hasText := node["text"].(string); hasText {
+			// A Text value: the words keep the shape and get the document language.
+			if text, ok := answer.(string); ok {
+				return map[string]any{"text": text, "lang": domain.LangSTE100}, true
+			}
+			return nil, false
+		}
+		// A record whose free text carries the sentence, such as the condition of
+		// an error entry: the other fields stay empty for the model to fill.
+		for _, key := range []string{"condition", "message", "description"} {
+			if _, has := node[key].(string); has {
+				if text, ok := answer.(string); ok {
+					return map[string]any{key: text}, true
 				}
 			}
 		}
 	case string:
-		// A string field keeps strings even when the operator typed a bare
-		// number: the shape says threshold is a spelled-out value.
-		if _, isNumber := answer.(float64); isNumber {
-			if encoded, err := json.Marshal(fmt.Sprintf("%v", answer)); err == nil {
-				return encoded
-			}
+		switch typed := answer.(type) {
+		case string:
+			return typed, true
+		case float64:
+			// A text field keeps text even when the operator typed a bare number.
+			return fmt.Sprintf("%v", typed), true
 		}
 	case float64:
-		// A number field: a spelled-out number still lands as a number.
-		if text, isString := answer.(string); isString {
-			if number, parseErr := strconv.ParseFloat(strings.TrimSpace(text), 64); parseErr == nil {
-				if encoded, err := json.Marshal(number); err == nil {
-					return encoded
-				}
+		if text, ok := answer.(string); ok {
+			// A number field: a spelled-out number still lands as a number.
+			if number, err := strconv.ParseFloat(strings.TrimSpace(text), 64); err == nil {
+				return number, true
 			}
 		}
 	}
-	return value
+	return nil, false
 }
 
 // valueAt walks a JSON document along a pointer and returns the value it names.
