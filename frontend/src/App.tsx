@@ -3,13 +3,13 @@ import { FormDocument } from './FormDocument';
 import { PipelineGraph, type NodeState } from './PipelineGraph';
 import { QuestionsDashboard } from './QuestionsDashboard';
 import { AgentsDashboard } from './AgentsDashboard';
+import { DocsTab } from './DocsTab';
 import {
   ApiError,
   createApi,
   type AgentActivity,
   type AgentInput,
   type FormDetail,
-  type FormSummary,
   type LogEntry,
   type OperatorRequest,
   type PipelineRow,
@@ -72,6 +72,26 @@ const DOCUMENT_OUTLINE: Record<string, string[]> = {
     'Acceptance',
     'Dependencies',
   ],
+  FR: ['Requirement identity', 'Statement', 'Priority', 'Acceptance scenario', 'Traceability'],
+  NFR: ['Requirement identity', 'Metric', 'Unit and threshold', 'Measurement point', 'Window'],
+  TEST_CONTRACT: ['Test identity', 'Given', 'When', 'Then', 'Expected error', 'Coverage'],
+  IMPLEMENTATION_SPEC: [
+    'Task reference',
+    'Implementation target',
+    'Step',
+    'Constraint',
+    'Test map',
+  ],
+  VERDICT: ['Run identity', 'Test result', 'Violation', 'Verdict', 'Evidence'],
+  REFACTOR_SPEC: ['Verdict reference', 'Violation to close', 'Allowed files', 'Step', 'Tests to keep'],
+  CR_BRIEF: ['Change type', 'Driver', 'Current behaviour', 'Requested behaviour', 'Missing data'],
+  IMPACT_ASSESSMENT: [
+    'Blast radius',
+    'Contract impact',
+    'NFR baseline delta',
+    'Routing rule',
+    'Missing data',
+  ],
 };
 
 type AgentDraft = {
@@ -83,10 +103,20 @@ type AgentDraft = {
   temperature: string;
 };
 
-const initialAgents: AgentDraft[] = [
-  { role: 'analyst', provider: 'ollama', baseUrl: 'http://localhost:11434', model: 'qwen3-coder:30b', apiKey: '', temperature: '0.2' },
-  { role: 'architect', provider: 'ollama', baseUrl: 'http://localhost:11434', model: 'qwen3-coder:30b', apiKey: '', temperature: '0.2' },
-];
+// Every role of the route needs a valid agent: the plan names the owners, and a
+// role without a config keeps the pipeline not ready.
+function defaultAgent(role: string): AgentDraft {
+  return {
+    role,
+    provider: 'ollama',
+    baseUrl: 'http://localhost:11434',
+    model: 'qwen3-coder:30b',
+    apiKey: '',
+    temperature: '0.2',
+  };
+}
+
+const initialAgents: AgentDraft[] = ['analyst', 'architect', 'qa', 'dev'].map(defaultAgent);
 
 // The console remembers the operator input, so a reload does not lose the setup.
 // The api key is not kept in the browser: the server already holds it and an empty
@@ -104,8 +134,8 @@ type SavedState = {
   request: string;
 };
 
-// View is the tab the operator works in. The pipeline graph is the home screen.
-type View = 'pipeline' | 'questions' | 'agents' | 'settings';
+// View is the tab the operator works in. The dashboard is the home screen.
+type View = 'dashboard' | 'docs' | 'questions' | 'settings';
 
 // PipelineChoice is the pipeline the console watches.
 type PipelineChoice = { id: number; stage: string; route: string; status: string };
@@ -152,13 +182,17 @@ export default function App() {
       : null,
   );
   const [pipelines, setPipelines] = useState<PipelineRow[]>([]);
-  const [view, setView] = useState<View>(saved.view === 'settings' ? 'settings' : 'pipeline');
+  // An older console stored different tab names: anything unknown opens the dashboard.
+  const [view, setView] = useState<View>(() => {
+    const restored: string = saved.view ?? '';
+    return restored === 'settings' || restored === 'docs' || restored === 'questions' ? restored : 'dashboard';
+  });
   const [request, setRequest] = useState(
     saved.request ?? 'The operator needs a library accounting system for two branches.',
   );
   const [inputForm, setInputForm] = useState<FormDetail | null>(null);
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
-  const [formsByType, setFormsByType] = useState<Record<string, FormSummary[]>>({});
+  const [formsByType, setFormsByType] = useState<Record<string, FormDetail[]>>({});
   const [opened, setOpened] = useState<FormDetail | null>(null);
   const [rawPayload, setRawPayload] = useState(false);
   const [outcome, setOutcome] = useState<StageOutcome | null>(null);
@@ -231,19 +265,34 @@ export default function App() {
       .catch(() => undefined);
   }, [api, targetSystemId]);
 
-  // The graph needs the stage order and the readiness of the selected system.
+  // The dashboard and the document list watch every pipeline, not only the ones of
+  // the selected system; the plan and its readiness belong to the system.
   useEffect(() => {
-    if (view === 'settings' || !targetSystemId) return;
-    void api
-      .listPipelines()
-      .then((list) => setPipelines(list.pipelines.filter((row) => row.targetsystemid === targetSystemId)))
-      .catch(() => setPipelines([]));
+    if (view === 'settings' || view === 'questions') return;
+    void api.listPipelines().then((list) => setPipelines(list.pipelines)).catch(() => setPipelines([]));
+    if (!targetSystemId) {
+      setPlan(null);
+      return;
+    }
     void api.plan(targetSystemId).then(setPlan).catch(() => setPlan(null));
   }, [api, view, targetSystemId]);
 
+  // A route names the roles it needs: a role without a form is appended, so the
+  // operator configures it and the readiness check can turn ready.
+  useEffect(() => {
+    const owners = new Set((plan?.stages ?? []).map((stage) => stage.owner));
+    if (owners.size === 0) return;
+    setAgents((previous) => [
+      ...previous,
+      ...[...owners]
+        .filter((role) => !previous.some((agent) => agent.role === role))
+        .map(defaultAgent),
+    ]);
+  }, [plan]);
+
   // The node state comes from the stored forms of the watched pipeline.
   useEffect(() => {
-    if (view === 'settings' || !pipelineId) {
+    if (view !== 'dashboard' || !pipelineId) {
       setFormsByType({});
       return;
     }
@@ -259,9 +308,9 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [api, view]);
 
-  // The agents dashboard watches live stage runs while it is open.
+  // The live board of stage runs feeds the dashboard while it is open.
   useEffect(() => {
-    if (view !== 'agents') return;
+    if (view !== 'dashboard') return;
     void loadActivities();
     const timer = window.setInterval(() => void loadActivities(), 5000);
     return () => window.clearInterval(timer);
@@ -386,22 +435,25 @@ export default function App() {
     }
   }
 
-  // formTypes returns every form type the graph may show for this route.
-  function formTypes(): string[] {
-    const types = (plan?.stages ?? []).flatMap((stage) => stage.outputs ?? []);
-    return Array.from(new Set(['USER_INPUT', ...types]));
+  // choosePipeline switches the console to one run and drops the view of the old one.
+  function choosePipeline(row: PipelineRow) {
+    setPipeline({ id: row.id, stage: row.currentstage, route: row.route, status: row.status });
+    setOpened(null);
+    setSelectedStage(null);
+    setOutcome(null);
+    setInputForm(null);
   }
 
+  // One request reads every document of the pipeline; the graph and the stage card
+  // read the latest version of each type from the grouped list.
   async function loadPipelineForms(forPipeline: string) {
-    const loaded = await Promise.all(
-      formTypes().map((type) =>
-        api
-          .formsByPipeline(forPipeline, type)
-          .then((list) => [type, list] as const)
-          .catch(() => [type, [] as FormSummary[]] as const),
-      ),
-    );
-    setFormsByType(Object.fromEntries(loaded));
+    const list = await api.formsByPipeline(forPipeline).catch(() => [] as FormDetail[]);
+    const grouped: Record<string, FormDetail[]> = {};
+    for (const form of list) {
+      if (!grouped[form.formType]) grouped[form.formType] = [];
+      grouped[form.formType].push(form);
+    }
+    setFormsByType(grouped);
   }
 
   async function loadQuestions() {
@@ -429,20 +481,19 @@ export default function App() {
     }
   }
 
-  async function selectStage(stageID: string) {
+  function selectStage(stageID: string) {
     setSelectedStage(stageID);
     setOutcome(null);
     setRunError('');
     const stage = plan?.stages.find((item) => item.id === stageID);
     const type = stage?.outputs?.[0];
-    setOpened(type ? await latestForm(type) : null);
+    setOpened(type ? latestForm(type) : null);
   }
 
-  async function latestForm(type: string): Promise<FormDetail | null> {
+  // The list already carries the payload: opening a version needs no request.
+  function latestForm(type: string): FormDetail | null {
     const list = formsByType[type] ?? [];
-    if (list.length === 0) return null;
-    const last = list[list.length - 1];
-    return api.form(last.formId, last.formVersion).catch(() => null);
+    return list.length > 0 ? list[list.length - 1] : null;
   }
 
   async function submitInput() {
@@ -492,10 +543,13 @@ export default function App() {
       // shows the next stage as the current one.
       const refreshed = await api.listPipelines().catch(() => null);
       if (refreshed) {
-        const rows = refreshed.pipelines.filter((row) => row.targetsystemid === targetSystemId);
-        setPipelines(rows);
-        const row = rows.find((item) => item.id === Number(pipelineId));
-        if (row) setPipeline((previous) => (previous ? { ...previous, stage: row.currentstage } : previous));
+        setPipelines(refreshed.pipelines);
+        const row = refreshed.pipelines.find((item) => item.id === Number(pipelineId));
+        if (row) {
+          setPipeline((previous) =>
+            previous ? { ...previous, stage: row.currentstage, status: row.status } : previous,
+          );
+        }
       }
       // The result of the stage is the form it stored: open it right away.
       setOpened(result.blocked ? null : await api.form(result.formId, result.formVersion).catch(() => null));
@@ -531,14 +585,14 @@ export default function App() {
       <header>
         <h1>adev · консоль оператора</h1>
         <div className="tabs">
-          <button className={view === 'pipeline' ? '' : 'ghost'} onClick={() => setView('pipeline')}>
-            Пайплайн
+          <button className={view === 'dashboard' ? '' : 'ghost'} onClick={() => setView('dashboard')}>
+            Пайплайны
+          </button>
+          <button className={view === 'docs' ? '' : 'ghost'} onClick={() => setView('docs')}>
+            Документы
           </button>
           <button className={view === 'questions' ? '' : 'ghost'} onClick={() => setView('questions')}>
             Вопросы{openQuestions > 0 ? ` · ${openQuestions}` : ''}
-          </button>
-          <button className={view === 'agents' ? '' : 'ghost'} onClick={() => setView('agents')}>
-            Агенты
           </button>
           <button className={view === 'settings' ? '' : 'ghost'} onClick={() => setView('settings')}>
             Настройки
@@ -557,9 +611,9 @@ export default function App() {
             ? settingsView()
             : view === 'questions'
               ? questionsView()
-              : view === 'agents'
-                ? <AgentsDashboard activities={activities} loading={activitiesLoading} />
-                : pipelineView()}
+              : view === 'docs'
+                ? <DocsTab api={api} pipelines={pipelines} />
+                : dashboardView()}
         </div>
 
         <details className="console">
@@ -782,7 +836,7 @@ export default function App() {
     );
   }
 
-  function pipelineView() {
+  function dashboardView() {
     if (!ready) {
       return (
         <Section title="Работа" hint="Нужен target system.">
@@ -800,30 +854,6 @@ export default function App() {
       <>
         <div className="toolbar">
           <div className="toolbar-field">
-            <Field label="Пайплайн системы">
-              <select
-                value={pipeline?.id ?? ''}
-                onChange={(event) => {
-                  const chosen = pipelines.find((row) => row.id === Number(event.target.value));
-                  setPipeline(
-                    chosen
-                      ? { id: chosen.id, stage: chosen.currentstage, route: chosen.route, status: chosen.status }
-                      : null,
-                  );
-                  setOpened(null);
-                  setSelectedStage(null);
-                  setOutcome(null);
-                  setInputForm(null);
-                }}
-              >
-                <option value="">— не выбран —</option>
-                {pipelines.map((row) => (
-                  <option key={row.id} value={row.id}>
-                    {row.id} · {row.status} · стадия {row.currentstage}
-                  </option>
-                ))}
-              </select>
-            </Field>
             <Actions>
               <button disabled={!configured} onClick={createPipeline}>
                 Создать пайплайн
@@ -831,9 +861,20 @@ export default function App() {
               {openQuestions > 0 && <button onClick={() => setView('questions')}>Вопросов: {openQuestions}</button>}
             </Actions>
           </div>
-          <span className="hint">
-            {ready ? `готовность: ${configured ? 'ready' : 'не готова'}` : 'target system не выбран'}
-          </span>
+          <span className="hint">{`готовность: ${configured ? 'ready' : 'не готова'}`}</span>
+        </div>
+
+        <div className="versions">
+          {pipelines.length === 0 && <span className="hint">Пайплайнов пока нет — создайте первый.</span>}
+          {pipelines.map((row) => (
+            <button
+              key={row.id}
+              className={`chip${pipeline?.id === row.id ? ' on' : ''}`}
+              onClick={() => choosePipeline(row)}
+            >
+              #{row.id} · система {row.targetsystemid} · {row.status} · стадия {row.currentstage}
+            </button>
+          ))}
         </div>
 
         {plan && !configured && (
@@ -861,6 +902,8 @@ export default function App() {
             {hasPipeline ? 'Нажмите стадию на схеме — покажу документ, который она создаёт.' : 'Создайте или выберите пайплайн.'}
           </p>
         )}
+
+        <AgentsDashboard activities={activities} loading={activitiesLoading} />
       </>
     );
   }
@@ -869,8 +912,6 @@ export default function App() {
     const stage = plan?.stages.find((item) => item.id === selectedStage);
     if (!stage) return null;
     const types = stage.outputs ?? [];
-    const type = types[0];
-    const versions = type ? formsByType[type] ?? [] : [];
     const isInputStage = stage.id === STAGE_INPUT;
 
     return (
@@ -955,25 +996,35 @@ export default function App() {
           </div>
         )}
 
-        {versions.length > 0 && (
-          <div className="versions">
-            {versions.map((form) => (
-              <button
-                key={`${form.formId}-${form.formVersion}`}
-                className={`chip${opened && opened.formId === form.formId && opened.formVersion === form.formVersion ? ' on' : ''}`}
-                onClick={() => void api.form(form.formId, form.formVersion).then(setOpened).catch(() => undefined)}
-              >
-                v{form.formVersion} · {form.status}
-              </button>
-            ))}
-          </div>
-        )}
+        {types.map((type) => {
+          const versions = formsByType[type] ?? [];
+          return (
+            <div className="doc-group" key={type}>
+              <h3>
+                {type} <span className="hint">· версий: {versions.length}</span>
+              </h3>
+              {versions.length === 0 ? (
+                <DocumentOutline type={type} />
+              ) : (
+                <div className="versions">
+                  {versions.map((form) => (
+                    <button
+                      key={`${form.formId}-${form.formVersion}`}
+                      className={`chip${
+                        opened?.formId === form.formId && opened.formVersion === form.formVersion ? ' on' : ''
+                      }`}
+                      onClick={() => setOpened(form)}
+                    >
+                      v{form.formVersion} · {form.status} · стадия {form.stage}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
-        {opened ? (
-          <FormDocument form={opened} raw={rawPayload} />
-        ) : (
-          <DocumentOutline type={type} />
-        )}
+        {opened && <FormDocument form={opened} raw={rawPayload} />}
       </section>
     );
   }

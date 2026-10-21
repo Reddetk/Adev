@@ -40,6 +40,11 @@ export function PipelineGraph({
               <span className="node-id">{stage.id}</span>
               <span className="node-name">{stage.name}</span>
               <span className="node-owner">{stage.owner}</span>
+              {stage.conditional && (
+                <span className="tag" title="запускается только после проваленного вердикта">
+                  условная
+                </span>
+              )}
               <span className="node-state">{LABELS[state]}</span>
             </button>
             {index < stages.length - 1 && <span className="edge" aria-hidden="true" />}

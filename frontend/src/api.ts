@@ -16,6 +16,10 @@ export type Stage = {
   owner: string;
   inputs: string[] | null;
   outputs: string[] | null;
+  // A stage that reads another pipeline (the system baseline of a change request)
+  // names its source; a conditional stage is a detour the straight run skips.
+  inputSource?: string;
+  conditional?: boolean;
 };
 
 export type Plan = {
@@ -80,6 +84,8 @@ export type FormSummary = {
   inputs: FormRef[] | null;
 };
 
+// The document list carries the payload of every version, so the viewer opens a
+// document without a second request.
 export type FormDetail = FormSummary & { payload: unknown };
 
 export type StageOutcome = {
@@ -98,6 +104,8 @@ export type OperatorRequest = {
   pipelineid: number;
   pointer: string;
   question: string;
+  // The choices the model published as data; empty means a free answer.
+  options?: string[] | null;
   blocking: boolean;
   status: string;
 };
@@ -195,8 +203,14 @@ export function createApi(onLog: (entry: LogEntry) => void) {
     submitForm: (form: unknown) => call<FormDetail>('POST', '/forms', form),
     runStage: (id: number, stage: string, pipelineId: string) =>
       call<StageOutcome>('POST', `/targetsystems/${id}/stages/${stage}/run`, { pipelineId, route: 'greenfield' }),
-    formsByPipeline: (pipelineId: string, type: string) =>
-      call<FormSummary[] | null>('GET', `/pipelines/${pipelineId}/forms?type=${type}`).then((rows) => rows ?? []),
+    formsByPipeline: (pipelineId: string, filter?: { type?: string; stage?: string; status?: string }) => {
+      const query = new URLSearchParams();
+      for (const [name, value] of Object.entries(filter ?? {})) {
+        if (value) query.set(name, value);
+      }
+      const suffix = query.toString() === '' ? '' : `?${query.toString()}`;
+      return call<FormDetail[] | null>('GET', `/pipelines/${pipelineId}/forms${suffix}`).then((rows) => rows ?? []);
+    },
     form: (formId: string, version: number) =>
       call<FormDetail>('GET', `/forms/${formId}/versions/${version}`),
     operatorRequests: () =>

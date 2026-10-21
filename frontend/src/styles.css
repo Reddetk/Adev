@@ -621,3 +621,75 @@ tbody tr:hover {
   background: #f7e4de;
   color: var(--bad);
 }
+
+/* The field tree of a document: branches open on demand, no JSON on screen. */
+.json-tree {
+  padding: 2px 0;
+}
+
+.json-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 2px 0;
+}
+
+.json-name {
+  flex: 0 0 auto;
+  min-width: 150px;
+  color: var(--muted);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+}
+
+.json-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.json-branch > summary {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.json-children {
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+
+.json-count,
+.json-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.json-bool {
+  color: var(--ok);
+}
+
+.json-num {
+  font-weight: 600;
+}
+
+/* One document type: its versions and, before it runs, the paragraphs to expect. */
+.doc-group {
+  margin-top: 14px;
+}
+
+.doc-group h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.question-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}

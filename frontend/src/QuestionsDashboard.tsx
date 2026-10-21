@@ -56,10 +56,19 @@ function QuestionCard({
   onAnswer: (pointer: string, value: unknown) => void;
 }) {
   const [value, setValue] = useState('');
-  // The question names the options when it is a choice: "Options: A, B."
-  const options = question.question.match(/Options: (.+)\.$/)?.[1].split(', ') ?? [];
+  const [sent, setSent] = useState('');
+  // The choices arrive as data, so a choice is one click. A question without
+  // options waits for words or a number: any answer is accepted by the server.
+  const options = question.options ?? [];
+  const answered = sent !== '';
 
-  function submit() {
+  function submit(answer: unknown) {
+    setSent(String(answer));
+    setValue('');
+    onAnswer(question.pointer, answer);
+  }
+
+  function submitTyped() {
     const trimmed = value.trim();
     if (!trimmed) return;
     // The field takes raw JSON: plain words become a JSON string, numbers and
@@ -70,8 +79,7 @@ function QuestionCard({
     } catch {
       answer = trimmed;
     }
-    onAnswer(question.pointer, answer);
-    setValue('');
+    submit(answer);
   }
 
   return (
@@ -85,26 +93,38 @@ function QuestionCard({
         <span className="hint">{question.status}</span>
       </div>
       <p className="question-text">{question.question}</p>
-      {options.length > 0 && (
-        <div className="question-options">
-          {options.map((option) => (
-            <button key={option} className="chip" onClick={() => setValue(option)}>
-              {option}
+      {answered ? (
+        <p className="check ok">
+          отправлено: {sent} — вопрос закроется после ответа сервера
+        </p>
+      ) : (
+        <>
+          {options.length > 0 && (
+            <div className="question-options">
+              {options.map((option) => (
+                <button key={option} className="chip" onClick={() => submit(option)}>
+                  {option}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="question-answer">
+            <input
+              placeholder={
+                options.length > 0
+                  ? 'Или впишите свой вариант'
+                  : 'Ответ своими словами — или число для метрики'
+              }
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              onKeyDown={(event) => event.key === 'Enter' && submitTyped()}
+            />
+            <button onClick={submitTyped} disabled={!value.trim()}>
+              Ответить
             </button>
-          ))}
-        </div>
+          </div>
+        </>
       )}
-      <div className="question-answer">
-        <input
-          placeholder="Ответ своими словами — или число для метрики"
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => event.key === 'Enter' && submit()}
-        />
-        <button onClick={submit} disabled={!value.trim()}>
-          Ответить
-        </button>
-      </div>
     </article>
   );
 }

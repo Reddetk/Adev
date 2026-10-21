@@ -1,7 +1,8 @@
 // The form payload is a document, not a data blob: the registry defines the fields
 // and the agent fills them. This module turns a payload into the document the
-// operator reads. An unknown form type keeps the raw view.
+// operator reads. A type without a hand-written view gets the field tree.
 import type { ReactNode } from 'react';
+import { JsonTree } from './JsonTree';
 import type { FormDetail } from './api';
 
 type Text = { text?: string; lang?: string };
@@ -217,7 +218,7 @@ export function FormDocument({ form, raw }: { form: FormDetail; raw: boolean }) 
       ) : form.formType === 'USER_INPUT' ? (
         <UserInputDocument payload={form.payload as UserInput} />
       ) : (
-        <pre className="payload">{JSON.stringify(form.payload, null, 2)}</pre>
+        <JsonTree value={form.payload} />
       )}
     </div>
   );
