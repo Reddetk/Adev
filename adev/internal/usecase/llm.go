@@ -14,15 +14,12 @@ type LLM interface {
 	Complete(ctx context.Context, request LLMRequest) (LLMResponse, error)
 }
 
-// LLMRequest carries everything an agent may see for one attempt.
+// LLMRequest carries the two messages of one attempt. The use case composes
+// them; the adapter only sends them.
 type LLMRequest struct {
-	Role        domain.Role
-	Instruction string
-	Shape       string
-	Context     json.RawMessage
-	// Problems lists the validation failures of the previous attempts. The model
-	// must fix them; it never gets a second chance to guess silently.
-	Problems []string
+	Role   domain.Role
+	System string
+	User   string
 }
 
 // LLMResponse is the payload the model wants to store in the output form.

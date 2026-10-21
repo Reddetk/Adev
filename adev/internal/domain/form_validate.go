@@ -50,7 +50,9 @@ func knownStatus(s Status) bool {
 	return false
 }
 
-func knownRoute(r Route) bool { return r == RouteGreenfield || r == RouteChange }
+func knownRoute(r Route) bool {
+	return r == RouteGreenfield || r == RouteChange || r == RouteMinorChange || r == RouteMajorChange
+}
 
 func knownMode(m Mode) bool { return m == ModeFull || m == ModeDelta }
 

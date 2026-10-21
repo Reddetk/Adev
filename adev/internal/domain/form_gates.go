@@ -11,114 +11,28 @@ import (
 // PayloadTexts returns every free-text value of a form.
 // The use case layer runs the language checker on them.
 func (f *Form) PayloadTexts() ([]Text, error) {
-	switch f.FormType {
-	case TypeUserInput:
-		var in UserInput
-		if err := f.BindPayload(&in); err != nil {
-			return nil, err
-		}
-		return []Text{in.RawRequest}, nil
-	case TypeBRD:
-		var brd BRD
-		if err := f.BindPayload(&brd); err != nil {
-			return nil, err
-		}
-		return brd.Texts(), nil
-	case TypeFeasibility:
-		var feasibility Feasibility
-		if err := f.BindPayload(&feasibility); err != nil {
-			return nil, err
-		}
-		return feasibility.Texts(), nil
-	case TypeSRS:
-		var srs SRS
-		if err := f.BindPayload(&srs); err != nil {
-			return nil, err
-		}
-		return srs.Texts(), nil
-	case TypeHLD:
-		var hld HLD
-		if err := f.BindPayload(&hld); err != nil {
-			return nil, err
-		}
-		return hld.Texts(), nil
-	case TypeADR:
-		var adr ADR
-		if err := f.BindPayload(&adr); err != nil {
-			return nil, err
-		}
-		return adr.Texts(), nil
-	case TypeLLD:
-		var lld LLD
-		if err := f.BindPayload(&lld); err != nil {
-			return nil, err
-		}
-		return lld.Texts(), nil
-	case TypeTaskPlan:
-		var taskPlan TaskPlan
-		if err := f.BindPayload(&taskPlan); err != nil {
-			return nil, err
-		}
-		return taskPlan.Texts(), nil
-	default:
+	spec, ok := formSpecFor(f.FormType)
+	if !ok {
 		return nil, nil
 	}
+	payload := spec.payload()
+	if err := f.BindPayload(payload); err != nil {
+		return nil, err
+	}
+	return spec.texts(payload), nil
 }
 
 // ValidatePayload applies the gates of the payload type of the form.
 func (f *Form) ValidatePayload() error {
-	switch f.FormType {
-	case TypeUserInput:
-		var in UserInput
-		if err := f.BindPayload(&in); err != nil {
-			return payloadMismatch(f.FormType, err)
-		}
-		return ValidateUserInput(in)
-	case TypeBRD:
-		var brd BRD
-		if err := f.BindPayload(&brd); err != nil {
-			return payloadMismatch(f.FormType, err)
-		}
-		return ValidateBRD(brd, f.Status)
-	case TypeFeasibility:
-		var feasibility Feasibility
-		if err := f.BindPayload(&feasibility); err != nil {
-			return payloadMismatch(f.FormType, err)
-		}
-		return ValidateFeasibility(feasibility)
-	case TypeSRS:
-		var srs SRS
-		if err := f.BindPayload(&srs); err != nil {
-			return payloadMismatch(f.FormType, err)
-		}
-		return ValidateSRS(srs)
-	case TypeHLD:
-		var hld HLD
-		if err := f.BindPayload(&hld); err != nil {
-			return payloadMismatch(f.FormType, err)
-		}
-		return ValidateHLD(hld)
-	case TypeADR:
-		var adr ADR
-		if err := f.BindPayload(&adr); err != nil {
-			return payloadMismatch(f.FormType, err)
-		}
-		return ValidateADR(adr)
-	case TypeLLD:
-		var lld LLD
-		if err := f.BindPayload(&lld); err != nil {
-			return payloadMismatch(f.FormType, err)
-		}
-		return ValidateLLD(lld)
-	case TypeTaskPlan:
-		var taskPlan TaskPlan
-		if err := f.BindPayload(&taskPlan); err != nil {
-			return payloadMismatch(f.FormType, err)
-		}
-		return ValidateTaskPlan(taskPlan)
-	default:
+	spec, ok := formSpecFor(f.FormType)
+	if !ok {
 		return fmt.Errorf("%w: %q", ErrNoPayloadGates, f.FormType)
 	}
+	payload := spec.payload()
+	if err := f.BindPayload(payload); err != nil {
+		return payloadMismatch(f.FormType, err)
+	}
+	return spec.validate(payload, f.Status)
 }
 
 // ValidatePayloadWithStatus is the accepted-state gate of the question phase:

@@ -113,8 +113,8 @@ func (l *openAICompatibleLLM) Complete(ctx context.Context, request usecase.LLMR
 	body, err := json.Marshal(completionRequest{
 		Model: l.agent.Model,
 		Messages: []chatMessage{
-			{Role: "system", Content: systemPrompt(request)},
-			{Role: "user", Content: userPrompt(request)},
+			{Role: "system", Content: request.System},
+			{Role: "user", Content: request.User},
 		},
 		Temperature: l.agent.Temperature,
 		MaxTokens:   l.agent.MaxTokens,
@@ -154,28 +154,6 @@ func (l *openAICompatibleLLM) Complete(ctx context.Context, request usecase.LLMR
 		return usecase.LLMResponse{}, fmt.Errorf("model call: the response has no choice")
 	}
 	return usecase.LLMResponse{Payload: extractJSON(parsed.Choices[0].Message.Content)}, nil
-}
-
-func systemPrompt(request usecase.LLMRequest) string {
-	return "You fill one form of a software project. Answer with JSON only. " +
-		"Do not add fields. Do not write code. Use short sentences. " +
-		"The payload shape is: " + request.Shape
-}
-
-func userPrompt(request usecase.LLMRequest) string {
-	var builder strings.Builder
-	builder.WriteString(request.Instruction)
-	builder.WriteString("\nInput forms:\n")
-	builder.Write(request.Context)
-	if len(request.Problems) > 0 {
-		builder.WriteString("\nThe previous answer failed these gates. Fix them:\n")
-		for _, problem := range request.Problems {
-			builder.WriteString("- ")
-			builder.WriteString(problem)
-			builder.WriteString("\n")
-		}
-	}
-	return builder.String()
 }
 
 // extractJSON cuts the payload out of an answer that may be wrapped in prose or in

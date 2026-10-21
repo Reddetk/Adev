@@ -30,14 +30,19 @@ var greenfieldStages = []Stage{
 		Inputs: []FormType{TypeLLD, TypeSRS}, Outputs: []FormType{TypeTaskPlan}},
 }
 
+// stagesByRoute is the route registry. A route names its stages, and no agent
+// ever chooses the next one.
+var stagesByRoute = map[Route][]Stage{
+	RouteGreenfield: greenfieldStages,
+}
+
 // Stages returns the stages of a route.
 func Stages(route Route) ([]Stage, error) {
-	switch route {
-	case RouteGreenfield:
-		return cloneStages(greenfieldStages), nil
-	default:
+	stages, ok := stagesByRoute[route]
+	if !ok {
 		return nil, fmt.Errorf("route %q is not implemented yet", route)
 	}
+	return cloneStages(stages), nil
 }
 
 // StageByID returns one stage of a route.

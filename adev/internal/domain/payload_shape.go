@@ -31,28 +31,15 @@ var shapeChoices = map[string]string{
 	"PlanTaskOwner":       `"dev|devops"`,
 }
 
-// payloadShapes maps a form type to the zero value of its payload type.
-// A form type without an entry has no payload gates and cannot be produced.
-var payloadShapes = map[FormType]any{
-	TypeUserInput:   UserInput{},
-	TypeBRD:         BRD{},
-	TypeFeasibility: Feasibility{},
-	TypeSRS:         SRS{},
-	TypeHLD:         HLD{},
-	TypeADR:         ADR{},
-	TypeLLD:         LLD{},
-	TypeTaskPlan:    TaskPlan{},
-}
-
 // PayloadShape returns the JSON skeleton of the payload of a form type.
 // The skeleton is generated from the domain type, so a new field reaches the
 // model without a hand-written copy in a service.
 func PayloadShape(formType FormType) (string, error) {
-	value, ok := payloadShapes[formType]
+	spec, ok := formSpecFor(formType)
 	if !ok {
 		return "", fmt.Errorf("%w: %q", ErrNoPayloadGates, formType)
 	}
-	raw, err := json.Marshal(shapeOf(reflect.ValueOf(value)))
+	raw, err := json.Marshal(shapeOf(reflect.ValueOf(spec.payload())))
 	if err != nil {
 		return "", fmt.Errorf("payload shape: %w", err)
 	}
@@ -61,10 +48,11 @@ func PayloadShape(formType FormType) (string, error) {
 
 // FormTypesWithGates returns the form types that have payload gates, in registry order.
 func FormTypesWithGates() []FormType {
-	return []FormType{
-		TypeUserInput, TypeBRD, TypeFeasibility, TypeSRS,
-		TypeHLD, TypeADR, TypeLLD, TypeTaskPlan,
+	types := make([]FormType, 0, len(formSpecs))
+	for _, entry := range formSpecs {
+		types = append(types, entry.Type)
 	}
+	return types
 }
 
 func shapeOf(value reflect.Value) any {

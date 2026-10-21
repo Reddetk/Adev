@@ -44,7 +44,11 @@ type Route string
 
 const (
 	RouteGreenfield Route = "greenfield"
-	RouteChange     Route = "change"
+	// A change request starts on RouteChange and picks one of the two branches
+	// after its impact assessment: minor skips the architecture stages.
+	RouteChange      Route = "change"
+	RouteMinorChange Route = "change-minor"
+	RouteMajorChange Route = "change-major"
 )
 
 // Mode marks a full form or a JSON Patch delta against a base form.

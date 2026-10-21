@@ -183,9 +183,9 @@ func TestH2TheModelGetsTheGateFailureBackAndFixesIt(t *testing.T) {
 	assert.False(t, outcome.Blocked)
 	assert.Equal(t, 2, outcome.Attempts)
 	require.Len(t, fixture.llm.requests, 2)
-	assert.Empty(t, fixture.llm.requests[0].Problems)
-	require.Len(t, fixture.llm.requests[1].Problems, 1)
-	assert.Contains(t, fixture.llm.requests[1].Problems[0], "goals")
+	assert.NotContains(t, fixture.llm.requests[0].User, "The previous answer failed these gates")
+	assert.Contains(t, fixture.llm.requests[1].User, "The previous answer failed these gates")
+	assert.Contains(t, fixture.llm.requests[1].User, "goals")
 
 	stored, err := fixture.forms.Latest(context.Background(), stageOutput)
 	require.NoError(t, err)
@@ -331,7 +331,8 @@ func TestE2AValidPayloadOnTheLastAttemptSucceeds(t *testing.T) {
 	assert.Equal(t, 1, outcome.FormVersion)
 
 	require.Len(t, fixture.llm.requests, 3)
-	assert.Len(t, fixture.llm.requests[2].Problems, 2, "the last attempt must see both earlier failures")
+	assert.Equal(t, 2, strings.Count(fixture.llm.requests[2].User, "goals: must contain at least one entry"),
+		"the last attempt must see both earlier failures")
 
 	stored, err := fixture.forms.Latest(context.Background(), stageOutput)
 	require.NoError(t, err)
@@ -362,7 +363,5 @@ func TestE3TheStageReadsTheLatestVersionOfItsInput(t *testing.T) {
 	assert.Equal(t, latest.PayloadHash, stored.Inputs[0].Hash, "the reference must carry the hash of that version")
 
 	require.Len(t, fixture.llm.requests, 1)
-	var stageContext map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(fixture.llm.requests[0].Context, &stageContext))
-	assert.Contains(t, string(stageContext["USER_INPUT"]), "two branches", "the model must see the text of the latest version")
+	assert.Contains(t, fixture.llm.requests[0].User, "two branches", "the model must see the text of the latest version")
 }
