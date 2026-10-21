@@ -410,9 +410,13 @@ func (s *StageService) record(ctx context.Context, request StageRequest, stage d
 	})
 }
 
-// batchPlan names a top-level list of a composite document.
+// batchPlan names a top-level list of a composite document. With names a companion
+// list whose entries belong to one entry through their ref field: a detail call
+// for one contract writes that contract and its paths.
 type batchPlan struct {
 	kind string // the JSON name of the list
+	with string // the JSON name of the companion list, if any
+	ref  string // the field of a companion entry that names its owner
 }
 
 // batchPlans marks the documents that are filled entry by entry. The skeleton call
@@ -420,11 +424,14 @@ type batchPlan struct {
 var batchPlans = map[domain.FormType][]batchPlan{
 	domain.TypeSRS:      {{kind: "fr"}, {kind: "nfr"}},
 	domain.TypeTaskPlan: {{kind: "tasks"}},
+	domain.TypeLLD:      {{kind: "contracts", with: "paths", ref: "contractRef"}},
 }
 
 // detailBatches asks the model to fill one entry per call and merges the answers
 // back into the skeleton. A failed detail call keeps the skeleton entry: the gates
 // still judge the document, and the operator sees what is missing.
+// shortcut: openGaps written by a detail call are dropped at the merge; merge them
+// when the detail calls start to ask the operator questions of their own.
 func (s *StageService) detailBatches(ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig, stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage, plans []batchPlan, payload json.RawMessage) json.RawMessage {
 	for _, plan := range plans {
 		entries, err := listOf(payload, plan.kind)
@@ -438,8 +445,11 @@ func (s *StageService) detailBatches(ctx context.Context, request StageRequest, 
 			}
 			instruction := fmt.Sprintf(
 				"You fill the %s form of stage %s. Answer with the payload only. "+
-					"Detail exactly one entry: the %s entry with id %q. Keep every other entry unchanged.",
-				output, stage.ID, plan.kind, id)
+					"Detail exactly one entry: the %s entry with id %q, now %s. Keep every other entry unchanged.",
+				output, stage.ID, plan.kind, id, entry)
+			if plan.with != "" {
+				instruction += fmt.Sprintf(" Also write the %s entries whose %s is %q.", plan.with, plan.ref, id)
+			}
 			system, user := promptMessages(instruction, shape, stageContext, nil)
 			response, err := client.Complete(ctx, LLMRequest{Role: agent.Role, System: system, User: user})
 			if err != nil {
@@ -447,7 +457,7 @@ func (s *StageService) detailBatches(ctx context.Context, request StageRequest, 
 				continue
 			}
 			s.recordModelCall(request, agent, response.Usage)
-			merged, err := mergeEntry(payload, response.Payload, plan.kind, id)
+			merged, err := mergeEntry(payload, response.Payload, plan, id)
 			if err != nil {
 				log.Printf("stage %s: merge %s %s: %v", stage.ID, plan.kind, id, err)
 				continue
@@ -484,8 +494,17 @@ func fieldOf(entry json.RawMessage, field string) string {
 	return value
 }
 
-// mergeEntry replaces one entry of a list with the detailed answer of the same id.
-func mergeEntry(payload, detail json.RawMessage, kind, id string) (json.RawMessage, error) {
+// mergeEntry replaces one entry of a list with the detailed answer of the same id,
+// and the companion entries of that id with the ones the detail call wrote.
+func mergeEntry(payload, detail json.RawMessage, plan batchPlan, id string) (json.RawMessage, error) {
+	merged, err := replaceEntry(payload, detail, plan.kind, id)
+	if err != nil || plan.with == "" {
+		return merged, err
+	}
+	return replaceOwned(merged, detail, plan, id)
+}
+
+func replaceEntry(payload, detail json.RawMessage, kind, id string) (json.RawMessage, error) {
 	entries, err := listOf(payload, kind)
 	if err != nil {
 		return nil, err
@@ -509,7 +528,33 @@ func mergeEntry(payload, detail json.RawMessage, kind, id string) (json.RawMessa
 	if !replaced {
 		return payload, nil
 	}
+	return setList(payload, kind, entries)
+}
 
+// replaceOwned keeps the companion entries of the other owners and takes the ones
+// the detail call wrote for this id. A detail without them leaves the owner without
+// them; the gates name that gap.
+func replaceOwned(payload, detail json.RawMessage, plan batchPlan, id string) (json.RawMessage, error) {
+	entries, err := listOf(payload, plan.with)
+	if err != nil {
+		return nil, err
+	}
+	fresh, _ := listOf(detail, plan.with)
+	var kept []json.RawMessage
+	for _, entry := range entries {
+		if fieldOf(entry, plan.ref) != id {
+			kept = append(kept, entry)
+		}
+	}
+	for _, entry := range fresh {
+		if fieldOf(entry, plan.ref) == id {
+			kept = append(kept, entry)
+		}
+	}
+	return setList(payload, plan.with, kept)
+}
+
+func setList(payload json.RawMessage, kind string, entries []json.RawMessage) (json.RawMessage, error) {
 	var document map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &document); err != nil {
 		return nil, err

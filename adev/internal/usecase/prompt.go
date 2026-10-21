@@ -32,7 +32,23 @@ func promptMessages(instruction, shape string, context json.RawMessage, problems
 
 // stagePrompt is the pair of messages of one stage output attempt.
 func stagePrompt(stage domain.Stage, output domain.FormType, shape string, context json.RawMessage, problems []string) (system, user string) {
-	return promptMessages(stageInstruction(stage, output), shape, context, problems)
+	instruction := stageInstruction(stage, output)
+	if _, batched := batchPlans[output]; batched {
+		instruction = skeletonInstruction(stage, output)
+	}
+	return promptMessages(instruction, shape, context, problems)
+}
+
+// skeletonInstruction asks the first call of a batched document for its outline:
+// every entry with its id and short fields, the detailed lists empty. Each entry
+// gets its own call afterwards, so no single answer carries the whole document.
+func skeletonInstruction(stage domain.Stage, output domain.FormType) string {
+	return fmt.Sprintf(
+		"You fill the outline of the %s form of stage %s. Answer with the payload only. "+
+			"List every entry with its id and short fields. Leave the detailed lists empty ([]): "+
+			"each entry is detailed by its own call. "+
+			"If the context does not give a concrete value, put one openGaps entry with the question and the pointer.",
+		output, stage.ID)
 }
 
 // stageInstruction is one rule for every stage: fill what the context answers,
