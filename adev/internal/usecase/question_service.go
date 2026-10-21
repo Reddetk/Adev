@@ -128,12 +128,13 @@ func (s *QuestionService) Answer(ctx context.Context, form *domain.Form, pointer
 		value = quoted
 	}
 
-	// An answered gap leaves the payload: the decision went into its field.
-	// Every question-phase form carries its gaps in the same openGaps section.
+	// An answered gap leaves the payload: the decision went into its field. The
+	// entries are read from the raw JSON: a payload broken elsewhere binds into no
+	// gap, and the answered entry would stay forever.
 	var removals []int
-	for _, position := range form.Gaps() {
-		if position.Gap.Pointer == pointer {
-			removals = append(removals, position.Index)
+	for index, gapPointer := range rawGapPointers(form.Payload) {
+		if gapPointer == pointer {
+			removals = append(removals, index)
 		}
 	}
 	// The operator answers in plain words; the field keeps the type it has.
@@ -387,6 +388,24 @@ func answerShape(shape any, answer any) (any, bool) {
 		}
 	}
 	return nil, false
+}
+
+// rawGapPointers returns the pointers of the openGaps entries in list order, without
+// binding the payload to its form type.
+func rawGapPointers(payload json.RawMessage) []string {
+	var doc struct {
+		OpenGaps []struct {
+			Pointer string `json:"pointer"`
+		} `json:"openGaps"`
+	}
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		return nil
+	}
+	pointers := make([]string, 0, len(doc.OpenGaps))
+	for _, gap := range doc.OpenGaps {
+		pointers = append(pointers, gap.Pointer)
+	}
+	return pointers
 }
 
 // valueAt walks a JSON document along a pointer and returns the value it names.

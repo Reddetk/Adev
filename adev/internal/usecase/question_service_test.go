@@ -310,6 +310,43 @@ func TestShapeFailureIsNotAnOperatorQuestion(t *testing.T) {
 	}
 }
 
+// TestAnswerRemovesItsGapEvenWhenTheRestIsBroken: a field broke earlier, so the
+// payload binds into no gap. The answer still fills its field and removes its own
+// openGaps entry, otherwise the version waits forever with no question.
+func TestAnswerRemovesItsGapEvenWhenTheRestIsBroken(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	requests := &fakeQuestionRequests{}
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), requests)
+
+	form := waitingForm(t, domain.TypeSRS, "FRM-16-02", "02", `{
+		"fr": [{"id": "FR-1", "errors": "payment failure, internal error"}],
+		"openGaps": [
+			{"id": "OG-2", "pointer": "/fr/0/response", "blocking": false, "question": {"lang": "STE100", "text": "What is the response?"}},
+			{"id": "OG-3", "pointer": "/fr/0/errors", "blocking": false, "question": {"lang": "STE100", "text": "Which errors?"}}
+		]
+	}`)
+	if err := service.Publish(ctx, form, []domain.ValidationError{{Field: "fr[0].response", Problem: "is empty"}}, 16); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	answer, err := service.AnswerOnPipeline(ctx, 16, "/fr/0/response", json.RawMessage(`"The system shows the booking reference."`))
+	if err != nil {
+		t.Fatalf("answer: %v", err)
+	}
+	var gaps struct {
+		OpenGaps []struct {
+			Pointer string `json:"pointer"`
+		} `json:"openGaps"`
+	}
+	if err := json.Unmarshal(answer.Payload, &gaps); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if len(gaps.OpenGaps) != 1 || gaps.OpenGaps[0].Pointer != "/fr/0/errors" {
+		t.Fatalf("want only the unanswered gap left, got %+v", gaps.OpenGaps)
+	}
+}
+
 // waitingForm builds a form of a type with gates in the draft state of its first
 // version, so a test can put several stages of one pipeline on hold at once.
 func waitingForm(t *testing.T, formType domain.FormType, formID, stage, payload string) *domain.Form {
