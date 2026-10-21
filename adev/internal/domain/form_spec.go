@@ -71,6 +71,12 @@ var formSpecs = []formSpecEntry{
 		texts:      func(payload any) []Text { return payload.(*TaskPlan).Texts() },
 		projection: openDesignProjection,
 	}},
+	{TypeTestContract, formSpec{
+		payload:    func() any { return &TestContract{} },
+		validate:   func(payload any, _ Status) error { return ValidateTestContract(*payload.(*TestContract)) },
+		texts:      func(payload any) []Text { return payload.(*TestContract).Texts() },
+		projection: openDesignProjection,
+	}},
 }
 
 // formSpecFor returns the spec of a form type. A type without an entry has no
