@@ -54,13 +54,17 @@ func TestPR0OneQuestionRuleReachesEveryStage(t *testing.T) {
 // PR0 acceptance: the last stage of the route completes the pipeline.
 func TestPR0TheLastStageCompletesThePipeline(t *testing.T) {
 	f := newFixture(t, respondWith(t, map[domain.FormType]json.RawMessage{
-		domain.TypeTaskPlan: validTaskPlan(t),
+		domain.TypeVerdict: validVerdict(t),
 	}))
-	f.submit(t, "FRM-1-02", domain.TypeSRS, "02", validSRS(t))
-	f.submit(t, "FRM-1-05", domain.TypeLLD, "05", validLLD(t))
-	f.pipelines.pipeline.CurrentStage = "06"
+	f.submit(t, "FRM-1-07", domain.TypeTestContract, "07", validTestContract(t))
+	f.submit(t, "FRM-1-08", domain.TypeImplementationSpec, "08", validImplementationSpec(t))
 
-	_, err := f.orchestrator.Run(t.Context(), stageRequest("06"))
+	stages, err := domain.Stages(domain.RouteGreenfield)
+	require.NoError(t, err)
+	last := stages[len(stages)-1].ID
+	f.pipelines.pipeline.CurrentStage = last
+
+	_, err = f.orchestrator.Run(t.Context(), stageRequest(last))
 	require.NoError(t, err)
 
 	assert.Equal(t, "completed", f.pipelines.pipeline.Status,

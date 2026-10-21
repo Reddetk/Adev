@@ -162,7 +162,7 @@ func newFixture(t *testing.T, respond func(usecase.LLMRequest) (usecase.LLMRespo
 	f.orchestrator = usecase.NewOrchestrator(f.stages, f.pipelines)
 
 	require.NoError(t, f.settings.SetWorkspace(context.Background(), testTarget, `D:\work\library`))
-	for _, role := range []domain.Role{domain.RoleAnalyst, domain.RoleArchitect} {
+	for _, role := range []domain.Role{domain.RoleAnalyst, domain.RoleArchitect, domain.RoleQA, domain.RoleDev} {
 		require.NoError(t, f.settings.SetAgent(context.Background(), domain.AgentConfig{
 			TargetSystemID: testTarget, Role: role, Provider: domain.ProviderOllama,
 			BaseURL: "http://localhost:11434", Model: "qwen3-coder:30b",
@@ -322,5 +322,51 @@ func validTaskPlan(t *testing.T) json.RawMessage {
 			},
 		},
 		Roots: []string{"T-1"},
+	})
+}
+
+func validTestContract(t *testing.T) json.RawMessage {
+	return mustJSON(t, domain.TestContract{
+		Tests: []domain.TestCase{{
+			ID: "TC-1", TaskRef: "T-1", ContractRef: "contract-1",
+			TargetTest: domain.TargetRef{ObjectID: "obj-test-1", Package: "internal/app/book"},
+			Kind:       "unit", Path: domain.PathHappy,
+			Scenario: domain.TestScenario{
+				Given: []domain.Text{ste("a book")}, When: []domain.Text{ste("it is lent")}, Then: []domain.Text{ste("the loan is stored")},
+			},
+		}},
+		Coverage: domain.TestCoverage{ContractsCovered: []string{"contract-1"}, PathsCovered: []string{"path-1"}},
+		Ready:    true,
+	})
+}
+
+func validImplementationSpec(t *testing.T) json.RawMessage {
+	return mustJSON(t, domain.ImplementationSpec{
+		TaskRef:         "T-1",
+		TestContractRef: domain.Ref{FormID: "FRM-1-07", FormType: domain.TypeTestContract, FormVersion: 1},
+		Targets: []domain.ImplementationTarget{{
+			Target: domain.TargetRef{ObjectID: "obj-module-1"}, Action: "change", Generator: "codegen",
+		}},
+		Steps: []domain.ImplementationStep{{
+			Order: 1, TargetObjectID: "obj-module-1", Action: "change", Text: ste("Add the book store."),
+		}},
+		TestMap: []domain.TestMapEntry{{TestID: "TC-1", TargetObjectID: "obj-module-1", StepOrder: 1}},
+	})
+}
+
+func validVerdict(t *testing.T) json.RawMessage {
+	return mustJSON(t, domain.VerdictReport{
+		TaskRef:           "T-1",
+		ImplementationRef: domain.Ref{FormID: "FRM-1-08", FormType: domain.TypeImplementationSpec, FormVersion: 1},
+		RunID:             "RUN-1",
+		StartedAt:         "2026-10-21T10:00:00Z",
+		FinishedAt:        "2026-10-21T10:01:00Z",
+		Results: []domain.TestResult{{
+			TestID: "TC-1", Status: domain.TestPass, DurationMs: 120,
+			Evidence: domain.Ref{FormID: "LOG-1"},
+		}},
+		Verdict:  "pass",
+		Reason:   ste("All tests pass."),
+		Evidence: []domain.Ref{{FormID: "LOG-1"}},
 	})
 }

@@ -5,11 +5,13 @@ import (
 	"fmt"
 )
 
-// TargetRef is the physical test file: a registry object or a new file.
+// TargetRef is the physical file: a registry object or a new one.
 type TargetRef struct {
 	ObjectID string `json:"objectId,omitempty"`
-	New      string `json:"new,omitempty"`
-	Package  string `json:"package"`
+	New      bool   `json:"new,omitempty"`
+	Kind     string `json:"kind,omitempty"`
+	Path     string `json:"path,omitempty"`
+	Package  string `json:"package,omitempty"`
 }
 
 // TestScenario is the given-when-then block of one test. Each step is a list of
@@ -74,7 +76,7 @@ func ValidateTestContract(c TestContract) error {
 		if test.TaskRef == "" || test.ContractRef == "" {
 			errs = append(errs, invalid(field, "taskRef and contractRef must be non-empty"))
 		}
-		if test.TargetTest.ObjectID == "" && test.TargetTest.New == "" {
+		if test.TargetTest.ObjectID == "" && !test.TargetTest.New {
 			errs = append(errs, invalid(field+".targetTest", "needs objectId or new"))
 		}
 		if !knownTestKinds[test.Kind] {

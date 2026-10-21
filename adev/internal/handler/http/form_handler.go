@@ -147,22 +147,22 @@ func (h *FormHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ByPipeline reads the versions of one form type in one pipeline, oldest first.
-// @Summary List the form versions of a pipeline
+// ByPipeline reads the forms of one pipeline. Every filter is optional: the
+// document list reads all types, then narrows by status or stage.
+// @Summary List the forms of a pipeline
 // @Tags forms
 // @Produce json
 // @Param pipelineId path string true "Pipeline ID"
-// @Param type query string true "Form type" Enums(BRD, SRS, HLD, ADR, LLD, TASK_PLAN)
+// @Param type query string false "Form type" Enums(BRD, SRS, FR, NFR, HLD, ADR, LLD, TASK_PLAN, FEASIBILITY)
+// @Param status query string false "Form status" Enums(draft, valid, approved, superseded)
+// @Param stage query string false "Pipeline stage"
 // @Success 200 {array} map[string]interface{} "Stored forms, oldest first"
 // @Failure 400 {object} map[string]string
 // @Router /pipelines/{pipelineId}/forms [get]
 func (h *FormHandler) ByPipeline(w http.ResponseWriter, r *http.Request) {
-	formType := domain.FormType(r.URL.Query().Get("type"))
-	if formType == "" {
-		writeError(w, http.StatusBadRequest, "the type query parameter is required")
-		return
-	}
-	if !formType.Valid() {
+	query := r.URL.Query()
+	formType := domain.FormType(query.Get("type"))
+	if formType != "" && !formType.Valid() {
 		writeError(w, http.StatusBadRequest, "unknown form type")
 		return
 	}
@@ -171,10 +171,18 @@ func (h *FormHandler) ByPipeline(w http.ResponseWriter, r *http.Request) {
 		writeError(w, formStatus(err), err.Error())
 		return
 	}
-	if forms == nil {
-		forms = []*domain.Form{}
+	status, stage := domain.Status(query.Get("status")), query.Get("stage")
+	matched := make([]*domain.Form, 0, len(forms))
+	for _, form := range forms {
+		if status != "" && form.Status != status {
+			continue
+		}
+		if stage != "" && form.Stage != stage {
+			continue
+		}
+		matched = append(matched, form)
 	}
-	writeJSON(w, http.StatusOK, forms)
+	writeJSON(w, http.StatusOK, matched)
 }
 
 func formVersion(w http.ResponseWriter, r *http.Request) (int, bool) {

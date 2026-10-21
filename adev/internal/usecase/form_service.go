@@ -107,6 +107,7 @@ func (s *FormService) Latest(ctx context.Context, formID string) (*domain.Form, 
 }
 
 // ByPipeline reads the versions of one form type in one pipeline, oldest first.
+// An empty form type reads every type, which is what the document list needs.
 func (s *FormService) ByPipeline(ctx context.Context, pipelineID string, formType domain.FormType) ([]*domain.Form, error) {
 	return s.store.ByPipeline(ctx, pipelineID, formType)
 }

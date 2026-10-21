@@ -261,10 +261,10 @@ func TestListFormsByPipeline(t *testing.T) {
 	assert.Contains(t, response.Body.String(), userInputFormID)
 }
 
-func TestListFormsByPipelineRequiresAType(t *testing.T) {
+func TestListFormsByPipelineWithoutATypeListsEveryType(t *testing.T) {
 	response := newFormAPI().send(t, http.MethodGet, "/api/v1/pipelines/"+pipelineID+"/forms", nil)
 
-	assert.Equal(t, http.StatusBadRequest, response.Code)
+	assert.Equal(t, http.StatusOK, response.Code)
 }
 
 func TestListFormsByPipelineRejectsAnUnknownType(t *testing.T) {

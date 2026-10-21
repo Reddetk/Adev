@@ -91,6 +91,41 @@ var formSpecs = []formSpecEntry{
 		texts:      func(payload any) []Text { return payload.(*TestContract).Texts() },
 		projection: openDesignProjection,
 	}},
+	{TypeCRBrief, formSpec{
+		payload:    func() any { return &CRBrief{} },
+		validate:   func(payload any, _ Status) error { return ValidateCRBrief(*payload.(*CRBrief)) },
+		texts:      func(payload any) []Text { return payload.(*CRBrief).Texts() },
+		gaps:       func(payload any) []Gap { return payload.(*CRBrief).OpenGaps },
+		projection: openDesignProjection,
+	}},
+	{TypeImpactAssessment, formSpec{
+		payload:    func() any { return &ImpactAssessment{} },
+		validate:   func(payload any, _ Status) error { return ValidateImpactAssessment(*payload.(*ImpactAssessment)) },
+		texts:      func(payload any) []Text { return payload.(*ImpactAssessment).Texts() },
+		gaps:       func(payload any) []Gap { return payload.(*ImpactAssessment).OpenGaps },
+		projection: openDesignProjection,
+	}},
+	{TypeImplementationSpec, formSpec{
+		payload:    func() any { return &ImplementationSpec{} },
+		validate:   func(payload any, _ Status) error { return ValidateImplementationSpec(*payload.(*ImplementationSpec)) },
+		texts:      func(payload any) []Text { return payload.(*ImplementationSpec).Texts() },
+		gaps:       func(payload any) []Gap { return payload.(*ImplementationSpec).OpenGaps },
+		projection: openDesignProjection,
+	}},
+	{TypeVerdict, formSpec{
+		payload:    func() any { return &VerdictReport{} },
+		validate:   func(payload any, _ Status) error { return ValidateVerdictReport(*payload.(*VerdictReport)) },
+		texts:      func(payload any) []Text { return payload.(*VerdictReport).Texts() },
+		gaps:       func(payload any) []Gap { return payload.(*VerdictReport).OpenGaps },
+		projection: openDesignProjection,
+	}},
+	{TypeRefactorSpec, formSpec{
+		payload:    func() any { return &RefactorSpec{} },
+		validate:   func(payload any, _ Status) error { return ValidateRefactorSpec(*payload.(*RefactorSpec)) },
+		texts:      func(payload any) []Text { return payload.(*RefactorSpec).Texts() },
+		gaps:       func(payload any) []Gap { return payload.(*RefactorSpec).OpenGaps },
+		projection: openDesignProjection,
+	}},
 }
 
 // formSpecFor returns the spec of a form type. A type without an entry has no

@@ -112,7 +112,7 @@ func (m *MemoryFormsStore) ByPipeline(ctx context.Context, pipelineID string, fo
 	var result []*domain.Form
 	for _, versions := range m.forms {
 		for _, form := range versions {
-			if form.PipelineID == pipelineID && form.FormType == formType {
+			if form.PipelineID == pipelineID && (formType == "" || form.FormType == formType) {
 				result = append(result, cloneForm(form))
 			}
 		}

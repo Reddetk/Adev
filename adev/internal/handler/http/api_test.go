@@ -121,6 +121,10 @@ func (a *api) configure(t *testing.T) {
 		`{"provider":"ollama","baseUrl":"http://localhost:11434","model":"qwen3-coder:30b"}`).Code)
 	require.Equal(t, http.StatusOK, a.do(t, http.MethodPut, "/api/v1/targetsystems/1/agents/architect",
 		`{"provider":"openrouter","model":"qwen/qwen3-235b","apiKey":"sk-secret"}`).Code)
+	require.Equal(t, http.StatusOK, a.do(t, http.MethodPut, "/api/v1/targetsystems/1/agents/qa",
+		`{"provider":"ollama","baseUrl":"http://localhost:11434","model":"qwen3-coder:30b"}`).Code)
+	require.Equal(t, http.StatusOK, a.do(t, http.MethodPut, "/api/v1/targetsystems/1/agents/dev",
+		`{"provider":"ollama","baseUrl":"http://localhost:11434","model":"qwen3-coder:30b"}`).Code)
 }
 
 // --- target systems ---------------------------------------------------------
@@ -380,9 +384,12 @@ func TestPlanReportsWhatIsMissing(t *testing.T) {
 		Stages []domain.Stage `json:"stages"`
 	}
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &plan))
+	stages, err := domain.Stages(domain.RouteGreenfield)
+	require.NoError(t, err)
 	assert.False(t, plan.Readiness.Ready)
-	assert.Len(t, plan.Readiness.Missing, 3)
-	assert.Len(t, plan.Stages, 7)
+	assert.Len(t, plan.Readiness.Missing, 1+len(domain.Roles(stages)),
+		"the workspace plus one agent config per role of the route")
+	assert.Len(t, plan.Stages, len(stages))
 }
 
 func TestPlanIsReadyAfterConfiguration(t *testing.T) {
@@ -396,7 +403,7 @@ func TestPlanIsReadyAfterConfiguration(t *testing.T) {
 }
 
 func TestPlanRejectsAnUnknownRoute(t *testing.T) {
-	response := newAPI().do(t, http.MethodGet, "/api/v1/targetsystems/1/plan?route=change", "")
+	response := newAPI().do(t, http.MethodGet, "/api/v1/targetsystems/1/plan?route=magic", "")
 
 	assert.Equal(t, http.StatusBadRequest, response.Code)
 }

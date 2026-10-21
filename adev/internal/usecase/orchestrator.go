@@ -46,6 +46,16 @@ func (o *Orchestrator) Run(ctx context.Context, request StageRequest) (StageOutc
 		}
 		return outcome, nil
 	}
+	// A conditional stage is a detour of a straight run: 08.R waits for a failed
+	// verdict, which enters it directly instead of through NextStage.
+	// shortcut: only the route table names the detour; the verdict handler that
+	// enters 08.R comes with the QA stage.
+	for next.Conditional {
+		next, err = domain.NextStage(request.Route, next.ID)
+		if err != nil {
+			return outcome, nil
+		}
+	}
 	switch pipeline.CurrentStage {
 	case request.StageID:
 		pipeline.CurrentStage = next.ID
