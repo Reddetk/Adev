@@ -24,6 +24,26 @@ func ValidateFeasibility(f Feasibility) error {
 		errs = append(errs, invalid("scopeDelta", "must not be empty when verdict is revise"))
 	}
 
+	// TEJ and RAR are alternatives: the operator picks one, and each has its own
+	// gate. A TEJ answers "how much and how long"; a RAR answers "what can stop us".
+	switch f.ReportType {
+	case ReportTEJ:
+		for i, option := range f.Options {
+			if option.Cost == nil {
+				errs = append(errs, invalid(fmt.Sprintf("options[%d].cost", i), "is required for a TEJ"))
+			}
+			if option.ScheduleDays <= 0 {
+				errs = append(errs, invalid(fmt.Sprintf("options[%d].scheduleDays", i), "is required for a TEJ"))
+			}
+		}
+	case ReportRAR:
+		if len(f.Risks) == 0 {
+			errs = append(errs, invalid("risks", "must contain at least one entry for a RAR"))
+		}
+	default:
+		errs = append(errs, invalid("reportType", fmt.Sprintf("unknown value %q", f.ReportType)))
+	}
+
 	for i, option := range f.Options {
 		if option.ID == "" {
 			errs = append(errs, invalid(fmt.Sprintf("options[%d].id", i), "is empty"))

@@ -43,6 +43,16 @@ type ScopeDelta struct {
 	Reason  Text   `json:"reason"`
 }
 
+// ReportType is the document the operator asked for at stage 01: a technical and
+// economic justification or a risk assessment report. They are alternatives, not
+// sections of one document.
+type ReportType string
+
+const (
+	ReportTEJ ReportType = "tej"
+	ReportRAR ReportType = "rar"
+)
+
 // Verdict is the outcome of the feasibility study.
 type Verdict string
 
@@ -54,6 +64,7 @@ const (
 
 // Feasibility is the feasibility study that compares options for the BRD goals.
 type Feasibility struct {
+	ReportType        ReportType   `json:"reportType"`
 	Options           []Option     `json:"options"`
 	Risks             []Risk       `json:"risks,omitempty"`
 	RecommendedOption string       `json:"recommendedOption"`

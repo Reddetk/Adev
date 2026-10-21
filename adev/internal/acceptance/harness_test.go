@@ -225,6 +225,7 @@ func validBRD(t *testing.T) json.RawMessage {
 func validFeasibility(t *testing.T) json.RawMessage {
 	cost := domain.Cost{Currency: "EUR", Amount: 1000}
 	return mustJSON(t, domain.Feasibility{
+		ReportType: domain.ReportTEJ,
 		Options: []domain.Option{{
 			ID: "OPT-1", Summary: ste("Build the lending module."),
 			Cost: &cost, ScheduleDays: 30, Confidence: domain.ConfidenceHigh,

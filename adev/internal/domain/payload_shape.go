@@ -27,8 +27,10 @@ var shapeChoices = map[string]string{
 	"ContextRelationType": `"sync|async"`,
 	"LayerName":           `"adapter|domain|app|infra"`,
 	"PathKind":            `"happy|negative"`,
-	"PlanTaskType":        `"feature|fix|refactor|config|docs|test"`,
-	"PlanTaskOwner":       `"dev|devops"`,
+	// The operator picks the whole document, so the choice is a list of values.
+	"ReportType":    `["tej","rar"]`,
+	"PlanTaskType":  `"feature|fix|refactor|config|docs|test"`,
+	"PlanTaskOwner": `"dev|devops"`,
 }
 
 // PayloadShape returns the JSON skeleton of the payload of a form type.
