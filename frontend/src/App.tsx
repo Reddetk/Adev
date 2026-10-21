@@ -496,6 +496,13 @@ export default function App() {
     return list.length > 0 ? list[list.length - 1] : null;
   }
 
+  // The state of the document an activity produced. Only the forms of the selected
+  // pipeline are loaded: another pipeline shows its runs without a document state.
+  function documentStatus(activity: AgentActivity): string | undefined {
+    if (activity.pipelineId !== pipelineId) return undefined;
+    return latestForm(activity.output)?.status;
+  }
+
   async function submitInput() {
     if (!targetSystemId || !pipelineId) return;
     const form = await api
@@ -903,7 +910,11 @@ export default function App() {
           </p>
         )}
 
-        <AgentsDashboard activities={activities} loading={activitiesLoading} />
+        <AgentsDashboard
+          activities={activities}
+          loading={activitiesLoading}
+          documentStatus={documentStatus}
+        />
       </>
     );
   }
