@@ -487,7 +487,8 @@ func gapGate(failures []domain.ValidationError) []domain.ValidationError {
 
 // AnswerOnPipeline applies the answer to the form that waits for the operator in
 // this pipeline. The operator request names the pointer, not the form, so the
-// service finds the blocked form itself.
+// service finds the blocked form itself: two stages can wait at once, and only the
+// one whose payload holds the pointer can take the answer.
 func (s *QuestionService) AnswerOnPipeline(ctx context.Context, pipelineID int, pointer string, value json.RawMessage) (*domain.Form, error) {
 	pipeline := strconv.Itoa(pipelineID)
 	for _, formType := range domain.FormTypesWithGates() {
@@ -498,7 +499,11 @@ func (s *QuestionService) AnswerOnPipeline(ctx context.Context, pipelineID int, 
 		if len(versions) == 0 || versions[len(versions)-1].Status != domain.StatusWaitingOperator {
 			continue
 		}
-		return s.Answer(ctx, versions[len(versions)-1], pointer, value, pipelineID)
+		latest := versions[len(versions)-1]
+		if !domain.Patchable(latest.Payload, pointer) {
+			continue
+		}
+		return s.Answer(ctx, latest, pointer, value, pipelineID)
 	}
 	return nil, fmt.Errorf("%w: pipeline %d has no form waiting on %s", domain.ErrFormNotFound, pipelineID, pointer)
 }

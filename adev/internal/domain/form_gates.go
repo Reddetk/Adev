@@ -51,7 +51,7 @@ func (f *Form) ValidatePayloadWithStatus() error {
 		if position.Gap.Question.Value == "" {
 			continue
 		}
-		if !patchable(f.Payload, position.Gap.Pointer) {
+		if !Patchable(f.Payload, position.Gap.Pointer) {
 			errs = append(errs, invalid(fmt.Sprintf("openGaps[%d].pointer", i),
 				fmt.Sprintf("%s has no parent field in the payload; point the gap at a field the shape has, or fill the value yourself", position.Gap.Pointer)))
 		}
@@ -66,10 +66,10 @@ func (f *Form) ValidatePayloadWithStatus() error {
 	return errors.Join(errs...)
 }
 
-// patchable reports whether an answer can land on the pointer. The field itself
+// Patchable reports whether an answer can land on the pointer. The field itself
 // may be absent while its parent object or array exists: RFC 6902 add fills the
 // slot, and naming the index right past an array appends.
-func patchable(payload json.RawMessage, pointer string) bool {
+func Patchable(payload json.RawMessage, pointer string) bool {
 	if pointer == "" || pointer == "/payload" {
 		return true
 	}

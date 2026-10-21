@@ -246,18 +246,20 @@ func ValidateLLD(l LLD) error {
 			errs = append(errs, invalid(fmt.Sprintf("paths[%d].kind", i), fmt.Sprintf("unknown value %q", path.Kind)))
 		}
 	}
-	for i, contract := range l.Contracts {
+	// The missing path is written past the end of the list: a finding about a
+	// whole document section names no slot the operator could patch.
+	for _, contract := range l.Contracts {
 		if !happy[contract.ID] {
-			errs = append(errs, invalid(fmt.Sprintf("contracts[%d]", i), "has no happy path"))
+			errs = append(errs, invalid("paths/-", fmt.Sprintf("contract %q has no happy path", contract.ID)))
 		}
 		if !negative[contract.ID] {
-			errs = append(errs, invalid(fmt.Sprintf("contracts[%d]", i), "has no negative path"))
+			errs = append(errs, invalid("paths/-", fmt.Sprintf("contract %q has no negative path", contract.ID)))
 		}
 		for _, contractError := range contract.Errors {
 			if errorCodes[contract.ID][contractError.Code] {
 				continue
 			}
-			errs = append(errs, invalid(fmt.Sprintf("contracts[%d].errors", i), fmt.Sprintf("code %q has no negative path", contractError.Code)))
+			errs = append(errs, invalid("paths/-", fmt.Sprintf("no negative path carries the code %q of contract %q", contractError.Code, contract.ID)))
 		}
 	}
 	for i, event := range l.EventMaps {

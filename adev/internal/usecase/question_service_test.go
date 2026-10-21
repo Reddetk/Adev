@@ -309,3 +309,91 @@ func TestShapeFailureIsNotAnOperatorQuestion(t *testing.T) {
 		t.Fatalf("a shape failure must not ask the operator, got %+v", requests.saved)
 	}
 }
+
+// waitingForm builds a form of a type with gates in the draft state of its first
+// version, so a test can put several stages of one pipeline on hold at once.
+func waitingForm(t *testing.T, formType domain.FormType, formID, stage, payload string) *domain.Form {
+	t.Helper()
+	form := &domain.Form{Envelope: domain.Envelope{
+		FormID: formID, FormType: formType, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusDraft, Route: domain.RouteGreenfield, Stage: stage, Mode: domain.ModeFull,
+		PipelineID: "16", TargetSystemID: "21", ProducedBy: domain.RoleAnalyst,
+	}}
+	if err := form.SetRawPayload(json.RawMessage(payload)); err != nil {
+		t.Fatalf("set payload of %s: %v", formType, err)
+	}
+	return form
+}
+
+// TestAnswerLandsOnTheFormThatHoldsThePointer: two stages wait at once, and the
+// operator request names only a pointer. The answer reaches the form whose payload
+// has that slot, not the first waiting form of the pipeline.
+func TestAnswerLandsOnTheFormThatHoldsThePointer(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	requests := &fakeQuestionRequests{}
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), requests)
+
+	failure := []domain.ValidationError{{Field: "paths/-", Problem: "no negative path carries the code"}}
+	srs := waitingForm(t, domain.TypeSRS, "FRM-16-02", "02", `{"fr":[],"nfr":[]}`)
+	lld := waitingForm(t, domain.TypeLLD, "FRM-16-05", "05", `{"contracts":[{"id":"contract-1","errors":[]}],"paths":[]}`)
+	for _, form := range []*domain.Form{srs, lld} {
+		if err := service.Publish(ctx, form, failure, 16); err != nil {
+			t.Fatalf("publish %s: %v", form.FormType, err)
+		}
+	}
+
+	answer, err := service.AnswerOnPipeline(ctx, 16, "/contracts/0/errors",
+		json.RawMessage(`[{"code": "E-1", "condition": "the gateway times out"}]`))
+	if err != nil {
+		t.Fatalf("answer: %v", err)
+	}
+	if answer.FormID != lld.FormID || answer.FormVersion != 2 {
+		t.Fatalf("the answer must land on the LLD as version 2, got %s v%d", answer.FormID, answer.FormVersion)
+	}
+	var corrected domain.LLD
+	if err := answer.BindPayload(&corrected); err != nil {
+		t.Fatalf("bind payload: %v", err)
+	}
+	if len(corrected.Contracts[0].Errors) != 1 || corrected.Contracts[0].Errors[0].Condition != "the gateway times out" {
+		t.Fatalf("want the answer in the contract of the LLD, got %+v", corrected.Contracts[0].Errors)
+	}
+}
+
+// TestAnAnswerAppendsThePathPastTheEndOfTheList: the LLD gate asks for the path a
+// code is missing, so the answer names the slot past the end of the list and the
+// document keeps the paths it already has.
+func TestAnAnswerAppendsThePathPastTheEndOfTheList(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	requests := &fakeQuestionRequests{}
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), requests)
+
+	form := waitingForm(t, domain.TypeLLD, "FRM-16-05", "05", `{
+		"contracts": [{"id": "contract-1", "errors": [{"code": "E-1", "condition": "the book is missing"}]}],
+		"paths": [{"id": "path-1", "contractRef": "contract-1", "kind": "happy",
+			"given": "a book", "when": "it is lent", "then": "the loan is stored"}]
+	}`)
+	failure := []domain.ValidationError{{Field: "paths/-", Problem: `no negative path carries the code "E-1" of contract "contract-1"`}}
+	if err := service.Publish(ctx, form, failure, 16); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	answer, err := service.AnswerOnPipeline(ctx, 16, "/paths/-", json.RawMessage(`{
+		"id": "path-2", "contractRef": "contract-1", "kind": "negative",
+		"given": "no book", "when": "it is lent", "then": "the call fails", "expectedErrorCode": "E-1"
+	}`))
+	if err != nil {
+		t.Fatalf("answer: %v", err)
+	}
+	var corrected domain.LLD
+	if err := answer.BindPayload(&corrected); err != nil {
+		t.Fatalf("bind payload: %v", err)
+	}
+	if len(corrected.Paths) != 2 {
+		t.Fatalf("want the path appended to the one already there, got %d", len(corrected.Paths))
+	}
+	if corrected.Paths[1].ExpectedErrorCode != "E-1" || corrected.Paths[1].Kind != domain.PathNegative {
+		t.Fatalf("want the new path to carry the code, got %+v", corrected.Paths[1])
+	}
+}
