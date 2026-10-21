@@ -262,8 +262,12 @@ func (s *StageService) runForm(
 	}
 
 	outcome.Blocked = true
+	// A question that never reached the store leaves the operator with nothing to
+	// answer: the reason belongs in the outcome, not only in the server log.
+	if err := s.publishQuestion(ctx, request, stage, form, lastGateFailures); err != nil {
+		problems = append(problems, "publish question: "+err.Error())
+	}
 	outcome.Gaps = problems
-	s.publishQuestion(ctx, request, stage, form, lastGateFailures)
 	s.record(ctx, request, stage, "blocked", s.maxTries, strings.Join(lastProblems, "; "))
 	activity.Finish("blocked", strings.Join(problems, "; "))
 	return outcome, nil
@@ -375,14 +379,16 @@ func validationFailure(err error) *domain.ValidationError {
 
 // publishQuestion saves the failed draft and asks the operator about the first
 // gate failure, so the next version of the form can be completed by an answer.
-func (s *StageService) publishQuestion(ctx context.Context, request StageRequest, stage domain.Stage, form *domain.Form, failures []domain.ValidationError) {
+func (s *StageService) publishQuestion(ctx context.Context, request StageRequest, stage domain.Stage, form *domain.Form, failures []domain.ValidationError) error {
 	if s.questions == nil || form == nil {
-		return
+		return nil
 	}
 	pipelineID, _ := strconv.Atoi(request.PipelineID)
 	if err := s.questions.Publish(ctx, form, failures, pipelineID); err != nil {
 		log.Printf("stage %s pipeline %s: publish question: %v", stage.ID, request.PipelineID, err)
+		return err
 	}
+	return nil
 }
 
 func (s *StageService) record(ctx context.Context, request StageRequest, stage domain.Stage, status string, attempts int, lastError string) {

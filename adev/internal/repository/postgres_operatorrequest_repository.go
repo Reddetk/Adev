@@ -14,6 +14,15 @@ import (
 
 const operatorRequestColumns = `id, pipeline_id, pointer, question, options, blocking, status`
 
+// optionsOrEmpty writes an empty array for a question without choices: the column
+// is NOT NULL, and a nil slice would travel as NULL and break the insert.
+func optionsOrEmpty(options []string) []string {
+	if options == nil {
+		return []string{}
+	}
+	return options
+}
+
 type postgresOperatorRequestRepository struct {
 	pool *pgxpool.Pool
 }
@@ -26,7 +35,7 @@ func (p *postgresOperatorRequestRepository) Save(request *domain.OperatorRequest
 	return p.pool.QueryRow(context.Background(),
 		`INSERT INTO operator_requests (pipeline_id, pointer, question, options, blocking, status)
 		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		request.PipelineID, request.Pointer, request.Question, request.Options, request.Blocking, request.Status,
+		request.PipelineID, request.Pointer, request.Question, optionsOrEmpty(request.Options), request.Blocking, request.Status,
 	).Scan(&request.ID)
 }
 
@@ -59,7 +68,7 @@ func (p *postgresOperatorRequestRepository) Update(request *domain.OperatorReque
 	_, err := p.pool.Exec(context.Background(),
 		`UPDATE operator_requests SET pipeline_id = $1, pointer = $2, question = $3,
 		 options = $4, blocking = $5, status = $6 WHERE id = $7`,
-		request.PipelineID, request.Pointer, request.Question, request.Options, request.Blocking, request.Status, request.ID)
+		request.PipelineID, request.Pointer, request.Question, optionsOrEmpty(request.Options), request.Blocking, request.Status, request.ID)
 	return err
 }
 
