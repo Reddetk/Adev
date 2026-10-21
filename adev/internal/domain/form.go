@@ -128,34 +128,20 @@ type GapPosition struct {
 }
 
 // Gaps returns the open gaps of the payload. The question phase of the stages
-// 00-02 asks the operator about them; other forms carry no gaps.
+// 00-02 asks the operator about them; a form type without a gaps reader has none.
 func (f *Form) Gaps() []GapPosition {
-	var positions []GapPosition
-	switch f.FormType {
-	case TypeBRD:
-		var brd BRD
-		if err := f.BindPayload(&brd); err != nil {
-			return nil
-		}
-		for i, gap := range brd.OpenGaps {
-			positions = append(positions, GapPosition{Gap: gap, Index: i})
-		}
-	case TypeFeasibility:
-		var study Feasibility
-		if err := f.BindPayload(&study); err != nil {
-			return nil
-		}
-		for i, gap := range study.OpenGaps {
-			positions = append(positions, GapPosition{Gap: gap, Index: i})
-		}
-	case TypeSRS:
-		var spec SRS
-		if err := f.BindPayload(&spec); err != nil {
-			return nil
-		}
-		for i, gap := range spec.OpenGaps {
-			positions = append(positions, GapPosition{Gap: gap, Index: i})
-		}
+	spec, ok := formSpecFor(f.FormType)
+	if !ok || spec.gaps == nil {
+		return nil
+	}
+	payload := spec.payload()
+	if err := f.BindPayload(payload); err != nil {
+		return nil
+	}
+	gaps := spec.gaps(payload)
+	positions := make([]GapPosition, 0, len(gaps))
+	for index, gap := range gaps {
+		positions = append(positions, GapPosition{Gap: gap, Index: index})
 	}
 	return positions
 }

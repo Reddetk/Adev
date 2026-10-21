@@ -7,6 +7,7 @@ type formSpec struct {
 	payload    func() any
 	validate   func(any, Status) error
 	texts      func(any) []Text
+	gaps       func(any) []Gap
 	projection Projection
 }
 
@@ -29,18 +30,21 @@ var formSpecs = []formSpecEntry{
 		payload:    func() any { return &BRD{} },
 		validate:   func(payload any, status Status) error { return ValidateBRD(*payload.(*BRD), status) },
 		texts:      func(payload any) []Text { return payload.(*BRD).Texts() },
+		gaps:       func(payload any) []Gap { return payload.(*BRD).OpenGaps },
 		projection: BRDProjection,
 	}},
 	{TypeFeasibility, formSpec{
 		payload:    func() any { return &Feasibility{} },
 		validate:   func(payload any, _ Status) error { return ValidateFeasibility(*payload.(*Feasibility)) },
 		texts:      func(payload any) []Text { return payload.(*Feasibility).Texts() },
+		gaps:       func(payload any) []Gap { return payload.(*Feasibility).OpenGaps },
 		projection: openDesignProjection,
 	}},
 	{TypeSRS, formSpec{
 		payload:    func() any { return &SRS{} },
 		validate:   func(payload any, _ Status) error { return ValidateSRS(*payload.(*SRS)) },
 		texts:      func(payload any) []Text { return payload.(*SRS).Texts() },
+		gaps:       func(payload any) []Gap { return payload.(*SRS).OpenGaps },
 		projection: openDesignProjection,
 	}},
 	{TypeHLD, formSpec{
