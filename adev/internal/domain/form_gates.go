@@ -100,9 +100,18 @@ func patchable(payload json.RawMessage, pointer string) bool {
 			return false
 		}
 	}
-	switch current.(type) {
-	case map[string]any, []any:
+	switch node := current.(type) {
+	case map[string]any:
 		return true
+	case []any:
+		// An array takes an index, or "-" for the slot past the end. A word there
+		// names no slot: "/metrics/baseline" would fail when the answer arrives.
+		last := strings.ReplaceAll(strings.ReplaceAll(segments[len(segments)-1], "~1", "/"), "~0", "~")
+		if last == "-" {
+			return true
+		}
+		index, err := strconv.Atoi(last)
+		return err == nil && index >= 0 && index <= len(node)
 	}
 	return false
 }

@@ -97,6 +97,15 @@ func TestBRDRejectsAGapPointerOutsideThePayload(t *testing.T) {
 	if err := form.ValidatePayloadWithStatus(); err != nil {
 		t.Fatalf("a pointer to a real field must pass: %v", err)
 	}
+
+	// A word where the array takes an index names no slot: the answer would fail
+	// on arrival, so the question must never reach the operator.
+	brd.OpenGaps[0].Pointer = "/metrics/baseline"
+	form = newBRDForm(t, brd)
+	form.Status = StatusDraft
+	if err := form.ValidatePayloadWithStatus(); err == nil {
+		t.Fatal("a pointer that the payload cannot take must fail the gate")
+	}
 }
 
 func TestBRDAcceptsValidBRD(t *testing.T) {
