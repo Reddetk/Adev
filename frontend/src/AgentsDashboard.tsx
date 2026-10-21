@@ -1,5 +1,6 @@
 // What the agents work on right now: one card per stage run, running first.
 // App polls the live book and passes the snapshot down, like QuestionsDashboard.
+import { NODE_LABELS } from './PipelineGraph';
 import type { AgentActivity } from './api';
 
 // The run status of the stage, not the state of its document: a finished run may
@@ -72,15 +73,21 @@ function ActivityCard({
   const clock = started.toLocaleTimeString();
   const elapsed = Math.max(0, Math.round((Date.now() - started.getTime()) / 1000));
   const tone = activity.status === 'failed' ? 'bad' : activity.status === 'running' ? '' : 'ok';
-  // While the run is in flight the stored version belongs to the previous run: the
-  // card shows the document state only once the run ended.
-  const document = activity.status === 'running' ? undefined : documentStatus(activity);
+  // The document state is worth a chip only when the run ended: a running run has
+  // no version yet, and a blocked one always waits for the operator (the run status
+  // already says so).
+  const ended = activity.status === 'done' || activity.status === 'failed';
+  const document = ended ? documentStatus(activity) : undefined;
 
   return (
     <article className={`question${activity.status === 'running' ? ' blocking' : ''}`}>
       <div className="question-meta">
         <span className={`state ${tone}`}>{STATUS_LABEL[activity.status] ?? activity.status}</span>
-        {document && <span className={`state ${document === 'draft' ? 'bad' : 'ok'}`}>документ: {document}</span>}
+        {document && (
+          <span className={`state ${document === 'draft' ? 'bad' : 'ok'}`}>
+            документ: {NODE_LABELS[document] ?? document}
+          </span>
+        )}
         <span className="tag">
           агент {activity.role} · стадия {activity.stage} · {activity.output}
         </span>

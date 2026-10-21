@@ -5,7 +5,9 @@ import type { Stage } from './api';
 
 export type NodeState = 'planned' | 'current' | 'draft' | 'valid' | 'waiting_operator' | 'approved';
 
-const LABELS: Record<NodeState, string> = {
+// The stored status of a form, in the words of the operator. The agent board reads
+// the same map, so a document state never reaches the screen as a raw enum.
+export const NODE_LABELS: Record<string, string> = {
   planned: 'не запускалась',
   current: 'текущая',
   draft: 'черновик',
@@ -45,7 +47,7 @@ export function PipelineGraph({
                   условная
                 </span>
               )}
-              <span className="node-state">{LABELS[state]}</span>
+              <span className="node-state">{NODE_LABELS[state] ?? state}</span>
             </button>
             {index < stages.length - 1 && <span className="edge" aria-hidden="true" />}
           </div>
