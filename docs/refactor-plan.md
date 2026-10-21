@@ -55,20 +55,22 @@ PR0 обязателен первым: он делает дешёвыми нов
 
 ### TODO
 
-- [ ] `domain`: таблица спецификаций формы `FormSpec` (`payload func() any`, `texts`, `validate`, `projection`, `shape`); заменить 4 switch в `form_gates.go` (`PayloadTexts`, `ValidatePayload`), `payload_shape.go`, `form_projection.go` на lookup по таблице.
-- [ ] `domain`: `Stage` получает тип промпта (уточнение / дизайн / ревью) вместо неявной ветки по `stage.ID`; сборка `System`/`User` промпта переезжает в usecase.
-- [ ] `usecase`: `LLMRequest` получает `System`/`User`; `LLMResponse` — `Usage{TokensIn, TokensOut, LatencyMs, Model}`.
-- [ ] `usecase`: запись `ModelCall` на каждый вызов модели в `runForm`.
-- [ ] `repository`: системный промпт убран из `llm_openai.go` (адаптер только транспортирует).
-- [ ] `usecase`/`domain`: контекст ключуется по `formID` (не по типу); `Stage.InputSource ∈ {pipeline, system-baseline}`.
-- [ ] `domain`: `Stages(route)` — таблица `map[Route][]Stage`; добавить `RouteMinorChange`/`RouteMajorChange`.
-- [ ] `domain`/`usecase`: финальный статус пайплайна (`completed`), когда `NextStage` на последней стадии.
+- [x] `domain`: таблица спецификаций формы (`internal/domain/form_spec.go`: `payload func() any`, `texts`, `gaps`, `validate`, `projection`); 5 switch (`PayloadTexts`, `ValidatePayload`, `PayloadShape`, `ProjectionFor`, `Form.Gaps`) заменены lookup по таблице.
+- [x] `usecase`: сборка `System`/`User` переехала в `internal/usecase/prompt.go`; ветка по `stage.ID` убрана — одно правило вопросов на все стадии, поле «тип промпта» не понадобилось.
+- [x] `usecase`: `LLMRequest` = `{Role, System, User}`; `LLMResponse` — `Usage{TokensIn, TokensOut, LatencyMs}` (имя модели берётся из конфига агента, в ответе адаптера его нет).
+- [x] `usecase`: запись `ModelCall` на каждый вызов модели в `runForm` (`ModelCallRecorder`).
+- [x] `repository`: системный промпт убран из `llm_openai.go` (адаптер только транспортирует).
+- [x] `usecase`/`domain`: контекст ключуется по `formID` (не по типу).
+- [ ] `domain`: `Stage.InputSource ∈ {pipeline, system-baseline}` — отложено до PR6: до change-маршрута поле было бы мёртвым.
+- [x] `domain`: `Stages(route)` — таблица `map[Route][]Stage`; добавлены `RouteMinorChange`/`RouteMajorChange` (без списков стадий — их даёт PR6).
+- [x] `domain`/`usecase`: финальный статус пайплайна (`completed`), когда `NextStage` на последней стадии (`domain.IsLastStage`).
 
 ### Приёмка
 
-- [ ] Добавление нового типа `TEST_CONTRACT` = `form_test_contract.go` + строка в таблице + строка в `greenfieldStages`; `stage_service.go` и `form_gates.go`/`payload_shape.go`/`form_projection.go` **не меняются**.
-- [ ] В коде нет литералов `"00"`/`"01"`/`"02"` для выбора промпта; принцип «не уверен → operatorQuestion с вариантами» описан один раз и применяется ко всем стадиям.
-- [ ] `make fmt && make vet && make test` зелёный; прогон 00→06 даёт те же документы, что и до PR0 (регрессия поведенческая, не юнитная).
+- [x] Добавление нового типа `TEST_CONTRACT` = `form_test_contract.go` + строка в таблице + строка в `greenfieldStages`; `stage_service.go` и `form_gates.go`/`payload_shape.go`/`form_projection.go` **не меняются** (switch по `FormType` в домене не осталось).
+- [x] В коде нет литералов `"00"`/`"01"`/`"02"` для выбора промпта; принцип «не уверен → вопрос с вариантами» описан один раз в `stageInstruction` и применяется ко всем стадиям.
+- [x] `make fmt && make vet && make test` зелёный.
+- [ ] Прогон 00→06 даёт те же документы, что и до PR0 — живой прогон не делался (нужен 20+ минут и ключ модели).
 
 ---
 
