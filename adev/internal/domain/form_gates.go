@@ -1,8 +1,11 @@
 package domain
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 // PayloadTexts returns every free-text value of a form.
@@ -127,16 +130,67 @@ func (f *Form) ValidatePayloadWithStatus() error {
 	if err != nil {
 		return err
 	}
-	if f.Status != StatusValid && f.Status != StatusApproved {
-		return nil
-	}
 	var errs []error
+	// A question is answered by a patch to the payload: a pointer into a section
+	// the shape does not have leaves the operator nowhere to write the answer.
 	for i, position := range f.Gaps() {
-		if position.Gap.Blocking || position.Gap.Question.Value != "" {
-			errs = append(errs, invalid(fmt.Sprintf("openGaps[%d]", i), "the operator question is not answered yet"))
+		if position.Gap.Question.Value == "" {
+			continue
+		}
+		if !patchable(f.Payload, position.Gap.Pointer) {
+			errs = append(errs, invalid(fmt.Sprintf("openGaps[%d].pointer", i),
+				fmt.Sprintf("%s has no parent field in the payload; point the gap at a field the shape has, or fill the value yourself", position.Gap.Pointer)))
+		}
+	}
+	if f.Status == StatusValid || f.Status == StatusApproved {
+		for i, position := range f.Gaps() {
+			if position.Gap.Blocking || position.Gap.Question.Value != "" {
+				errs = append(errs, invalid(fmt.Sprintf("openGaps[%d]", i), "the operator question is not answered yet"))
+			}
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// patchable reports whether an answer can land on the pointer. The field itself
+// may be absent while its parent object or array exists: RFC 6902 add fills the
+// slot, and naming the index right past an array appends.
+func patchable(payload json.RawMessage, pointer string) bool {
+	if pointer == "" || pointer == "/payload" {
+		return true
+	}
+	if !strings.HasPrefix(pointer, "/") {
+		return false
+	}
+	var doc any
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		return false
+	}
+	segments := strings.Split(pointer[1:], "/")
+	current := doc
+	for _, raw := range segments[:len(segments)-1] {
+		segment := strings.ReplaceAll(strings.ReplaceAll(raw, "~1", "/"), "~0", "~")
+		switch node := current.(type) {
+		case map[string]any:
+			current = node[segment]
+		case []any:
+			index, err := strconv.Atoi(segment)
+			if err != nil || index < 0 || index >= len(node) {
+				return false
+			}
+			current = node[index]
+		default:
+			return false
+		}
+		if current == nil {
+			return false
+		}
+	}
+	switch current.(type) {
+	case map[string]any, []any:
+		return true
+	}
+	return false
 }
 
 // payloadMismatch reports a payload that does not fit its form type as a validation

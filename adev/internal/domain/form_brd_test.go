@@ -40,7 +40,7 @@ func TestBRDRejectsDesignTerms(t *testing.T) {
 func TestBRDRejectsBlockingGapOnApproval(t *testing.T) {
 	brd := validBRD()
 	brd.OpenGaps = []Gap{{
-		ID: "GAP-1", Pointer: "/payload/metrics", Blocking: true,
+		ID: "GAP-1", Pointer: "/metrics", Blocking: true,
 		Question: Text{Value: "Which value applies?", Lang: LangSTE100},
 	}}
 	form := newBRDForm(t, brd)
@@ -74,6 +74,28 @@ func TestBRDRejectsBlockingGapOnApproval(t *testing.T) {
 	form.Status = StatusValid
 	if err := form.ValidatePayloadWithStatus(); err != nil {
 		t.Fatalf("a questionless gap may survive the acceptance: %v", err)
+	}
+}
+
+func TestBRDRejectsAGapPointerOutsideThePayload(t *testing.T) {
+	brd := validBRD()
+	brd.OpenGaps = []Gap{{
+		ID: "GAP-1", Pointer: "/feasibility/costEstimate",
+		Question: Text{Value: "What is the cost?", Lang: LangSTE100},
+	}}
+	form := newBRDForm(t, brd)
+	form.Status = StatusDraft
+
+	// The model invented a section: the operator has nowhere to write the answer.
+	if err := form.ValidatePayloadWithStatus(); err == nil || !strings.Contains(err.Error(), "/feasibility/costEstimate") {
+		t.Fatalf("want a pointer error, got %v", err)
+	}
+
+	brd.OpenGaps[0].Pointer = "/metrics/0/baseline"
+	form = newBRDForm(t, brd)
+	form.Status = StatusDraft
+	if err := form.ValidatePayloadWithStatus(); err != nil {
+		t.Fatalf("a pointer to a real field must pass: %v", err)
 	}
 }
 
