@@ -161,13 +161,16 @@ func (s *StageService) runForm(
 		}
 	}()
 
-	var problems []string
-	var gateFailures []domain.ValidationError
+	// problems feeds every earlier failure back to the model, so it does not
+	// regress; the operator sees only the failures of the last attempt.
+	var problems, lastProblems []string
+	var gateFailures, lastGateFailures []domain.ValidationError
 	var form *domain.Form
 
 	for attempt := 1; attempt <= s.maxTries; attempt++ {
 		outcome.Attempts = attempt
 		activity.Attempt()
+		lastProblems, lastGateFailures = nil, nil
 
 		response, err := client.Complete(ctx, LLMRequest{
 			Role:        agent.Role,
@@ -187,14 +190,17 @@ func (s *StageService) runForm(
 		// and answers need JSON Pointers, so they are fixed before storing.
 		if err := form.SetRawPayload(normalizeGapPointers(response.Payload)); err != nil {
 			problems = append(problems, err.Error())
+			lastProblems = append(lastProblems, err.Error())
 			continue
 		}
 
 		if err := s.forms.Submit(ctx, form); err != nil {
 			if isFormRejection(err) {
 				problems = append(problems, err.Error())
+				lastProblems = append(lastProblems, err.Error())
 				if failure := validationFailure(err); failure != nil {
 					gateFailures = append(gateFailures, *failure)
+					lastGateFailures = append(lastGateFailures, *failure)
 				}
 				continue
 			}
@@ -229,8 +235,8 @@ func (s *StageService) runForm(
 
 	outcome.Blocked = true
 	outcome.Gaps = problems
-	s.publishQuestion(ctx, request, stage, form, gateFailures)
-	s.record(ctx, request, stage, "blocked", s.maxTries, strings.Join(problems, "; "))
+	s.publishQuestion(ctx, request, stage, form, lastGateFailures)
+	s.record(ctx, request, stage, "blocked", s.maxTries, strings.Join(lastProblems, "; "))
 	activity.Finish("blocked", strings.Join(problems, "; "))
 	return outcome, nil
 }
