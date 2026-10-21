@@ -106,6 +106,10 @@ type completionResponse struct {
 	Choices []struct {
 		Message chatMessage `json:"message"`
 	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+	} `json:"usage"`
 }
 
 // Complete asks the model for one payload.
@@ -132,6 +136,7 @@ func (l *openAICompatibleLLM) Complete(ctx context.Context, request usecase.LLMR
 		httpRequest.Header.Set("Authorization", "Bearer "+l.agent.APIKey)
 	}
 
+	started := time.Now()
 	response, err := l.client.Do(httpRequest)
 	if err != nil {
 		return usecase.LLMResponse{}, fmt.Errorf("model call to %s: %w", l.baseURL, err)
@@ -153,7 +158,14 @@ func (l *openAICompatibleLLM) Complete(ctx context.Context, request usecase.LLMR
 	if len(parsed.Choices) == 0 {
 		return usecase.LLMResponse{}, fmt.Errorf("model call: the response has no choice")
 	}
-	return usecase.LLMResponse{Payload: extractJSON(parsed.Choices[0].Message.Content)}, nil
+	return usecase.LLMResponse{
+		Payload: extractJSON(parsed.Choices[0].Message.Content),
+		Usage: usecase.LLMUsage{
+			TokensIn:  parsed.Usage.PromptTokens,
+			TokensOut: parsed.Usage.CompletionTokens,
+			LatencyMs: int(time.Since(started).Milliseconds()),
+		},
+	}, nil
 }
 
 // extractJSON cuts the payload out of an answer that may be wrapped in prose or in

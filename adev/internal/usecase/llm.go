@@ -22,9 +22,18 @@ type LLMRequest struct {
 	User   string
 }
 
+// LLMUsage is what one call cost: the token counts of the provider and the wall
+// time the adapter measured. A provider that reports no usage leaves the counts at zero.
+type LLMUsage struct {
+	TokensIn  int
+	TokensOut int
+	LatencyMs int
+}
+
 // LLMResponse is the payload the model wants to store in the output form.
 type LLMResponse struct {
 	Payload json.RawMessage
+	Usage   LLMUsage
 }
 
 // LLMFactory builds the model client of one agent config. The model gateway (M4)

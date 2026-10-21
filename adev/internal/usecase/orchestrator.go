@@ -38,6 +38,12 @@ func (o *Orchestrator) Run(ctx context.Context, request StageRequest) (StageOutc
 	}
 	next, err := domain.NextStage(request.Route, request.StageID)
 	if err != nil {
+		// The last stage of the route has no next one: the stored form ends the
+		// pipeline. A stale run behind the cursor changes nothing.
+		if domain.IsLastStage(request.Route, request.StageID) && pipeline.CurrentStage == request.StageID {
+			pipeline.Status = "completed"
+			_ = o.pipelines.Update(pipeline)
+		}
 		return outcome, nil
 	}
 	switch pipeline.CurrentStage {

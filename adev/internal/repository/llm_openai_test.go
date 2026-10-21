@@ -82,7 +82,8 @@ func TestOpenAICompatibleCompleteSendsTheStageRequest(t *testing.T) {
 		_ = json.Unmarshal(raw, &received.body)
 		w.Header().Set("Content-Type", "application/json")
 		// A fenced answer, as small models often produce.
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Here is the form:\n` + "```json" + `\n{\"goals\":[]}\n` + "```" + `"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Here is the form:\n` + "```json" + `\n{\"goals\":[]}\n` + "```" + `"}}],` +
+			`"usage":{"prompt_tokens":11,"completion_tokens":22}}`))
 	}))
 	defer server.Close()
 
@@ -112,6 +113,9 @@ func TestOpenAICompatibleCompleteSendsTheStageRequest(t *testing.T) {
 	assert.Equal(t, "projected input and gate failures", user, "the adapter sends the user message as given")
 
 	assert.JSONEq(t, `{"goals":[]}`, string(response.Payload), "the code fence must be stripped")
+	assert.Equal(t, 11, response.Usage.TokensIn, "the token counts of the provider must reach the caller")
+	assert.Equal(t, 22, response.Usage.TokensOut)
+	assert.GreaterOrEqual(t, response.Usage.LatencyMs, 0, "the adapter measures the call")
 }
 
 func TestOpenAICompatibleCompleteReportsAnHTTPFailure(t *testing.T) {

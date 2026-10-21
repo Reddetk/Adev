@@ -74,7 +74,7 @@ func (c *Container) setupAdEvServices() {
 	questions := usecase.NewQuestionService(c.formService, c.operatorrequestRepo)
 	activities := usecase.NewActivityService()
 	c.activityService = activities
-	c.stageService = usecase.NewStageService(c.formService, c.settingsService, factory, nil).WithQuestions(questions).WithActivity(activities)
+	c.stageService = usecase.NewStageService(c.formService, c.settingsService, factory, nil).WithQuestions(questions).WithActivity(activities).WithModelCalls(c.modelcallRepo)
 	c.stageHandler = http.NewStageHandler(c.stageOrchestrator())
 	c.questionHandler = http.NewQuestionHandler(questions)
 	c.modelCheck = usecase.NewModelCheck(c.settingsService, factory)

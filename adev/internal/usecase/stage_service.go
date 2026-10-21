@@ -53,6 +53,12 @@ type StageRunRecorder interface {
 	Record(ctx context.Context, run StageRun) error
 }
 
+// ModelCallRecorder stores what one model call cost. A stage treats it as
+// bookkeeping: a failure to record never fails the stage.
+type ModelCallRecorder interface {
+	Save(call *domain.ModelCall) error
+}
+
 // StageService runs one stage: it reads the input forms, asks the model for the
 // output form and stores it. The stage comes from the registry, never from the model.
 type StageService struct {
@@ -60,6 +66,7 @@ type StageService struct {
 	settings   *SettingsService
 	llm        LLMFactory
 	runs       StageRunRecorder
+	modelCalls ModelCallRecorder
 	questions  *QuestionService
 	activities *ActivityService
 	maxTries   int
@@ -81,6 +88,13 @@ func (s *StageService) WithQuestions(questions *QuestionService) *StageService {
 // the agents work on right now.
 func (s *StageService) WithActivity(activities *ActivityService) *StageService {
 	s.activities = activities
+	return s
+}
+
+// WithModelCalls attaches the cost book, so the operator sees the tokens and the
+// time of every attempt.
+func (s *StageService) WithModelCalls(calls ModelCallRecorder) *StageService {
+	s.modelCalls = calls
 	return s
 }
 
@@ -183,6 +197,7 @@ func (s *StageService) runForm(
 			s.record(ctx, request, stage, "failed", attempt, err.Error())
 			return StageOutcome{}, err
 		}
+		s.recordModelCall(request, agent, response.Usage)
 
 		form = s.buildForm(request, stage, refs, output, formID, version, previous)
 		// Gap pointers arrive in whatever syntax the model chose; questions
@@ -373,6 +388,27 @@ func (s *StageService) record(ctx context.Context, request StageRequest, stage d
 		PipelineID: request.PipelineID, Stage: stage.ID,
 		Status: status, Attempts: attempts, LastError: lastError,
 	})
+}
+
+// recordModelCall stores the tokens and the time of one attempt. The book must
+// never fail a stage: a lost row costs the operator a number, a failed save
+// would cost the form.
+func (s *StageService) recordModelCall(request StageRequest, agent domain.AgentConfig, usage LLMUsage) {
+	if s.modelCalls == nil {
+		return
+	}
+	pipelineID, _ := strconv.Atoi(request.PipelineID)
+	call := &domain.ModelCall{
+		// shortcut: run_id carries the pipeline id: the run table stores no stage
+		// runs yet. Point it at the run row when the recorder is wired.
+		RunID:    pipelineID,
+		Profile:  string(agent.Role),
+		Model:    agent.Model,
+		TokensIn: usage.TokensIn, TokensOut: usage.TokensOut, LatencyMs: usage.LatencyMs,
+	}
+	if err := s.modelCalls.Save(call); err != nil {
+		log.Printf("stage %s pipeline %s: save model call: %v", request.StageID, request.PipelineID, err)
+	}
 }
 
 // stageFormID is stable per pipeline, stage and output type, so a re-run creates

@@ -77,6 +77,16 @@ func NextStage(route Route, id string) (Stage, error) {
 	return Stage{}, fmt.Errorf("stage %q does not exist in route %q", id, route)
 }
 
+// IsLastStage reports whether the stage ends its route, so a successful run of it
+// completes the pipeline.
+func IsLastStage(route Route, id string) bool {
+	stages, err := Stages(route)
+	if err != nil || len(stages) == 0 {
+		return false
+	}
+	return stages[len(stages)-1].ID == id
+}
+
 // Roles returns the distinct owner roles of the stages, in stage order.
 func Roles(stages []Stage) []Role {
 	seen := map[Role]bool{}

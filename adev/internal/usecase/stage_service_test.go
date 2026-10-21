@@ -37,7 +37,10 @@ func (f *scriptedLLM) Complete(_ context.Context, request usecase.LLMRequest) (u
 	if index >= len(f.responses) {
 		return usecase.LLMResponse{}, errors.New("scriptedLLM: the script is over")
 	}
-	return usecase.LLMResponse{Payload: f.responses[index]}, nil
+	return usecase.LLMResponse{
+		Payload: f.responses[index],
+		Usage:   usecase.LLMUsage{TokensIn: 10, TokensOut: 20, LatencyMs: 5},
+	}, nil
 }
 
 type recordedRuns struct{ runs []usecase.StageRun }
@@ -47,12 +50,20 @@ func (r *recordedRuns) Record(_ context.Context, run usecase.StageRun) error {
 	return nil
 }
 
+type recordedCalls struct{ calls []domain.ModelCall }
+
+func (r *recordedCalls) Save(call *domain.ModelCall) error {
+	r.calls = append(r.calls, *call)
+	return nil
+}
+
 type m2Fixture struct {
 	forms    *usecase.FormService
 	store    *repository.MemoryFormsStore
 	settings *usecase.SettingsService
 	llm      *scriptedLLM
 	runs     *recordedRuns
+	calls    *recordedCalls
 	stages   *usecase.StageService
 }
 
@@ -63,9 +74,11 @@ func newM2Fixture(t *testing.T, responses ...json.RawMessage) *m2Fixture {
 		settings: usecase.NewSettingsService(repository.NewMemoryAgentConfigStore(m2Target)),
 		llm:      &scriptedLLM{responses: responses},
 		runs:     &recordedRuns{},
+		calls:    &recordedCalls{},
 	}
 	fixture.forms = usecase.NewFormService(fixture.store, nil)
-	fixture.stages = usecase.NewStageService(fixture.forms, fixture.settings, usecase.FixedLLM(fixture.llm), fixture.runs)
+	fixture.stages = usecase.NewStageService(fixture.forms, fixture.settings, usecase.FixedLLM(fixture.llm), fixture.runs).
+		WithModelCalls(fixture.calls)
 	return fixture
 }
 
@@ -190,6 +203,23 @@ func TestH2TheModelGetsTheGateFailureBackAndFixesIt(t *testing.T) {
 	stored, err := fixture.forms.Latest(context.Background(), stageOutput)
 	require.NoError(t, err)
 	assert.Equal(t, 1, stored.FormVersion, "a failed attempt must not store a version")
+}
+
+func TestTheModelCallOfAnAttemptIsRecorded(t *testing.T) {
+	fixture := newM2Fixture(t, validBRD())
+	fixture.configure(t)
+	fixture.submitUserInput(t, 1)
+
+	_, err := fixture.runStage00(t)
+	require.NoError(t, err)
+
+	require.Len(t, fixture.calls.calls, 1)
+	call := fixture.calls.calls[0]
+	assert.Equal(t, string(domain.RoleAnalyst), call.Profile, "the profile is the role that owns the stage")
+	assert.NotEmpty(t, call.Model)
+	assert.Equal(t, 10, call.TokensIn)
+	assert.Equal(t, 20, call.TokensOut)
+	assert.Equal(t, 5, call.LatencyMs)
 }
 
 // --- H3 ---------------------------------------------------------------------
