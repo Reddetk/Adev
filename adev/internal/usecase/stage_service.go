@@ -383,14 +383,23 @@ func stageFormID(pipelineID, stageID string, output domain.FormType, multi bool)
 }
 
 func stageInstruction(stage domain.Stage, output domain.FormType) string {
+	head := fmt.Sprintf(
+		"You fill the %s form of stage %s. Answer with the payload only. Do not add fields. ",
+		output, stage.ID)
 	// The question phase of the stages 00-02: the agent asks, the operator
 	// decides, the answer compiles the document. The model never invents a
 	// value the context does not give.
-	return fmt.Sprintf(
-		"You fill the %s form of stage %s. Answer with the payload only. Do not add fields. "+
-			"Fill every field that the given context answers. "+
-			"For every question the context does not answer, put one openGaps entry: "+
-			"the question, the pointer of the field it would fill, and the options when it is a choice. "+
-			"Do not invent a value that the context does not give.",
-		output, stage.ID)
+	if stage.ID == "00" || stage.ID == "01" || stage.ID == "02" {
+		return head +
+			"Fill every field that the given context answers. " +
+			"For every question the context does not answer, put one openGaps entry: " +
+			"the question, the pointer of the field it would fill, and the options when it is a choice. " +
+			"Do not invent a value that the context does not give."
+	}
+	// The design stages 03-06: the design values are the model's own work, so it
+	// fills the shape itself and keeps questions for an outside fact.
+	return head +
+		"This is a design stage: the design values are yours to choose, so fill every field of the shape. " +
+		"Ask the operator only for an outside fact the context does not give: put one openGaps entry " +
+		"with the question and the pointer of the field it would fill."
 }
