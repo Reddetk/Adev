@@ -25,6 +25,10 @@ func ProjectionFor(formType FormType, role Role) ([]string, error) {
 		table = BRDProjection
 	case TypeUserInput:
 		table = userInputProjection
+	case TypeFeasibility, TypeSRS, TypeHLD, TypeADR, TypeLLD, TypeTaskPlan:
+		// shortcut: the roles read each other's design forms in full. Field-level
+		// secrecy between roles is not implemented yet.
+		table = openDesignProjection
 	default:
 		return nil, fmt.Errorf("no projection for form type %q yet", formType)
 	}
@@ -195,4 +199,15 @@ var BRDProjection = Projection{
 	RoleDevOps: {
 		"/formId", "/formType",
 	},
+}
+
+// openDesignProjection lets every role read the full design form.
+// shortcut: no field secrecy between roles yet, owner-role allowlists come later.
+var openDesignProjection = Projection{
+	RoleOperator:  {"/*"},
+	RoleAnalyst:   {"/*"},
+	RoleArchitect: {"/*"},
+	RoleQA:        {"/*"},
+	RoleDev:       {"/*"},
+	RoleDevOps:    {"/*"},
 }

@@ -42,7 +42,7 @@ func (p *postgresOperatorRequestRepository) FindByPipelineID(pipelineID int) (*d
 
 func (p *postgresOperatorRequestRepository) FindByPointer(pointer string) (*domain.OperatorRequest, error) {
 	return scanOperatorRequest(p.pool.QueryRow(context.Background(),
-		`SELECT `+operatorRequestColumns+` FROM operator_requests WHERE pointer = $1`, pointer))
+		`SELECT `+operatorRequestColumns+` FROM operator_requests WHERE pointer = $1 AND status = 'active' LIMIT 1`, pointer))
 }
 
 func (p *postgresOperatorRequestRepository) FindByQuestion(question string) (*domain.OperatorRequest, error) {

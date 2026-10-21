@@ -116,6 +116,46 @@ func (f *Form) BindPayload(v any) error {
 	return nil
 }
 
+// GapPosition is one open gap of a payload with its index in the payload list,
+// so an answer can patch the gap field and remove the gap entry.
+type GapPosition struct {
+	Gap   Gap
+	Index int
+}
+
+// Gaps returns the open gaps of the payload. The question phase of the stages
+// 00-02 asks the operator about them; other forms carry no gaps.
+func (f *Form) Gaps() []GapPosition {
+	var positions []GapPosition
+	switch f.FormType {
+	case TypeBRD:
+		var brd BRD
+		if err := f.BindPayload(&brd); err != nil {
+			return nil
+		}
+		for i, gap := range brd.OpenGaps {
+			positions = append(positions, GapPosition{Gap: gap, Index: i})
+		}
+	case TypeFeasibility:
+		var study Feasibility
+		if err := f.BindPayload(&study); err != nil {
+			return nil
+		}
+		for i, gap := range study.OpenGaps {
+			positions = append(positions, GapPosition{Gap: gap, Index: i})
+		}
+	case TypeSRS:
+		var spec SRS
+		if err := f.BindPayload(&spec); err != nil {
+			return nil
+		}
+		for i, gap := range spec.OpenGaps {
+			positions = append(positions, GapPosition{Gap: gap, Index: i})
+		}
+	}
+	return positions
+}
+
 // SetRawPayload stores an already encoded payload and computes its hash.
 // A form that arrives over the wire is not decoded into a typed value first.
 func (f *Form) SetRawPayload(raw json.RawMessage) error {

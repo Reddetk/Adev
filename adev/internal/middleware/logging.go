@@ -17,6 +17,11 @@ func (sw *statusWriter) WriteHeader(code int) {
 	sw.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap lets http.ResponseController reach the server's own ResponseWriter.
+// Without it a handler cannot extend the write deadline, and a slow stage run dies
+// with a dropped connection once the server WriteTimeout expires.
+func (sw *statusWriter) Unwrap() http.ResponseWriter { return sw.ResponseWriter }
+
 // Logging returns middleware that logs each request with method, path,
 // status code, and duration.
 func Logging() Middleware {

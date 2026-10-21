@@ -79,6 +79,7 @@ help:
 	@echo   make ui-install       npm install in ../frontend, once after a clone
 	@echo   make ui-dev           vite dev server on 5173, proxies /api to this server
 	@echo   make ui-build         build ../frontend/dist, served by make run at /app/
+	@echo   make logs             follow logs/adev.log of the running server
 
 deps:
 	go mod download
@@ -93,6 +94,14 @@ ui-dev:
 
 ui-build:
 	npm --prefix ../frontend run build
+
+# The server appends every line to logs/adev.log, so a background run is readable.
+logs:
+ifeq ($(OS),Windows_NT)
+	powershell -NoProfile -Command "Get-Content -Wait -Tail 50 logs/adev.log"
+else
+	tail -f -n 50 logs/adev.log
+endif
 
 tools:
 	go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest

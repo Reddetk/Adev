@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/Reddetk/Adev/internal/domain"
+	"github.com/Reddetk/Adev/internal/usecase"
 )
 
 // MemoryFormsStore is an in-process form store for tests and for runs without a database.
@@ -16,6 +17,9 @@ type MemoryFormsStore struct {
 	forms   map[string]map[int]*domain.Form
 	created map[string]bool
 }
+
+// MemoryFormsStore is the second adapter of the same port.
+var _ usecase.FormStore = (*MemoryFormsStore)(nil)
 
 // NewMemoryFormsStore returns an empty store.
 func NewMemoryFormsStore() *MemoryFormsStore {
@@ -33,8 +37,8 @@ func (m *MemoryFormsStore) Save(ctx context.Context, form *domain.Form) error {
 	if form == nil {
 		return fmt.Errorf("save: form is nil")
 	}
-	if form.FormID == "" || form.FormVersion < 1 {
-		return fmt.Errorf("save: formId and a formVersion of at least 1 are required")
+	if err := form.ValidateNewVersion(); err != nil {
+		return err
 	}
 
 	m.mu.Lock()
@@ -43,15 +47,8 @@ func (m *MemoryFormsStore) Save(ctx context.Context, form *domain.Form) error {
 	if m.created[formKey(form.FormID, form.FormVersion)] {
 		return fmt.Errorf("%w: %s:%d", domain.ErrVersionExists, form.FormID, form.FormVersion)
 	}
-	if form.FormVersion > 1 {
-		switch {
-		case form.PreviousFormVersion == nil:
-			return fmt.Errorf("%w: formVersion %d needs previousFormVersion", domain.ErrMissingPrevious, form.FormVersion)
-		case form.PreviousFormVersion.FormVersion != form.FormVersion-1:
-			return fmt.Errorf("%w: previousFormVersion must be %d", domain.ErrMissingPrevious, form.FormVersion-1)
-		case !m.created[formKey(form.FormID, form.FormVersion-1)]:
-			return fmt.Errorf("%w: %s:%d", domain.ErrMissingPrevious, form.FormID, form.FormVersion-1)
-		}
+	if form.FormVersion > 1 && !m.created[formKey(form.FormID, form.FormVersion-1)] {
+		return fmt.Errorf("%w: %s:%d", domain.ErrMissingPrevious, form.FormID, form.FormVersion-1)
 	}
 
 	versions, ok := m.forms[form.FormID]

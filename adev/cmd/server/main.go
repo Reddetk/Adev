@@ -14,6 +14,7 @@ import (
 
 	"github.com/Reddetk/Adev/internal/di"
 	apphttp "github.com/Reddetk/Adev/internal/handler/http"
+	"github.com/Reddetk/Adev/internal/middleware"
 	"github.com/Reddetk/Adev/pkg/config"
 	"github.com/Reddetk/Adev/pkg/database"
 	"github.com/Reddetk/Adev/pkg/logger"
@@ -82,6 +83,11 @@ func main() {
 
 	// API v1 routes
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
+	// One place for the middleware: every API route logs its request. The generated
+	// subrouters used to carry their own copy, which left the form, settings, stage
+	// and log routes unlogged.
+	apiRouter.Use(mux.MiddlewareFunc(middleware.CORS(middleware.DefaultCORSConfig())))
+	apiRouter.Use(mux.MiddlewareFunc(middleware.Logging()))
 	apphttp.SetupTargetSystemRoutes(apiRouter, container.TargetSystemUseCase())       // targetsystem routes
 	apphttp.SetupPipelineRoutes(apiRouter, container.PipelineUseCase())               // pipeline routes
 	apphttp.SetupRunRoutes(apiRouter, container.RunUseCase())                         // run routes
@@ -96,6 +102,12 @@ func main() {
 	apphttp.SetupFormRoutes(apiRouter, container.FormHandler())
 	// adev stage runs
 	apphttp.SetupStageRoutes(apiRouter, container.StageHandler())
+
+	apphttp.SetupQuestionRoutes(apiRouter, container.QuestionHandler())
+	// what the agents work on right now
+	apphttp.SetupActivityRoutes(apiRouter, apphttp.NewActivityHandler(container.ActivityService()))
+	// recent server log lines for the operator console
+	apphttp.SetupLogRoutes(apiRouter, apphttp.NewLogHandler(logger.Default()))
 
 	// Minimal frontend: target system setup and the first stage run.
 	// The UI is a Vite app in the frontend folder next to the Go module: make ui-build

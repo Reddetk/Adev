@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 
@@ -55,11 +56,13 @@ type StageRunRecorder interface {
 // StageService runs one stage: it reads the input forms, asks the model for the
 // output form and stores it. The stage comes from the registry, never from the model.
 type StageService struct {
-	forms    *FormService
-	settings *SettingsService
-	llm      LLMFactory
-	runs     StageRunRecorder
-	maxTries int
+	forms      *FormService
+	settings   *SettingsService
+	llm        LLMFactory
+	runs       StageRunRecorder
+	questions  *QuestionService
+	activities *ActivityService
+	maxTries   int
 }
 
 // NewStageService builds the stage runner. maxTries defaults to three.
@@ -67,7 +70,23 @@ func NewStageService(forms *FormService, settings *SettingsService, llm LLMFacto
 	return &StageService{forms: forms, settings: settings, llm: llm, runs: runs, maxTries: 3}
 }
 
-// Run executes one stage and returns its outcome.
+// WithQuestions attaches the question publisher. A stage without it blocks and
+// returns its gaps, as before; a stage with it publishes an operator question.
+func (s *StageService) WithQuestions(questions *QuestionService) *StageService {
+	s.questions = questions
+	return s
+}
+
+// WithActivity attaches the live book of runs, so the dashboard can show what
+// the agents work on right now.
+func (s *StageService) WithActivity(activities *ActivityService) *StageService {
+	s.activities = activities
+	return s
+}
+
+// Run executes one stage and returns its outcome. Every form type of the stage
+// output is its own run: the architect writes the HLD and the ADR as two forms
+// from the same context, and a blocked form stops the stage.
 func (s *StageService) Run(ctx context.Context, request StageRequest) (StageOutcome, error) {
 	stage, err := domain.StageByID(request.Route, request.StageID)
 	if err != nil {
@@ -89,31 +108,81 @@ func (s *StageService) Run(ctx context.Context, request StageRequest) (StageOutc
 		return StageOutcome{}, err
 	}
 
-	formID := stageFormID(request.PipelineID, stage.ID)
-	version, previous, err := s.nextVersion(ctx, formID)
+	outcome := StageOutcome{Stage: stage.ID}
+	for _, output := range stage.Outputs {
+		formID := stageFormID(request.PipelineID, stage.ID, output, len(stage.Outputs) > 1)
+		finished, version, previous, err := s.nextVersion(ctx, formID)
+		if err != nil {
+			return StageOutcome{}, err
+		}
+		if finished != nil {
+			// The operator answer already made this version valid: the run just confirms it.
+			outcome.FormID, outcome.FormVersion = finished.FormID, finished.FormVersion
+			s.record(ctx, request, stage, "done", 0, "")
+			continue
+		}
+		formOutcome, err := s.runForm(ctx, request, stage, agent, client, stageContext, refs, output, formID, version, previous)
+		if err != nil || formOutcome.Blocked {
+			return formOutcome, err
+		}
+		outcome.Attempts += formOutcome.Attempts
+		outcome.FormID, outcome.FormVersion = formOutcome.FormID, formOutcome.FormVersion
+	}
+	return outcome, nil
+}
+
+// runForm fills one output form of the stage: up to maxTries model calls, each
+// gate failure goes back to the model, and the last one becomes an operator question.
+func (s *StageService) runForm(
+	ctx context.Context,
+	request StageRequest,
+	stage domain.Stage,
+	agent domain.AgentConfig,
+	client LLM,
+	stageContext json.RawMessage,
+	refs []domain.Ref,
+	output domain.FormType,
+	formID string,
+	version int,
+	previous *domain.Ref,
+) (StageOutcome, error) {
+	outcome := StageOutcome{Stage: stage.ID}
+	shape, err := domain.PayloadShape(output)
 	if err != nil {
-		return StageOutcome{}, err
+		s.record(ctx, request, stage, "failed", 0, err.Error())
+		return outcome, err
 	}
 
-	outcome := StageOutcome{Stage: stage.ID}
+	// The dashboard reads the book to see what the agents work on right now.
+	activity := s.activities.Start(request.PipelineID, stage.ID, string(stage.Owner), string(output))
+	defer func() {
+		if !activity.Finished() {
+			activity.Finish("failed", "the run stopped before the stage completed")
+		}
+	}()
+
 	var problems []string
+	var gateFailures []domain.ValidationError
+	var form *domain.Form
 
 	for attempt := 1; attempt <= s.maxTries; attempt++ {
 		outcome.Attempts = attempt
+		activity.Attempt()
 
 		response, err := client.Complete(ctx, LLMRequest{
 			Role:        agent.Role,
-			Instruction: stageInstruction(stage),
-			Shape:       payloadShape(stage.Outputs[0]),
+			Instruction: stageInstruction(stage, output),
+			Shape:       shape,
 			Context:     stageContext,
 			Problems:    problems,
 		})
 		if err != nil {
+			activity.Finish("failed", err.Error())
 			s.record(ctx, request, stage, "failed", attempt, err.Error())
 			return StageOutcome{}, err
 		}
 
-		form := s.buildForm(request, stage, refs, formID, version, previous)
+		form = s.buildForm(request, stage, refs, output, formID, version, previous)
 		if err := form.SetRawPayload(response.Payload); err != nil {
 			problems = append(problems, err.Error())
 			continue
@@ -122,21 +191,55 @@ func (s *StageService) Run(ctx context.Context, request StageRequest) (StageOutc
 		if err := s.forms.Submit(ctx, form); err != nil {
 			if isFormRejection(err) {
 				problems = append(problems, err.Error())
+				if failure := validationFailure(err); failure != nil {
+					gateFailures = append(gateFailures, *failure)
+				}
 				continue
 			}
+			activity.Finish("failed", err.Error())
 			s.record(ctx, request, stage, "failed", attempt, err.Error())
 			return StageOutcome{}, err
 		}
 
 		outcome.FormID, outcome.FormVersion = form.FormID, form.FormVersion
 		s.record(ctx, request, stage, "done", attempt, "")
+
+		// The model filled the gates but may have left open gaps: the questions
+		// hold the stage until the operator answers every one of them.
+		blocked := false
+		if s.questions != nil && request.PipelineID != "" {
+			pipelineID, _ := strconv.Atoi(request.PipelineID)
+			_, blocked, err = s.questions.PublishGaps(ctx, form, pipelineID)
+			if err != nil {
+				log.Printf("stage %s pipeline %s: publish gap: %v", stage.ID, request.PipelineID, err)
+			}
+		}
+		if blocked {
+			outcome.Blocked = true
+			outcome.Gaps = []string{"the draft holds open questions for the operator"}
+			s.record(ctx, request, stage, "blocked", attempt, "open questions")
+			activity.Finish("blocked", "waiting for the operator answers")
+		} else {
+			activity.Finish("done", "")
+		}
 		return outcome, nil
 	}
 
 	outcome.Blocked = true
 	outcome.Gaps = problems
+	s.publishQuestion(ctx, request, stage, form, gateFailures)
 	s.record(ctx, request, stage, "blocked", s.maxTries, strings.Join(problems, "; "))
+	activity.Finish("blocked", strings.Join(problems, "; "))
 	return outcome, nil
+}
+
+// latestVersion reads the highest stored version of a form, or zero when absent.
+func (s *StageService) latestVersion(ctx context.Context, formID string) int {
+	latest, err := s.forms.Latest(ctx, formID)
+	if err != nil {
+		return 0
+	}
+	return latest.FormVersion
 }
 
 // buildContext collects the projected input forms and the references of the stage.
@@ -177,26 +280,31 @@ func (s *StageService) buildContext(ctx context.Context, request StageRequest, s
 	return raw, refs, nil
 }
 
-// nextVersion reports the version a re-run of the stage must produce.
-func (s *StageService) nextVersion(ctx context.Context, formID string) (int, *domain.Ref, error) {
+// nextVersion reports the version a re-run of the stage must produce. A stored
+// version that already passed the gates is the finished result of the stage: the
+// model is not called again, an operator answer closes the run without it.
+func (s *StageService) nextVersion(ctx context.Context, formID string) (*domain.Form, int, *domain.Ref, error) {
 	latest, err := s.forms.Latest(ctx, formID)
 	switch {
 	case err == nil:
-		return latest.FormVersion + 1, &domain.Ref{
+		if latest.Status == domain.StatusValid {
+			return latest, 0, nil, nil
+		}
+		return nil, latest.FormVersion + 1, &domain.Ref{
 			FormID: latest.FormID, FormType: latest.FormType,
 			FormVersion: latest.FormVersion, Hash: latest.PayloadHash,
 		}, nil
 	case errors.Is(err, domain.ErrFormNotFound):
-		return 1, nil, nil
+		return nil, 1, nil, nil
 	default:
-		return 0, nil, err
+		return nil, 0, nil, err
 	}
 }
 
-func (s *StageService) buildForm(request StageRequest, stage domain.Stage, refs []domain.Ref, formID string, version int, previous *domain.Ref) *domain.Form {
+func (s *StageService) buildForm(request StageRequest, stage domain.Stage, refs []domain.Ref, output domain.FormType, formID string, version int, previous *domain.Ref) *domain.Form {
 	return &domain.Form{Envelope: domain.Envelope{
 		FormID:              formID,
-		FormType:            stage.Outputs[0],
+		FormType:            output,
 		SchemaVersion:       1,
 		FormVersion:         version,
 		PreviousFormVersion: previous,
@@ -217,7 +325,36 @@ func isFormRejection(err error) bool {
 	return errors.As(err, &validation) || errors.Is(err, domain.ErrNoPayloadGates)
 }
 
+// validationFailure returns the gate failure when the error carries one.
+func validationFailure(err error) *domain.ValidationError {
+	var failure *domain.ValidationError
+	if errors.As(err, &failure) {
+		return failure
+	}
+	return nil
+}
+
+// publishQuestion saves the failed draft and asks the operator about the first
+// gate failure, so the next version of the form can be completed by an answer.
+func (s *StageService) publishQuestion(ctx context.Context, request StageRequest, stage domain.Stage, form *domain.Form, failures []domain.ValidationError) {
+	if s.questions == nil || form == nil {
+		return
+	}
+	pipelineID, _ := strconv.Atoi(request.PipelineID)
+	if err := s.questions.Publish(ctx, form, failures, pipelineID); err != nil {
+		log.Printf("stage %s pipeline %s: publish question: %v", stage.ID, request.PipelineID, err)
+	}
+}
+
 func (s *StageService) record(ctx context.Context, request StageRequest, stage domain.Stage, status string, attempts int, lastError string) {
+	// The operator console reads these lines when a stage fails: it is the only place
+	// that shows why the model or a gate refused an attempt.
+	if lastError == "" {
+		log.Printf("stage %s pipeline %s: %s after %d attempt(s)", stage.ID, request.PipelineID, status, attempts)
+	} else {
+		log.Printf("stage %s pipeline %s: %s after %d attempt(s): %s", stage.ID, request.PipelineID, status, attempts, lastError)
+	}
+
 	if s.runs == nil {
 		return
 	}
@@ -228,34 +365,24 @@ func (s *StageService) record(ctx context.Context, request StageRequest, stage d
 	})
 }
 
-// stageFormID is stable per pipeline and stage, so a re-run creates a new version.
-func stageFormID(pipelineID, stageID string) string {
+// stageFormID is stable per pipeline, stage and output type, so a re-run creates
+// a new version. A stage with one output keeps the short id.
+func stageFormID(pipelineID, stageID string, output domain.FormType, multi bool) string {
+	if multi {
+		return "FRM-" + pipelineID + "-" + stageID + "-" + string(output)
+	}
 	return "FRM-" + pipelineID + "-" + stageID
 }
 
-func stageInstruction(stage domain.Stage) string {
-	return fmt.Sprintf("You fill the %s form of stage %s. Answer with the payload only. Do not add fields.",
-		stage.Outputs[0], stage.ID)
-}
-
-// payloadShape is the JSON skeleton of a form payload. A model that sees the item
-// fields fills the form correctly, and the gate feedback then fixes the rest.
-// shortcut: the skeleton mirrors the domain structs, update it when they change.
-func payloadShape(formType domain.FormType) string {
-	switch formType {
-	case domain.TypeBRD:
-		return `{"goals":[{"id":"G1","outcome":{"text":"...","lang":"STE100"},"metricId":"M1"}],` +
-			`"metrics":[{"id":"M1","name":"...","unit":"count","baseline":0,"target":10}],` +
-			`"scope":{"in":[{"text":"...","lang":"STE100"}],"out":[{"text":"...","lang":"STE100"}]},` +
-			`"actors":[{"id":"A1","name":"...","tasks":[{"text":"...","lang":"STE100"}],"frequency":"day","businessObject":"..."}],` +
-			`"constraints":[{"id":"C1","text":"...","modality":"shall","priority":"must"}],` +
-			`"assumptions":[{"text":"...","lang":"STE100"}],` +
-			`"successMetrics":[{"metricId":"M1","threshold":"...","window":"..."}],` +
-			`"openGaps":[{"id":"GAP1","question":{"text":"...","lang":"STE100"},"blocking":false}]}`
-	case domain.TypeUserInput:
-		return `{"rawRequest":{"text":"...","lang":"STE100"},"attachments":[],` +
-			`"source":"operator","receivedAt":"2026-01-01T00:00:00Z","locale":"en"}`
-	default:
-		return "unknown shape"
-	}
+func stageInstruction(stage domain.Stage, output domain.FormType) string {
+	// The question phase of the stages 00-02: the agent asks, the operator
+	// decides, the answer compiles the document. The model never invents a
+	// value the context does not give.
+	return fmt.Sprintf(
+		"You fill the %s form of stage %s. Answer with the payload only. Do not add fields. "+
+			"Fill every field that the given context answers. "+
+			"For every question the context does not answer, put one openGaps entry: "+
+			"the question, the pointer of the field it would fill, and the options when it is a choice. "+
+			"Do not invent a value that the context does not give.",
+		output, stage.ID)
 }

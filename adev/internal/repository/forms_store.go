@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Reddetk/Adev/internal/domain"
+	"github.com/Reddetk/Adev/internal/usecase"
 )
 
 const formColumns = `form_id, form_version, form_type, schema_version, previous_form, status,
@@ -22,6 +23,9 @@ const formColumns = `form_id, form_version, form_type, schema_version, previous_
 type FormsStore struct {
 	pool *pgxpool.Pool
 }
+
+// FormsStore and MemoryFormsStore are the adapters of the same port.
+var _ usecase.FormStore = (*FormsStore)(nil)
 
 // OpenFormsStore opens a pool and checks the connection.
 func OpenFormsStore(ctx context.Context, dsn string) (*FormsStore, error) {
@@ -53,16 +57,10 @@ func (s *FormsStore) Save(ctx context.Context, form *domain.Form) error {
 	if form == nil {
 		return fmt.Errorf("save: form is nil")
 	}
-	if form.FormID == "" || form.FormVersion < 1 {
-		return fmt.Errorf("save: formId and a formVersion of at least 1 are required")
+	if err := form.ValidateNewVersion(); err != nil {
+		return err
 	}
 	if form.FormVersion > 1 {
-		switch {
-		case form.PreviousFormVersion == nil:
-			return fmt.Errorf("%w: formVersion %d needs previousFormVersion", domain.ErrMissingPrevious, form.FormVersion)
-		case form.PreviousFormVersion.FormVersion != form.FormVersion-1:
-			return fmt.Errorf("%w: previousFormVersion must be %d", domain.ErrMissingPrevious, form.FormVersion-1)
-		}
 		exists, err := s.exists(ctx, form.FormID, form.FormVersion-1)
 		if err != nil {
 			return err

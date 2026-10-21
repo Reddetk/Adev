@@ -15,6 +15,8 @@ var greenfieldStages = []Stage{
 	{ID: "00", Name: "BRD", Owner: RoleAnalyst,
 		Inputs: []FormType{TypeUserInput}, Outputs: []FormType{TypeBRD}},
 	{ID: "01", Name: "Feasibility Study", Owner: RoleAnalyst,
+		// The registry names an as-is HLD input, too. Greenfield has no current
+		// architecture, so the route ships without it.
 		Inputs: []FormType{TypeBRD}, Outputs: []FormType{TypeFeasibility, TypeBRD}},
 	{ID: "02", Name: "Software Requirements Specification", Owner: RoleAnalyst,
 		Inputs: []FormType{TypeBRD, TypeFeasibility}, Outputs: []FormType{TypeSRS}},
@@ -47,6 +49,24 @@ func StageByID(route Route, id string) (Stage, error) {
 	for _, stage := range stages {
 		if stage.ID == id {
 			return stage, nil
+		}
+	}
+	return Stage{}, fmt.Errorf("stage %q does not exist in route %q", id, route)
+}
+
+// NextStage returns the stage that follows the given stage, or an error when the
+// stage is the last one. The route belongs to the registry, never to the agent.
+func NextStage(route Route, id string) (Stage, error) {
+	stages, err := Stages(route)
+	if err != nil {
+		return Stage{}, err
+	}
+	for index, stage := range stages {
+		if stage.ID == id {
+			if index+1 >= len(stages) {
+				return Stage{}, fmt.Errorf("stage %q has no next stage in route %q", id, route)
+			}
+			return stages[index+1], nil
 		}
 	}
 	return Stage{}, fmt.Errorf("stage %q does not exist in route %q", id, route)

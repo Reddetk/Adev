@@ -55,11 +55,26 @@ export type AgentInput = {
 
 export type FormRef = { formId: string; formVersion: number };
 
+// AgentActivity mirrors the live book of stage runs: what an agent works on now.
+export type AgentActivity = {
+  id: string;
+  pipelineId: string;
+  stage: string;
+  role: string;
+  output: string;
+  attempts: number;
+  status: string;
+  startedAt: string;
+  endedAt: string | null;
+  lastError: string;
+};
+
 export type FormSummary = {
   formId: string;
   formType: string;
   formVersion: number;
   status: string;
+  stage: string;
   payloadHash: string;
   producedBy: string;
   inputs: FormRef[] | null;
@@ -74,6 +89,17 @@ export type StageOutcome = {
   attempts: number;
   blocked: boolean;
   gaps: string[] | null;
+};
+
+// OperatorRequest is a question the model asked instead of guessing a form value.
+// The goca control-plane table holds it; status "completed" means the operator answered.
+export type OperatorRequest = {
+  id: number;
+  pipelineid: number;
+  pointer: string;
+  question: string;
+  blocking: boolean;
+  status: string;
 };
 
 export type ModelCheckResult = {
@@ -141,7 +167,13 @@ export function createApi(onLog: (entry: LogEntry) => void) {
   return {
     createTargetSystem: (input: { name: string; description: string }) =>
       call<TargetSystem>('POST', '/targetsystems', input),
-    listTargetSystems: () => call<{ targetsystems: TargetSystemSummary[] }>('GET', '/targetsystems'),
+    // goca handlers marshal empty Go slices as null: every list is normalized to
+    // an array here, the single HTTP layer, so no component sees null.
+    listTargetSystems: () =>
+      call<{ targetsystems: TargetSystemSummary[] | null }>('GET', '/targetsystems').then((list) => ({
+        ...list,
+        targetsystems: list.targetsystems ?? [],
+      })),
     setWorkspace: (id: number, dir: string) => call<{ dir: string }>('PUT', `/targetsystems/${id}/workspace`, { dir }),
     setAgent: (id: number, role: string, agent: AgentInput) =>
       call<AgentView>('PUT', `/targetsystems/${id}/agents/${role}`, agent),
@@ -150,13 +182,31 @@ export function createApi(onLog: (entry: LogEntry) => void) {
       call<ModelCheckResult>('POST', `/targetsystems/${id}/agents/${role}/check`, draft),
     plan: (id: number) => call<Plan>('GET', `/targetsystems/${id}/plan`),
     createPipeline: (id: number) => call<Pipeline>('POST', `/targetsystems/${id}/pipelines`, { route: 'greenfield' }),
-    listPipelines: () => call<{ pipelines: PipelineRow[] }>('GET', '/pipelines'),
+    listPipelines: () =>
+      call<{ pipelines: PipelineRow[] | null }>('GET', '/pipelines').then((list) => ({
+        ...list,
+        pipelines: list.pipelines ?? [],
+      })),
+    logs: (limit: number) =>
+      call<{ lines: string[] | null; total: number }>('GET', `/logs?limit=${limit}`).then((result) => ({
+        ...result,
+        lines: result.lines ?? [],
+      })),
     submitForm: (form: unknown) => call<FormDetail>('POST', '/forms', form),
     runStage: (id: number, stage: string, pipelineId: string) =>
       call<StageOutcome>('POST', `/targetsystems/${id}/stages/${stage}/run`, { pipelineId, route: 'greenfield' }),
     formsByPipeline: (pipelineId: string, type: string) =>
-      call<FormSummary[]>('GET', `/pipelines/${pipelineId}/forms?type=${type}`),
+      call<FormSummary[] | null>('GET', `/pipelines/${pipelineId}/forms?type=${type}`).then((rows) => rows ?? []),
     form: (formId: string, version: number) =>
       call<FormDetail>('GET', `/forms/${formId}/versions/${version}`),
+    operatorRequests: () =>
+      call<{ operatorrequests: OperatorRequest[]; total: number }>('GET', '/operatorrequests'),
+    answerQuestion: (pipelineId: number, pointer: string, value: unknown) =>
+      call<FormDetail>('POST', '/operatorrequests/answer', { pipelineId, pointer, value }),
+    activities: () =>
+      call<{ activities: AgentActivity[] | null; total: number }>('GET', '/activities').then((list) => ({
+        ...list,
+        activities: list.activities ?? [],
+      })),
   };
 }

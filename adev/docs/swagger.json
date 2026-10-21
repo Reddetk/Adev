@@ -467,6 +467,35 @@
                 }
             }
         },
+        "/logs": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "logs"
+                ],
+                "summary": "Recent server log lines",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 200,
+                        "description": "How many lines to return, newest kept",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/modelcalls": {
             "get": {
                 "consumes": [
@@ -781,6 +810,67 @@
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/operatorrequests/answer": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "operatorrequests"
+                ],
+                "summary": "Answer an operator question",
+                "parameters": [
+                    {
+                        "description": "Pipeline, pointer and the value",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/http.AnswerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The corrected form version",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No form waits on this pointer",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The corrected payload failed the gates",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2918,6 +3008,9 @@
                     "example": 0.2
                 }
             }
+        },
+        "http.AnswerRequest": {
+            "type": "object"
         },
         "http.FormRequest": {
             "type": "object"

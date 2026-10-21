@@ -48,17 +48,260 @@ header p {
 }
 
 main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
-  gap: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   padding: 20px;
-  align-items: start;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
-@media (max-width: 1100px) {
-  main {
-    grid-template-columns: 1fr;
-  }
+.toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.toolbar-field {
+  flex: 0 1 380px;
+}
+
+.toolbar-field .actions {
+  margin-top: 8px;
+}
+
+.toolbar > .hint {
+  margin: 0 0 8px auto;
+}
+
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-head h2 {
+  margin: 0 0 4px;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #fff;
+  font-size: 13px;
+}
+
+.banner.bad {
+  border-color: var(--bad);
+  color: var(--bad);
+  background: #fdf3f0;
+}
+
+/* The pipeline graph: a chain of stage nodes. */
+.graph {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0;
+  padding: 4px 0;
+}
+
+.graph-step {
+  display: flex;
+  align-items: center;
+}
+
+.node {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 148px;
+  max-width: 190px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.node:hover {
+  border-color: var(--ink);
+}
+
+.node.selected {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 2px rgba(45, 49, 66, 0.18);
+}
+
+.node-id {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.node-name {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.node-owner {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.node-state {
+  margin-top: 4px;
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.node.valid .node-state,
+.node.approved .node-state {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.node.draft .node-state,
+.node.current .node-state {
+  color: #8a5a00;
+  border-color: #c99400;
+}
+
+.node.waiting_operator .node-state {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+
+.node.waiting_operator {
+  border-color: var(--bad);
+}
+
+.edge {
+  display: block;
+  width: 18px;
+  height: 1px;
+  background: var(--line);
+  margin: 0 2px;
+}
+
+/* The document panel of one stage. */
+.stage-panel .stage-actions {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.versions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+.chip {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chip.on {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.document.outline {
+  background: #fafaf9;
+  border-style: dashed;
+}
+
+.outline-list {
+  margin: 0;
+  padding-left: 22px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* The open question dashboard. */
+.questions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.question {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--ok);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.question.blocking {
+  border-left-color: var(--bad);
+  background: #fdf9f8;
+}
+
+.question-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+
+.question-meta .hint {
+  margin: 0;
+}
+
+.question-text {
+  margin: 6px 0 0;
+  font-size: 14px;
+}
+
+.question-answer {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.question-answer input {
+  flex: 1;
+}
+
+.question-answer button {
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.console summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 4px 0;
 }
 
 section {
@@ -221,7 +464,7 @@ tbody tr:hover {
   color: #e6e6ea;
   border-radius: 8px;
   padding: 10px;
-  height: 78vh;
+  height: 42vh;
   overflow: auto;
   font-family: ui-monospace, Consolas, monospace;
   font-size: 11px;

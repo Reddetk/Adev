@@ -186,8 +186,8 @@ func TestSubmitFormRefusesADuplicateVersion(t *testing.T) {
 
 func TestSubmitFormRefusesATypeWithoutGates(t *testing.T) {
 	body := userInputBody()
-	body["formType"] = "SRS"
-	body["stage"] = "02"
+	body["formType"] = "QUESTION"
+	body["stage"] = "\u2014"
 
 	response := newFormAPI().send(t, http.MethodPost, "/api/v1/forms", body)
 

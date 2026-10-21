@@ -6,3 +6,6 @@
 # Node dependencies and the Vite build of the operator UI.
 frontend/node_modules/
 frontend/dist/
+
+# The server writes its log here so a background run stays readable.
+adev/logs/

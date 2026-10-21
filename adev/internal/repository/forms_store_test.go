@@ -7,17 +7,8 @@ import (
 	"testing"
 
 	"github.com/Reddetk/Adev/internal/domain"
+	"github.com/Reddetk/Adev/internal/usecase"
 )
-
-// formsStoreContract mirrors usecase.FormStore. The repository test cannot import
-// the use case package while the generated code still depends on this one.
-type formsStoreContract interface {
-	Save(ctx context.Context, form *domain.Form) error
-	Get(ctx context.Context, formID string, version int) (*domain.Form, error)
-	Latest(ctx context.Context, formID string) (*domain.Form, error)
-	ByPipeline(ctx context.Context, pipelineID string, formType domain.FormType) ([]*domain.Form, error)
-	SetStatus(ctx context.Context, formID string, version int, status domain.Status) error
-}
 
 func buildForm(t *testing.T, formID string, version int, pipelineID string, previous *domain.Ref) *domain.Form {
 	t.Helper()
@@ -51,7 +42,7 @@ func TestInMemoryFormsStore(t *testing.T) {
 }
 
 // runStoreSuite checks the shared contract of every forms store implementation.
-func runStoreSuite(t *testing.T, store formsStoreContract) {
+func runStoreSuite(t *testing.T, store usecase.FormStore) {
 	ctx := context.Background()
 
 	t.Run("save and get", func(t *testing.T) {

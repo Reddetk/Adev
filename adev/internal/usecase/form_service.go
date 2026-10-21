@@ -43,7 +43,25 @@ func (s *FormService) Submit(ctx context.Context, form *domain.Form) error {
 			return err
 		}
 	}
-	if err := form.ValidatePayload(); err != nil {
+	if err := form.ValidatePayloadWithStatus(); err != nil {
+		return err
+	}
+	return s.store.Save(ctx, form)
+}
+
+// SubmitDraft stores a form that failed its payload gates. The model filled it
+// with proposals, so the operator can correct one field instead of redoing it.
+// The envelope, the references and the hash are still checked; the payload gates
+// and the language check run only on a full submit.
+func (s *FormService) SubmitDraft(ctx context.Context, form *domain.Form) error {
+	if form == nil {
+		return fmt.Errorf("submit draft: form is nil")
+	}
+	resolved, err := s.resolveRefs(ctx, form)
+	if err != nil {
+		return err
+	}
+	if err := form.ValidateEnvelope(resolved); err != nil {
 		return err
 	}
 	return s.store.Save(ctx, form)

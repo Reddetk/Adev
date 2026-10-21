@@ -178,7 +178,6 @@ func ValidateUserInput(in UserInput) error {
 
 var brdBannedTerms = []string{"container", "module", "package", "struct", "database", "table"}
 
-// ValidateBRD checks the BRD gates.
 func ValidateBRD(brd BRD, status Status) error {
 	var errs []error
 
@@ -222,14 +221,8 @@ func ValidateBRD(brd BRD, status Status) error {
 		}
 	}
 
-	if status == StatusApproved {
-		for i, gap := range brd.OpenGaps {
-			if gap.Blocking {
-				errs = append(errs, invalid(fmt.Sprintf("openGaps[%d]", i), "a blocking gap must be closed before approval"))
-			}
-		}
-	}
-
+	// The blocking-gap gate is shared by every question-phase form and lives in
+	// ValidatePayloadWithStatus, so it does not duplicate here.
 	for i, text := range brd.Texts() {
 		for _, term := range brdBannedTerms {
 			if containsWord(text.Value, term) {
