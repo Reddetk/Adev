@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/Reddetk/Adev/internal/domain"
+	"github.com/Reddetk/Adev/internal/usecase"
 )
 
 // MemoryFormsStore is an in-process form store for tests and for runs without a database.
@@ -16,6 +18,9 @@ type MemoryFormsStore struct {
 	forms   map[string]map[int]*domain.Form
 	created map[string]bool
 }
+
+// MemoryFormsStore is the second adapter of the same port.
+var _ usecase.FormStore = (*MemoryFormsStore)(nil)
 
 // NewMemoryFormsStore returns an empty store.
 func NewMemoryFormsStore() *MemoryFormsStore {
@@ -33,8 +38,8 @@ func (m *MemoryFormsStore) Save(ctx context.Context, form *domain.Form) error {
 	if form == nil {
 		return fmt.Errorf("save: form is nil")
 	}
-	if form.FormID == "" || form.FormVersion < 1 {
-		return fmt.Errorf("save: formId and a formVersion of at least 1 are required")
+	if err := form.ValidateNewVersion(); err != nil {
+		return err
 	}
 
 	m.mu.Lock()
@@ -43,15 +48,8 @@ func (m *MemoryFormsStore) Save(ctx context.Context, form *domain.Form) error {
 	if m.created[formKey(form.FormID, form.FormVersion)] {
 		return fmt.Errorf("%w: %s:%d", domain.ErrVersionExists, form.FormID, form.FormVersion)
 	}
-	if form.FormVersion > 1 {
-		switch {
-		case form.PreviousFormVersion == nil:
-			return fmt.Errorf("%w: formVersion %d needs previousFormVersion", domain.ErrMissingPrevious, form.FormVersion)
-		case form.PreviousFormVersion.FormVersion != form.FormVersion-1:
-			return fmt.Errorf("%w: previousFormVersion must be %d", domain.ErrMissingPrevious, form.FormVersion-1)
-		case !m.created[formKey(form.FormID, form.FormVersion-1)]:
-			return fmt.Errorf("%w: %s:%d", domain.ErrMissingPrevious, form.FormID, form.FormVersion-1)
-		}
+	if form.FormVersion > 1 && !m.created[formKey(form.FormID, form.FormVersion-1)] {
+		return fmt.Errorf("%w: %s:%d", domain.ErrMissingPrevious, form.FormID, form.FormVersion-1)
 	}
 
 	versions, ok := m.forms[form.FormID]
@@ -115,12 +113,17 @@ func (m *MemoryFormsStore) ByPipeline(ctx context.Context, pipelineID string, fo
 	var result []*domain.Form
 	for _, versions := range m.forms {
 		for _, form := range versions {
-			if form.PipelineID == pipelineID && form.FormType == formType {
+			if form.PipelineID == pipelineID && (formType == "" || form.FormType == formType) {
 				result = append(result, cloneForm(form))
 			}
 		}
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].FormVersion < result[j].FormVersion })
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Stage != result[j].Stage {
+			return result[i].Stage < result[j].Stage
+		}
+		return result[i].FormVersion < result[j].FormVersion
+	})
 	return result, nil
 }
 
@@ -144,6 +147,59 @@ func (m *MemoryFormsStore) SetStatus(ctx context.Context, formID string, version
 		return fmt.Errorf("%w: %s to %s", domain.ErrInvalidStatusChange, form.Status, status)
 	}
 	form.Status = status
+	return nil
+}
+
+// UpdatePayload rewrites the payload of a version that waits for the operator.
+func (m *MemoryFormsStore) UpdatePayload(ctx context.Context, update *domain.Form) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	form, ok := m.forms[update.FormID][update.FormVersion]
+	if !ok {
+		return fmt.Errorf("%w: %s:%d", domain.ErrFormNotFound, update.FormID, update.FormVersion)
+	}
+	if form.Status != domain.StatusWaitingOperator {
+		return fmt.Errorf("%w: %s:%d is not waiting for the operator", domain.ErrInvalidStatusChange, update.FormID, update.FormVersion)
+	}
+	form.Payload = update.Payload
+	form.PayloadHash = update.PayloadHash
+	return nil
+}
+
+// Delete removes one version (version > 0) or every version of the document
+// (version <= 0).
+func (m *MemoryFormsStore) Delete(ctx context.Context, formID string, version int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	versions, ok := m.forms[formID]
+	if !ok || len(versions) == 0 {
+		return fmt.Errorf("%w: %s", domain.ErrFormNotFound, formID)
+	}
+	if version > 0 {
+		if _, ok := versions[version]; !ok {
+			return fmt.Errorf("%w: %s:%d", domain.ErrFormNotFound, formID, version)
+		}
+		delete(versions, version)
+		delete(m.created, formKey(formID, version))
+		if len(versions) == 0 {
+			delete(m.forms, formID)
+		}
+		return nil
+	}
+	delete(m.forms, formID)
+	for key := range m.created {
+		if strings.HasPrefix(key, formID+":") {
+			delete(m.created, key)
+		}
+	}
 	return nil
 }
 

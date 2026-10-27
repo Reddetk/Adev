@@ -19,16 +19,11 @@ func (p Projection) Project(role Role, form any) (any, error) {
 // A type without a projection cannot be read by an agent: the caller gets an error
 // instead of the whole form.
 func ProjectionFor(formType FormType, role Role) ([]string, error) {
-	var table Projection
-	switch formType {
-	case TypeBRD:
-		table = BRDProjection
-	case TypeUserInput:
-		table = userInputProjection
-	default:
+	spec, ok := formSpecFor(formType)
+	if !ok {
 		return nil, fmt.Errorf("no projection for form type %q yet", formType)
 	}
-	fields, ok := table[role]
+	fields, ok := spec.projection[role]
 	if !ok {
 		return nil, fmt.Errorf("no projection of %s for role %q", formType, role)
 	}
@@ -195,4 +190,15 @@ var BRDProjection = Projection{
 	RoleDevOps: {
 		"/formId", "/formType",
 	},
+}
+
+// openDesignProjection lets every role read the full design form.
+// shortcut: no field secrecy between roles yet, owner-role allowlists come later.
+var openDesignProjection = Projection{
+	RoleOperator:  {"/*"},
+	RoleAnalyst:   {"/*"},
+	RoleArchitect: {"/*"},
+	RoleQA:        {"/*"},
+	RoleDev:       {"/*"},
+	RoleDevOps:    {"/*"},
 }

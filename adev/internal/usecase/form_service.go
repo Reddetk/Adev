@@ -43,8 +43,33 @@ func (s *FormService) Submit(ctx context.Context, form *domain.Form) error {
 			return err
 		}
 	}
-	if err := form.ValidatePayload(); err != nil {
+	if err := form.ValidatePayloadWithStatus(); err != nil {
 		return err
+	}
+	return s.store.Save(ctx, form)
+}
+
+// SubmitDraft stores a form that failed its payload gates. The model filled it
+// with proposals, so the operator can correct one field instead of redoing it.
+// The envelope, the references and the hash are still checked; the payload gates
+// and the language check run only on a full submit.
+func (s *FormService) SubmitDraft(ctx context.Context, form *domain.Form) error {
+	if form == nil {
+		return fmt.Errorf("submit draft: form is nil")
+	}
+	resolved, err := s.resolveRefs(ctx, form)
+	if err != nil {
+		return err
+	}
+	if err := form.ValidateEnvelope(resolved); err != nil {
+		return err
+	}
+	// A draft with a payload that is not a JSON object is no document: the console
+	// cannot draw it and an operator answer has no field to land in. Refusing it
+	// keeps the last usable version current.
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(form.Payload, &document); err != nil || document == nil {
+		return fmt.Errorf("submit draft: the payload is not a document")
 	}
 	return s.store.Save(ctx, form)
 }
@@ -78,6 +103,18 @@ func (s *FormService) SetStatus(ctx context.Context, formID string, version int,
 	return s.store.SetStatus(ctx, formID, version, status)
 }
 
+// UpdatePayload rewrites the payload of the waiting draft in place.
+func (s *FormService) UpdatePayload(ctx context.Context, form *domain.Form) error {
+	return s.store.UpdatePayload(ctx, form)
+}
+
+// Delete removes one version (version > 0) or every version of the document
+// (version <= 0). It is the escape hatch for a document that blocks the
+// pipeline and cannot be repaired by an operator answer.
+func (s *FormService) Delete(ctx context.Context, formID string, version int) error {
+	return s.store.Delete(ctx, formID, version)
+}
+
 // Get reads one stored form version.
 func (s *FormService) Get(ctx context.Context, formID string, version int) (*domain.Form, error) {
 	return s.store.Get(ctx, formID, version)
@@ -89,6 +126,7 @@ func (s *FormService) Latest(ctx context.Context, formID string) (*domain.Form, 
 }
 
 // ByPipeline reads the versions of one form type in one pipeline, oldest first.
+// An empty form type reads every type, which is what the document list needs.
 func (s *FormService) ByPipeline(ctx context.Context, pipelineID string, formType domain.FormType) ([]*domain.Form, error) {
 	return s.store.ByPipeline(ctx, pipelineID, formType)
 }

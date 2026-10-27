@@ -38,7 +38,7 @@ else
 RM      := rm -rf
 PRODBIN := CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w $(LDFLAGS)' -o bin/$(APP_NAME) ./cmd/server
 endif
-.PHONY: help deps tools build run test test-race test-coverage test-db ci fmt vet lint clean \
+.PHONY: help deps tools build run test test-race test-tdd test-coverage test-db ci fmt vet lint clean \
         migrate-install migrate-up migrate-down migrate-force db-reset \
         dev-db dev-db-stop \
         docker-build docker-run compose-up compose-down \
@@ -54,6 +54,7 @@ help:
 	@echo   make ci               vet + unit tests, the unit CI job in one command
 	@echo   make test             run all tests
 	@echo   make test-race        run all tests with the race detector, needs cgo
+	@echo   make test-tdd         acceptance tests of docs/refactor-plan.md, red until the PR lands
 	@echo   make test-db          postgres store tests, needs ADEV_TEST_DATABASE_URL
 	@echo   make test-coverage    write coverage.out and coverage.html
 	@echo   make fmt              gofmt the tree
@@ -79,6 +80,7 @@ help:
 	@echo   make ui-install       npm install in ../frontend, once after a clone
 	@echo   make ui-dev           vite dev server on 5173, proxies /api to this server
 	@echo   make ui-build         build ../frontend/dist, served by make run at /app/
+	@echo   make logs             follow logs/adev.log of the running server
 
 deps:
 	go mod download
@@ -93,6 +95,14 @@ ui-dev:
 
 ui-build:
 	npm --prefix ../frontend run build
+
+# The server appends every line to logs/adev.log, so a background run is readable.
+logs:
+ifeq ($(OS),Windows_NT)
+	powershell -NoProfile -Command "Get-Content -Wait -Tail 50 logs/adev.log"
+else
+	tail -f -n 50 logs/adev.log
+endif
 
 tools:
 	go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest
@@ -118,13 +128,17 @@ tag:
 
 
 run:
-	go run ./cmd/server
+	go run .\cmd\server\main.go
 
 test:
 	go test ./...
 
 test-race:
 	go test -race ./...
+
+# Red by design: each test names the PR acceptance criterion it checks.
+test-tdd:
+	go test -tags tdd ./internal/acceptance/...
 
 # The postgres store tests truncate the forms table, so they need a dedicated database.
 test-db:

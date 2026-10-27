@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -137,7 +138,11 @@ func (p *PipelineHandler) DeletePipeline(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := p.usecase.DeletePipeline(id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		status := http.StatusInternalServerError
+		if errors.Is(err, usecase.ErrPipelineRunning) {
+			status = http.StatusConflict
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 

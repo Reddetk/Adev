@@ -25,9 +25,12 @@ func NewFormHandler(forms *usecase.FormService) *FormHandler {
 // SetupFormRoutes registers the form routes.
 func SetupFormRoutes(router *mux.Router, handler *FormHandler) {
 	router.HandleFunc("/forms", handler.Submit).Methods(http.MethodPost)
+	router.HandleFunc("/forms/{formId}", handler.DeleteForm).Methods(http.MethodDelete)
 	router.HandleFunc("/forms/{formId}/latest", handler.Latest).Methods(http.MethodGet)
 	router.HandleFunc("/forms/{formId}/versions/{version}", handler.GetVersion).Methods(http.MethodGet)
+	router.HandleFunc("/forms/{formId}/versions/{version}", handler.DeleteVersion).Methods(http.MethodDelete)
 	router.HandleFunc("/forms/{formId}/versions/{version}/status", handler.SetStatus).Methods(http.MethodPut)
+	router.HandleFunc("/forms/{formId}/versions/{version}/payload", handler.UpdatePayload).Methods(http.MethodPut)
 	router.HandleFunc("/pipelines/{pipelineId}/forms", handler.ByPipeline).Methods(http.MethodGet)
 }
 
@@ -147,22 +150,106 @@ func (h *FormHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ByPipeline reads the versions of one form type in one pipeline, oldest first.
-// @Summary List the form versions of a pipeline
+// DeleteForm removes every version of a document. It is the escape hatch for a
+// document that blocks the pipeline and cannot be repaired by an operator answer.
+// @Summary Delete a form document
+// @Tags forms
+// @Param formId path string true "Form ID"
+// @Success 204
+// @Failure 404 {object} map[string]string
+// @Router /forms/{formId} [delete]
+func (h *FormHandler) DeleteForm(w http.ResponseWriter, r *http.Request) {
+	if err := h.forms.Delete(r.Context(), mux.Vars(r)["formId"], 0); err != nil {
+		writeError(w, formStatus(err), err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// DeleteVersion removes one version of a form.
+// @Summary Delete one form version
+// @Tags forms
+// @Param formId path string true "Form ID"
+// @Param version path int true "Form version"
+// @Success 204
+// @Failure 404 {object} map[string]string
+// @Router /forms/{formId}/versions/{version} [delete]
+func (h *FormHandler) DeleteVersion(w http.ResponseWriter, r *http.Request) {
+	version, ok := formVersion(w, r)
+	if !ok {
+		return
+	}
+	if err := h.forms.Delete(r.Context(), mux.Vars(r)["formId"], version); err != nil {
+		writeError(w, formStatus(err), err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UpdatePayload rewrites the payload of a stored version in place. Only a version
+// that waits for the operator (or that the operator first moved to that state)
+// may change its payload, matching the append-only rule of the forms table.
+// @Summary Rewrite the payload of a form version
+// @Tags forms
+// @Accept json
+// @Produce json
+// @Param formId path string true "Form ID"
+// @Param version path int true "Form version"
+// @Param body body map[string]any true "New payload"
+// @Success 200 {object} map[string]any "Stored form"
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Router /forms/{formId}/versions/{version}/payload [put]
+func (h *FormHandler) UpdatePayload(w http.ResponseWriter, r *http.Request) {
+	version, ok := formVersion(w, r)
+	if !ok {
+		return
+	}
+	formID := mux.Vars(r)["formId"]
+	var body struct {
+		Payload json.RawMessage `json:"payload"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(body.Payload) == 0 {
+		writeError(w, http.StatusBadRequest, "payload is required")
+		return
+	}
+	form, err := h.forms.Get(r.Context(), formID, version)
+	if err != nil {
+		writeError(w, formStatus(err), err.Error())
+		return
+	}
+	if err := form.SetRawPayload(body.Payload); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	if err := h.forms.UpdatePayload(r.Context(), form); err != nil {
+		writeError(w, formStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, form)
+}
+
+// ByPipeline reads the forms of one pipeline. Every filter is optional: the
+// document list reads all types, then narrows by status or stage.
+// @Summary List the forms of a pipeline
 // @Tags forms
 // @Produce json
 // @Param pipelineId path string true "Pipeline ID"
-// @Param type query string true "Form type" Enums(BRD, SRS, HLD, ADR, LLD, TASK_PLAN)
+// @Param type query string false "Form type" Enums(BRD, SRS, FR, NFR, HLD, ADR, LLD, TASK_PLAN, FEASIBILITY)
+// @Param status query string false "Form status" Enums(draft, valid, approved, superseded)
+// @Param stage query string false "Pipeline stage"
 // @Success 200 {array} map[string]interface{} "Stored forms, oldest first"
 // @Failure 400 {object} map[string]string
 // @Router /pipelines/{pipelineId}/forms [get]
 func (h *FormHandler) ByPipeline(w http.ResponseWriter, r *http.Request) {
-	formType := domain.FormType(r.URL.Query().Get("type"))
-	if formType == "" {
-		writeError(w, http.StatusBadRequest, "the type query parameter is required")
-		return
-	}
-	if !formType.Valid() {
+	query := r.URL.Query()
+	formType := domain.FormType(query.Get("type"))
+	if formType != "" && !formType.Valid() {
 		writeError(w, http.StatusBadRequest, "unknown form type")
 		return
 	}
@@ -171,10 +258,18 @@ func (h *FormHandler) ByPipeline(w http.ResponseWriter, r *http.Request) {
 		writeError(w, formStatus(err), err.Error())
 		return
 	}
-	if forms == nil {
-		forms = []*domain.Form{}
+	status, stage := domain.Status(query.Get("status")), query.Get("stage")
+	matched := make([]*domain.Form, 0, len(forms))
+	for _, form := range forms {
+		if status != "" && form.Status != status {
+			continue
+		}
+		if stage != "" && form.Stage != stage {
+			continue
+		}
+		matched = append(matched, form)
 	}
-	writeJSON(w, http.StatusOK, forms)
+	writeJSON(w, http.StatusOK, matched)
 }
 
 func formVersion(w http.ResponseWriter, r *http.Request) (int, bool) {

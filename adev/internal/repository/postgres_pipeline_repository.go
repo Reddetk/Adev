@@ -5,6 +5,7 @@ import (
 
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -62,9 +63,38 @@ func (p *postgresPipelineRepository) Update(pipeline *domain.Pipeline) error {
 	return err
 }
 
+// Delete removes the pipeline with everything that points at it. Forms keep the
+// pipeline id as text, so they are matched by the text form of the id.
 func (p *postgresPipelineRepository) Delete(id int) error {
-	_, err := p.pool.Exec(context.Background(), `DELETE FROM pipelines WHERE id = $1`, id)
-	return err
+	ctx := context.Background()
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("delete pipeline: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var running bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM runs WHERE pipeline_id = $1 AND status = 'running')`, id).Scan(&running); err != nil {
+		return fmt.Errorf("delete pipeline: %w", err)
+	}
+	if running {
+		return usecase.ErrPipelineRunning
+	}
+	statements := []string{
+		`DELETE FROM model_calls WHERE run_id IN (SELECT id FROM runs WHERE pipeline_id = $1)`,
+		`DELETE FROM audit_events WHERE pipeline_id = $1`,
+		`DELETE FROM tasks WHERE pipeline_id = $1`,
+		`DELETE FROM operator_requests WHERE pipeline_id = $1`,
+		`DELETE FROM runs WHERE pipeline_id = $1`,
+		`DELETE FROM forms WHERE pipeline_id = $1::bigint::text`,
+		`DELETE FROM pipelines WHERE id = $1`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.Exec(ctx, statement, id); err != nil {
+			return fmt.Errorf("delete pipeline: %w", err)
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func (p *postgresPipelineRepository) FindAll() ([]domain.Pipeline, error) {

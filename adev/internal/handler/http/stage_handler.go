@@ -3,10 +3,8 @@ package http
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gorilla/mux"
 
@@ -14,18 +12,19 @@ import (
 	"github.com/Reddetk/Adev/internal/usecase"
 )
 
-// StageRunner runs one stage of a pipeline.
-type StageRunner interface {
-	Run(ctx context.Context, request usecase.StageRequest) (usecase.StageOutcome, error)
+// StageRunStarter accepts a stage run: the answer carries the run row at once and
+// the stage chain goes in the background.
+type StageRunStarter interface {
+	Start(ctx context.Context, request usecase.StageRequest) (*domain.Run, error)
 }
 
 // StageHandler starts a stage.
 type StageHandler struct {
-	stages StageRunner
+	stages StageRunStarter
 }
 
 // NewStageHandler builds the stage handler.
-func NewStageHandler(stages StageRunner) *StageHandler {
+func NewStageHandler(stages StageRunStarter) *StageHandler {
 	return &StageHandler{stages: stages}
 }
 
@@ -40,8 +39,8 @@ type StageRunRequest struct {
 	Route      string `json:"route" example:"greenfield"`
 }
 
-// Run executes one stage and returns its outcome. A blocked stage answers 200 with
-// blocked true and the reasons, because the model simply could not satisfy a gate.
+// Run accepts one stage run and answers at once: the run row carries the id the
+// board and the runs table show while the chain works in the background.
 // @Summary Run a stage
 // @Tags pipelines
 // @Accept json
@@ -49,15 +48,11 @@ type StageRunRequest struct {
 // @Param id path int true "Target system ID"
 // @Param stage path string true "Stage ID" Enums(00, 01, 02, 03, 04, 05, 06)
 // @Param body body StageRunRequest true "Pipeline and route"
-// @Success 200 {object} usecase.StageOutcome
+// @Success 202 {object} domain.Run "The run was accepted; its row moves running -> done | blocked | failed | stopped"
 // @Failure 400 {object} map[string]string
-// @Failure 409 {object} map[string]string "The stage is not ready: a form or an agent config is missing"
-// @Failure 502 {object} map[string]string "The model call failed"
+// @Failure 502 {object} map[string]string "The run could not be recorded"
 // @Router /targetsystems/{id}/stages/{stage}/run [post]
 func (h *StageHandler) Run(w http.ResponseWriter, r *http.Request) {
-	// A stage waits on the model, which takes minutes, but the server write timeout
-	// is ten seconds. Extend the deadline for this request only.
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(20 * time.Minute))
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil || id < 1 {
 		writeError(w, http.StatusBadRequest, "invalid target system id")
@@ -68,8 +63,8 @@ func (h *StageHandler) Run(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if body.PipelineID == "" {
-		writeError(w, http.StatusBadRequest, "pipelineId is required")
+	if _, err := strconv.Atoi(body.PipelineID); err != nil || body.PipelineID == "" {
+		writeError(w, http.StatusBadRequest, "pipelineId must be a number: the run does not exist without its pipeline")
 		return
 	}
 	route := domain.Route(body.Route)
@@ -81,29 +76,15 @@ func (h *StageHandler) Run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	outcome, err := h.stages.Run(r.Context(), usecase.StageRequest{
+	run, err := h.stages.Start(r.Context(), usecase.StageRequest{
 		PipelineID:     body.PipelineID,
 		TargetSystemID: id,
 		Route:          route,
 		StageID:        mux.Vars(r)["stage"],
 	})
 	if err != nil {
-		writeError(w, stageStatus(err), err.Error())
+		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, outcome)
-}
-
-func stageStatus(err error) int {
-	var validation *domain.ValidationError
-	switch {
-	case errors.Is(err, usecase.ErrStageInputMissing), errors.Is(err, usecase.ErrAgentNotConfigured):
-		return http.StatusConflict
-	case errors.Is(err, domain.ErrSettingNotFound), errors.Is(err, domain.ErrFormNotFound):
-		return http.StatusConflict
-	case errors.As(err, &validation):
-		return http.StatusConflict
-	default:
-		return http.StatusBadGateway
-	}
+	writeJSON(w, http.StatusAccepted, run)
 }

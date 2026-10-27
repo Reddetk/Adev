@@ -331,6 +331,8 @@ definitions:
         example: 0.2
         type: number
     type: object
+  http.AnswerRequest:
+    type: object
   http.FormRequest:
     type: object
   http.PipelineCreatedResponse:
@@ -1144,6 +1146,25 @@ paths:
       summary: Change the status of a form version
       tags:
       - forms
+  /logs:
+    get:
+      parameters:
+      - default: 200
+        description: How many lines to return, newest kept
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Recent server log lines
+      tags:
+      - logs
   /modelcalls:
     get:
       consumes:
@@ -1450,6 +1471,46 @@ paths:
               type: string
             type: object
       summary: Update operatorrequest
+      tags:
+      - operatorrequests
+  /operatorrequests/answer:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Pipeline, pointer and the value
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/http.AnswerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: The corrected form version
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: No form waits on this pointer
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: The corrected payload failed the gates
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Answer an operator question
       tags:
       - operatorrequests
   /pipelines:

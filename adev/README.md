@@ -1,189 +1,122 @@
-# Adev
+# adev
 
-Generated with Goca - Go Clean Architecture Code Generator
+Агентная система на Go, которая строит софт по маршруту форм: агенты заполняют формы
+(`USER_INPUT` → `BRD` → `SRS` → `HLD` → `LLD` → …), гейты проверяют каждую, а спорные
+места уходят оператору вопросами. Каркас — Clean Architecture, сгенерированный
+[goca](https://github.com/sazardev/goca); пользовательский интерфейс оператора — React-приложение
+в `../frontend`.
 
-## Architecture
+Документы системы лежат рядом с модулем: `../docs/SysReq.md`, `../docs/Arhitecture.md`,
+реестр форм — `../form-registry/`.
 
-This project follows Clean Architecture principles:
+## Слои
 
-- **Domain**: Entities and business rules
-- **Use Cases**: Application logic
-- **Repository**: Data abstraction
-- **Handler**: Delivery adapters
+```
+internal/
+├── domain/      сущности, правила, гейты — без I/O и context.Context
+├── usecase/     сервисы, DTO, порты (интерфейсы)
+├── repository/  pgx-адаптеры, реализуют порты usecase
+├── handler/     http- и cli-адаптеры
+├── di/          корень композиции
+└── middleware/  http-middleware
+```
 
-## Quick Start
+Порт объявляет `usecase`; `repository` его реализует, а не наоборот. Хранилище —
+PostgreSQL через pgx. Миграции — golang-migrate: `migrations/NNN_name.up.sql` и
+`NNN_name.down.sql`, нумерация только вперёд. Схему не менять через код.
 
-### 1. Install dependencies:
+## Быстрый старт
+
+Нужны Go, Docker и make (на Windows — WinGet Links).
+
 ```bash
-go mod tidy
+make deps          # скачать модули
+make dev-db        # поднять БД и дождаться healthcheck
+make migrate-up    # применить миграции
+make run           # сервер на :8080 с настройками из .env
 ```
 
+Скопируйте `.env.example` в `.env` и заполните:
 
-### 2. Configure database (PostgreSQL):
+- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` — база;
+- `OUPENROUTER_APIKEY` — ключ модели. Имя с опечаткой это исторически
+  (см. `pkg/env/env.go`), менять его означает ломать все существующие `.env`.
 
-#### Option A: Using Docker (Recommended)
+Health check: `curl http://localhost:8080/health`.
+
+## Интерфейс оператора
+
+React + TypeScript + Vite в `../frontend`. Три вкладки: Target System (обзор),
+Pipeline (схема стадий, карточки прогонов, вопросы оператору), Настройки
+(targetSystem, workspace, агенты, проверка модели). Разработка и сборка:
+
 ```bash
-# Run PostgreSQL
-docker run --name postgres-dev \
-  -e POSTGRES_PASSWORD=password \
-  -e POSTGRES_DB=adev \
-  -p 5432:5432 \
-  -d postgres:15
-
-# Or using docker-compose
-docker-compose up -d
+make ui-install    # npm install, один раз после клона
+make ui-dev        # Vite на :5173, проксирует /api на :8080 — CORS не нужен
+make ui-build      # собрать ../frontend/dist; make run отдаёт его на /app/
 ```
 
-#### Option B: Local PostgreSQL
+`frontend/src/api.ts` — единственный HTTP-слой, каждый запрос попадает в журнал.
+Внизу экрана — сворачиваемая панель: «Журнал запросов» (что сделал браузер) и
+«Логи сервера» (`GET /api/v1/logs`).
+
+## Пайплайн
+
+- Стадии и владельцы — `internal/pipeline/stages.go`; маршрут принадлежит реестру,
+  агент не выбирает следующую стадию.
+- Стадия не стартует без готовности: workspace и валидный конфиг агента на каждую роль.
+- Запуск (`POST /stages/{stage}/run`) отвечает 202 сразу, цепочка агентов работает
+  в фоне; состояние — в таблице `runs`. Закрытая вкладка прогон не отменяет,
+  при старте сервер возобновляет зависшие `running`.
+- Гейт бракует форму → форма падает в `waiting_operator` и выпускает вопрос
+  оператору (`GET /api/v1/operatorrequests`). Ответ (`POST /api/v1/operatorrequests/answer`)
+  переписывает payload черновика на месте, без новой версии. После `approved`
+  форма неизменяема: исправление — новая `formVersion`.
+- `apiKey` не покидает сервер: в ответах отдаётся только `hasApiKey`.
+
+## Проверка изменений
+
 ```bash
-# Create database
-createdb adev
+make fmt && make vet && make test
 ```
 
-### 3. Configure environment variables:
-```bash
-# Copy example file
-cp .env.example .env
+- `make test-tdd` — acceptance-тесты из `docs/refactor-plan.md`.
+- `make test-db` — тесты pgx-хранилища. Они делают `TRUNCATE forms`, поэтому
+  требуют отдельную тестовую базу в `ADEV_TEST_DATABASE_URL`; на dev-базу из
+  `.env` их направлять нельзя.
+- `make lint` и `make sec-scan` — golangci-lint и gosec (`make tools` ставит их вместе с migrate и swag).
+- `make ci-act ACT_JOB=unit` запускает GitHub Actions job локально через act;
+  образ нужен свой (`make act-image`): у стандартного нет ни git, ни сертификатов, ни gcc.
 
-# Edit with your credentials
-# DB_PASSWORD=password
-# DB_NAME=adev
-```
+## Логи
 
+`logger.Init` пишет каждую строку в stdout, в кольцо в памяти (500 строк, оттуда
+их читает консоль) и в файл `logs/adev.log` (меняется через `LOG_FILE`). Файл
+нужен, потому что фоновый процесс без консоли иначе не оставляет следов.
+`make logs` следит за файлом.
 
-### 4. Run the application:
-```bash
-go run cmd/server/main.go
-```
+## Команды
 
+`make help` показывает полный список. Частые:
 
-### 5. Test endpoints:
-```bash
-# Health check
-curl http://localhost:8080/health
+| Команда | Что делает |
+|---|---|
+| `make run` | сервер с настройками из `.env` |
+| `make test` / `make test-race` | тесты; `-race` требует cgo |
+| `make migrate-up` / `make migrate-down` | применить / откатить миграцию |
+| `make api-docs` | перегенерировать Swagger-доки (swag) |
+| `make build-prod` | статический linux-бинарник |
+| `make compose-up` | приложение и БД вместе |
 
-# Create user (if you have the User feature)
-curl -X POST http://localhost:8080/api/v1/users \
-  -H "Content-Type: application/json" \
-  -d '{"name":"John Doe","email":"john@example.com"}'
-```
+## Частые проблемы
 
+**«connection refused»** — не запущен Postgres: `make dev-db`.
 
-## Project Structure
+**«database not configured»** — не заполнены `DB_*` в `.env`.
 
-```
-adev/
-├── cmd/
-│   └── server/           # Application entry point
-│       └── main.go
-├── internal/
-│   ├── domain/           # Entities and business rules
-│   ├── usecase/          # Application logic
-│   ├── repository/       # Persistence implementations
-│   ├── handler/          # HTTP/gRPC adapters
-│   │   └── http/
-│   └── messages/         # Error and response messages
-├── pkg/
-│   ├── config/           # Application configuration
-│   └── logger/           # Logging system
-├── migrations/           # Database migrations
-├── .env                  # Environment variables
-├── .env.example          # Configuration example
-├── docker-compose.yml    # Docker services
-├── Makefile              # Useful commands
-├── go.mod
-└── README.md
-```
+**health check показывает «degraded»** — база не отвечает; проверьте `.env` и порт 5432.
 
+**«command not found: migrate»** — `make migrate-install`.
 
-## Useful Commands
-
-### Generate new features:
-```bash
-# Complete feature with all layers
-goca feature User --fields "name:string,email:string"
-
-# Feature with validations
-goca feature Product --fields "name:string,price:float64" --validation
-
-# Integrate existing features
-goca integrate --all
-```
-
-
-### Development commands:
-```bash
-# Run application
-make run
-
-# Run tests
-make test
-
-# Build for production
-make build
-
-# Linting and formatting
-make lint
-make fmt
-```
-
-
-## Troubleshooting
-
-### Error: "connection refused"
-PostgreSQL database is not running.
-
-**Solution:** Start the database service (see step 2) and verify it is reachable on port 5432.
-
-### Error: "database not configured"
-Database environment variables are not configured.
-
-**Solution:**
-```bash
-# Configure in .env
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=password
-DB_NAME=adev
-```
-
-### Error: "command not found: goca"
-Goca CLI is not installed or not in PATH.
-
-**Solution:**
-```bash
-# Reinstall Goca
-go install github.com/sazardev/goca@latest
-
-# Verify installation
-goca version
-```
-
-
-### Health Check shows "degraded"
-Application runs but cannot connect to database.
-
-**Solution:**
-1. Verify PostgreSQL is running
-2. Verify environment variables in .env
-3. Verify your connection settings in .env
-
-## Additional Resources
-
-- [Goca Documentation](https://github.com/sazardev/goca)
-- [Clean Architecture Principles](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
-- [Complete Tutorial](https://github.com/sazardev/goca/wiki/Complete-Tutorial)
-
-## Contributing
-
-This project was generated with Goca. To contribute:
-
-1. Add new features with `goca feature`
-2. Maintain layer separation
-3. Write tests for new functionality
-4. Follow Clean Architecture conventions
-
----
-
-Generated with [Goca](https://github.com/sazardev/goca)
+**модели с суффиксом `-free` через API не работают** — OpenCode Console отвечает
+403 `FreeTierError`; бесплатный тариф живёт только в клиенте OpenCode.

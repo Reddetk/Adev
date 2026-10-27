@@ -42,10 +42,14 @@ type Container struct {
 	formService     *usecase.FormService
 	settingsService *usecase.SettingsService
 	pipelineService *usecase.Planner
+	activityService *usecase.ActivityService
 	stageService    *usecase.StageService
+	stageRuns       *usecase.StageRunService
 	modelCheck      *usecase.ModelCheck
 	formHandler     *http.FormHandler
 	stageHandler    *http.StageHandler
+	questionHandler *http.QuestionHandler
+	registryService *usecase.RegistryService
 }
 
 func NewContainer(pool *pgxpool.Pool) *Container {
@@ -69,9 +73,24 @@ func (c *Container) setupAdEvServices() {
 	// Stage runs need a model client. The run recorder stays nil until the run table
 	// takes the string pipeline id of the forms.
 	factory := repository.NewOpenAICompatibleFactory()
-	c.stageService = usecase.NewStageService(c.formService, c.settingsService, factory, nil)
-	c.stageHandler = http.NewStageHandler(c.stageService)
+	questions := usecase.NewQuestionService(c.formService, c.operatorrequestRepo)
+	activities := usecase.NewActivityService()
+	c.activityService = activities
+	c.registryService = usecase.NewRegistryService(repository.NewPostgresObjectStore(c.pool))
+	c.stageService = usecase.NewStageService(c.formService, c.settingsService, factory, nil).
+		WithQuestions(questions).WithActivity(activities).WithModelCalls(c.modelcallRepo).WithRegistry(c.registryService)
+	// Stage runs go to the background: the answer carries the run row, the chain
+	// keeps going in the process, and a restart resumes the runs it lost.
+	c.stageRuns = usecase.NewStageRunService(c.stageOrchestrator(), c.runRepo, c.pipelineRepo)
+	c.stageHandler = http.NewStageHandler(c.stageRuns)
+	c.questionHandler = http.NewQuestionHandler(questions)
 	c.modelCheck = usecase.NewModelCheck(c.settingsService, factory)
+}
+
+// stageOrchestrator wraps the stage service: a successful run moves the pipeline
+// cursor to the next stage of the registry route.
+func (c *Container) stageOrchestrator() *usecase.Orchestrator {
+	return usecase.NewOrchestrator(c.stageService, c.pipelineRepo)
 }
 
 func (c *Container) setupRepositories() {
@@ -197,11 +216,23 @@ func (c *Container) FormHandler() *http.FormHandler { return c.formHandler }
 // StageHandler returns the stage handler.
 func (c *Container) StageHandler() *http.StageHandler { return c.stageHandler }
 
+// StageRunService keeps the runs the process started and resumes the lost ones.
+func (c *Container) StageRunService() *usecase.StageRunService { return c.stageRuns }
+
+// QuestionHandler returns the question handler.
+func (c *Container) QuestionHandler() *http.QuestionHandler { return c.questionHandler }
+
+// ActivityService is the live book of stage runs for the operator dashboard.
+func (c *Container) ActivityService() *usecase.ActivityService { return c.activityService }
+
 // ModelCheck returns the model checker.
 func (c *Container) ModelCheck() *usecase.ModelCheck { return c.modelCheck }
 
 // SettingsService returns the target system settings service.
 func (c *Container) SettingsService() *usecase.SettingsService { return c.settingsService }
+
+// RegistryService returns the target system object registry.
+func (c *Container) RegistryService() *usecase.RegistryService { return c.registryService }
 
 // Planner returns the pipeline planning service.
 func (c *Container) Planner() *usecase.Planner { return c.pipelineService }

@@ -9,6 +9,12 @@ type ModelCall struct {
 	TokensOut int     `json:"tokensout" validate:"gte=0"`
 	Cost      float64 `json:"cost" validate:"gte=0"`
 	LatencyMs int     `json:"latencyms" validate:"gte=0"`
+	// The dialogue of the attempt: which stage it served, the full prompt the
+	// agent sent, the raw answer, and the gate verdicts that rejected it.
+	Stage    string `json:"stage"`
+	Request  string `json:"request,omitempty"`
+	Response string `json:"response,omitempty"`
+	Errors   string `json:"errors,omitempty"`
 }
 
 func (m *ModelCall) Validate() error {

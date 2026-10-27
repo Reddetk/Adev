@@ -16,6 +16,8 @@ const (
 	TypeCRBrief            FormType = "CR_BRIEF"
 	TypeImpactAssessment   FormType = "IMPACT_ASSESSMENT"
 	TypeSRS                FormType = "SRS"
+	TypeFR                 FormType = "FR"
+	TypeNFR                FormType = "NFR"
 	TypeHLD                FormType = "HLD"
 	TypeADR                FormType = "ADR"
 	TypeLLD                FormType = "LLD"
@@ -44,7 +46,11 @@ type Route string
 
 const (
 	RouteGreenfield Route = "greenfield"
-	RouteChange     Route = "change"
+	// A change request starts on RouteChange and picks one of the two branches
+	// after its impact assessment: minor skips the architecture stages.
+	RouteChange      Route = "change"
+	RouteMinorChange Route = "change-minor"
+	RouteMajorChange Route = "change-major"
 )
 
 // Mode marks a full form or a JSON Patch delta against a base form.
@@ -114,6 +120,32 @@ func (f *Form) BindPayload(v any) error {
 		return fmt.Errorf("decode payload: %w", err)
 	}
 	return nil
+}
+
+// GapPosition is one open gap of a payload with its index in the payload list,
+// so an answer can patch the gap field and remove the gap entry.
+type GapPosition struct {
+	Gap   Gap
+	Index int
+}
+
+// Gaps returns the open gaps of the payload. The question phase of the stages
+// 00-02 asks the operator about them; a form type without a gaps reader has none.
+func (f *Form) Gaps() []GapPosition {
+	spec, ok := formSpecFor(f.FormType)
+	if !ok || spec.gaps == nil {
+		return nil
+	}
+	payload := spec.payload()
+	if err := f.BindPayload(payload); err != nil {
+		return nil
+	}
+	gaps := spec.gaps(payload)
+	positions := make([]GapPosition, 0, len(gaps))
+	for index, gap := range gaps {
+		positions = append(positions, GapPosition{Gap: gap, Index: index})
+	}
+	return positions
 }
 
 // SetRawPayload stores an already encoded payload and computes its hash.

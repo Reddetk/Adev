@@ -1,4 +1,4 @@
-# FEASIBILITY — Feasibility Study
+# FEASIBILITY — Techno-Economic Justification (ТЭО)
 
 | field | value |
 | --- | --- |
@@ -9,6 +9,11 @@
 | mode | `full` |
 | inputs | `BRD`, as-is `HLD` |
 | next | `SRS` |
+
+The greenfield route writes a TEJ: it prices the options against the BRD goals
+and picks a verdict. A system that does not exist yet has no running baseline,
+so a risk register is out of scope here: a change route with an accepted as-is
+HLD can assess risks on its own stage instead.
 
 ## Template
 
@@ -37,20 +42,7 @@
 **Answer:** `payload.options[].scheduleDays` — integer.
 **Answer:** `payload.options[].confidence` — `low`, `medium`, `high`.
 
-### Paragraph 3 — Risk register
-
-**Scope:** The risks that can stop the project.
-
-**Questions:**
-1. Which event can stop the project?
-2. What is the likelihood of the event?
-3. What is the impact of the event?
-4. Which action reduces the risk?
-5. Which object does the risk touch?
-
-**Answer:** `payload.risks[]` — `Risk[]`.
-
-### Paragraph 4 — Recommendation
+### Paragraph 3 — Recommendation
 
 **Scope:** The selected option and the verdict.
 
@@ -63,7 +55,7 @@
 **Answer:** `payload.verdict` — `go`, `no_go`, `revise`.
 **Answer:** `payload.reason` — one `Text` value.
 
-### Paragraph 5 — BRD correction
+### Paragraph 4 — BRD correction
 
 **Scope:** The BRD scope that the study removes or changes.
 

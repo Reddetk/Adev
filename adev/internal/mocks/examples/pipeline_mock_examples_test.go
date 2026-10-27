@@ -23,6 +23,7 @@ var (
 // service is driven the same way the pgx store drives it.
 func TestCreatePipelineSavesOnceAndKeepsTheAssignedID(t *testing.T) {
 	repo := mocks.NewMockPipelineRepository()
+	repo.On("FindAll").Return(nil, nil).Once()
 	var saved *domain.Pipeline
 	repo.On("Save", mock.Anything).
 		Run(func(args mock.Arguments) {
@@ -66,6 +67,7 @@ func TestCreatePipelineRejectsAnEmptyRouteBeforeTheRepository(t *testing.T) {
 
 func TestCreatePipelineReturnsTheRepositoryError(t *testing.T) {
 	repo := mocks.NewMockPipelineRepository()
+	repo.On("FindAll").Return(nil, nil).Once()
 	repo.On("Save", mock.Anything).Return(errors.New("database is down")).Once()
 
 	output, err := usecase.NewPipelineService(repo).CreatePipeline(usecase.CreatePipelineInput{

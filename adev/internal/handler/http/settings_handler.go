@@ -20,6 +20,7 @@ type SettingsHandler struct {
 	pipelineService *usecase.Planner
 	pipelines       usecase.PipelineUseCase
 	models          ModelChecker
+	registry        *usecase.RegistryService
 }
 
 // ModelChecker calls the model of one role once. CheckDraft tests the values the
@@ -34,6 +35,12 @@ func NewSettingsHandler(settingsService *usecase.SettingsService, pipelineServic
 	return &SettingsHandler{settingsService: settingsService, pipelineService: pipelineService, pipelines: pipelines, models: models}
 }
 
+// WithRegistry attaches the target system object registry for the objects route.
+func (h *SettingsHandler) WithRegistry(registry *usecase.RegistryService) *SettingsHandler {
+	h.registry = registry
+	return h
+}
+
 // SetupSettingsRoutes registers the settings and plan routes.
 func SetupSettingsRoutes(router *mux.Router, handler *SettingsHandler) {
 	router.HandleFunc("/targetsystems/{id}/workspace", handler.SetWorkspace).Methods(http.MethodPut)
@@ -42,6 +49,7 @@ func SetupSettingsRoutes(router *mux.Router, handler *SettingsHandler) {
 	router.HandleFunc("/targetsystems/{id}/agents/{role}", handler.SetAgent).Methods(http.MethodPut)
 	router.HandleFunc("/targetsystems/{id}/agents/{role}/check", handler.CheckAgent).Methods(http.MethodPost)
 	router.HandleFunc("/targetsystems/{id}/plan", handler.Plan).Methods(http.MethodGet)
+	router.HandleFunc("/targetsystems/{id}/objects", handler.ListObjects).Methods(http.MethodGet)
 	router.HandleFunc("/targetsystems/{id}/pipelines", handler.CreatePipeline).Methods(http.MethodPost)
 }
 
@@ -348,6 +356,10 @@ func (h *SettingsHandler) CreatePipeline(w http.ResponseWriter, r *http.Request)
 		CurrentStage:   plan.Stages[0].ID,
 	})
 	if err != nil {
+		if errors.Is(err, usecase.ErrPipelineExists) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -357,6 +369,35 @@ func (h *SettingsHandler) CreatePipeline(w http.ResponseWriter, r *http.Request)
 		Stage:     plan.Stages[0].ID,
 		Readiness: plan.Readiness,
 	})
+}
+
+// ListObjects returns the registry of the target system: the containers, layers,
+// packages and modules its documents name.
+// @Summary List target system objects
+// @Tags settings
+// @Produce json
+// @Param id path int true "Target system ID"
+// @Success 200 {array} domain.Object
+// @Failure 400 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @Router /targetsystems/{id}/objects [get]
+func (h *SettingsHandler) ListObjects(w http.ResponseWriter, r *http.Request) {
+	id, ok := targetSystemID(w, r)
+	if !ok {
+		return
+	}
+	// The objects live without the registry too: an empty answer means no
+	// document proposed them yet.
+	if h.registry == nil {
+		writeJSON(w, http.StatusOK, []domain.Object{})
+		return
+	}
+	objects, err := h.registry.List(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, objects)
 }
 
 func targetSystemID(w http.ResponseWriter, r *http.Request) (int64, bool) {

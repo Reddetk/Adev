@@ -50,7 +50,9 @@ func knownStatus(s Status) bool {
 	return false
 }
 
-func knownRoute(r Route) bool { return r == RouteGreenfield || r == RouteChange }
+func knownRoute(r Route) bool {
+	return r == RouteGreenfield || r == RouteChange || r == RouteMinorChange || r == RouteMajorChange
+}
 
 func knownMode(m Mode) bool { return m == ModeFull || m == ModeDelta }
 
@@ -178,14 +180,17 @@ func ValidateUserInput(in UserInput) error {
 
 var brdBannedTerms = []string{"container", "module", "package", "struct", "database", "table"}
 
-// ValidateBRD checks the BRD gates.
 func ValidateBRD(brd BRD, status Status) error {
 	var errs []error
 
-	if len(brd.Goals) == 0 {
+	// A draft that waits for operator answers is judged on shape only: the
+	// answers fill the lists, and the completeness gates run when the document
+	// is assembled.
+	waiting := status == StatusDraft && len(brd.OpenGaps) > 0
+	if !waiting && len(brd.Goals) == 0 {
 		errs = append(errs, invalid("goals", "must contain at least one entry"))
 	}
-	if len(brd.Metrics) == 0 {
+	if !waiting && len(brd.Metrics) == 0 {
 		errs = append(errs, invalid("metrics", "must contain at least one entry"))
 	}
 
@@ -222,14 +227,8 @@ func ValidateBRD(brd BRD, status Status) error {
 		}
 	}
 
-	if status == StatusApproved {
-		for i, gap := range brd.OpenGaps {
-			if gap.Blocking {
-				errs = append(errs, invalid(fmt.Sprintf("openGaps[%d]", i), "a blocking gap must be closed before approval"))
-			}
-		}
-	}
-
+	// The blocking-gap gate is shared by every question-phase form and lives in
+	// ValidatePayloadWithStatus, so it does not duplicate here.
 	for i, text := range brd.Texts() {
 		for _, term := range brdBannedTerms {
 			if containsWord(text.Value, term) {

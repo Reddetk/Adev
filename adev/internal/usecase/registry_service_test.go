@@ -14,7 +14,7 @@ func TestRegistryProposeAllocatesPerKind(t *testing.T) {
 	service := NewRegistryService(newFakeObjectStore())
 	ctx := context.Background()
 
-	first, err := service.Propose(ctx, 1, domain.KindContainer, "user-service", "", "", testRef)
+	first, err := service.Propose(ctx, 1, domain.KindContainer, "user-service", "", "", testRef, nil)
 	if err != nil {
 		t.Fatalf("propose container: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestRegistryProposeAllocatesPerKind(t *testing.T) {
 		t.Fatalf("unexpected object: %+v", first)
 	}
 
-	module, err := service.Propose(ctx, 1, domain.KindModule, "token-validator", "internal/auth/token_validator.go", first.ObjectID, testRef)
+	module, err := service.Propose(ctx, 1, domain.KindModule, "token-validator", "internal/auth/token_validator.go", first.ObjectID, testRef, nil)
 	if err != nil {
 		t.Fatalf("propose module: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestRegistryProposeAllocatesPerKind(t *testing.T) {
 		t.Fatalf("unexpected id %q", module.ObjectID)
 	}
 
-	second, err := service.Propose(ctx, 1, domain.KindContainer, "api-gateway", "", "", testRef)
+	second, err := service.Propose(ctx, 1, domain.KindContainer, "api-gateway", "", "", testRef, nil)
 	if err != nil {
 		t.Fatalf("propose second container: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestRegistryLifecycleActiveThenRemoved(t *testing.T) {
 	service := NewRegistryService(newFakeObjectStore())
 	ctx := context.Background()
 
-	object, _ := service.Propose(ctx, 1, domain.KindModule, "auth", "", "", testRef)
+	object, _ := service.Propose(ctx, 1, domain.KindModule, "auth", "", "", testRef, nil)
 	active, err := service.Activate(ctx, object.ObjectID, domain.Ref{FormID: "FRM-9", FormType: domain.TypeVerdict, FormVersion: 1})
 	if err != nil {
 		t.Fatalf("activate: %v", err)
@@ -65,7 +65,7 @@ func TestRegistryRejectsInvalidTransitions(t *testing.T) {
 	service := NewRegistryService(newFakeObjectStore())
 	ctx := context.Background()
 
-	object, _ := service.Propose(ctx, 1, domain.KindModule, "auth", "", "", testRef)
+	object, _ := service.Propose(ctx, 1, domain.KindModule, "auth", "", "", testRef, nil)
 	if _, err := service.Activate(ctx, object.ObjectID, testRef); err != nil {
 		t.Fatalf("first activate: %v", err)
 	}
@@ -84,13 +84,13 @@ func TestRegistryProposeRejectsBadInput(t *testing.T) {
 	service := NewRegistryService(newFakeObjectStore())
 	ctx := context.Background()
 
-	if _, err := service.Propose(ctx, 1, domain.Kind("wormhole"), "x", "", "", testRef); err == nil {
+	if _, err := service.Propose(ctx, 1, domain.Kind("wormhole"), "x", "", "", testRef, nil); err == nil {
 		t.Fatal("want an error for an unknown kind")
 	}
-	if _, err := service.Propose(ctx, 1, domain.KindModule, "", "", "", testRef); err == nil {
+	if _, err := service.Propose(ctx, 1, domain.KindModule, "", "", "", testRef, nil); err == nil {
 		t.Fatal("want an error for an empty name")
 	}
-	if _, err := service.Propose(ctx, 1, domain.KindModule, "a", "", "", domain.Ref{}); err == nil {
+	if _, err := service.Propose(ctx, 1, domain.KindModule, "a", "", "", domain.Ref{}, nil); err == nil {
 		t.Fatal("want an error for an empty introducedBy")
 	}
 }
@@ -99,10 +99,10 @@ func TestRegistryListsOnlyOneTargetSystem(t *testing.T) {
 	service := NewRegistryService(newFakeObjectStore())
 	ctx := context.Background()
 
-	if _, err := service.Propose(ctx, 1, domain.KindModule, "a", "", "", testRef); err != nil {
+	if _, err := service.Propose(ctx, 1, domain.KindModule, "a", "", "", testRef, nil); err != nil {
 		t.Fatalf("propose: %v", err)
 	}
-	if _, err := service.Propose(ctx, 2, domain.KindModule, "b", "", "", testRef); err != nil {
+	if _, err := service.Propose(ctx, 2, domain.KindModule, "b", "", "", testRef, nil); err != nil {
 		t.Fatalf("propose: %v", err)
 	}
 

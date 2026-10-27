@@ -2,6 +2,7 @@ package http_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -17,30 +18,32 @@ import (
 	"github.com/Reddetk/Adev/internal/usecase"
 )
 
-type fakeStageRunner struct {
-	outcome usecase.StageOutcome
+// fakeRunStarter stands for the StageRunService: the answer is the accepted run
+// row, the chain runs in the background.
+type fakeRunStarter struct {
+	run     *domain.Run
 	err     error
 	request usecase.StageRequest
-	called  bool
 }
 
-func (f *fakeStageRunner) Run(_ context.Context, request usecase.StageRequest) (usecase.StageOutcome, error) {
-	f.called = true
+func (f *fakeRunStarter) Start(_ context.Context, request usecase.StageRequest) (*domain.Run, error) {
 	f.request = request
-	return f.outcome, f.err
+	if f.err == nil && f.run == nil {
+		f.run = &domain.Run{ID: 7, PipelineID: 9, Stage: request.StageID, Status: "running", CheckpointID: string(request.Route)}
+	}
+	return f.run, f.err
 }
 
 type stageAPI struct {
 	router *mux.Router
-	runner *fakeStageRunner
+	start  *fakeRunStarter
 }
 
-func newStageAPI(outcome usecase.StageOutcome, err error) *stageAPI {
-	runner := &fakeStageRunner{outcome: outcome, err: err}
+func newStageAPI(starter *fakeRunStarter) *stageAPI {
 	router := mux.NewRouter()
 	version := router.PathPrefix("/api/v1").Subrouter()
-	apphttp.SetupStageRoutes(version, apphttp.NewStageHandler(runner))
-	return &stageAPI{router: router, runner: runner}
+	apphttp.SetupStageRoutes(version, apphttp.NewStageHandler(starter))
+	return &stageAPI{router: router, start: starter}
 }
 
 func (a *stageAPI) run(t *testing.T, path, body string) *httptest.ResponseRecorder {
@@ -52,68 +55,59 @@ func (a *stageAPI) run(t *testing.T, path, body string) *httptest.ResponseRecord
 	return recorder
 }
 
-func TestRunStageHappyPath(t *testing.T) {
-	fixture := newStageAPI(usecase.StageOutcome{Stage: "00", FormID: "FRM-1-00", FormVersion: 1, Attempts: 1}, nil)
+// TestRunStageAcceptsTheRun: the stage chain works in the background, so the
+// answer is the accepted run row and never the result of attempts.
+func TestRunStageAcceptsTheRun(t *testing.T) {
+	starter := &fakeRunStarter{}
+	fixture := newStageAPI(starter)
 
-	response := fixture.run(t, "/api/v1/targetsystems/1/stages/00/run", `{"pipelineId":"1","route":"greenfield"}`)
+	response := fixture.run(t, "/api/v1/targetsystems/1/stages/00/run", `{"pipelineId":"9","route":"greenfield"}`)
 
-	assert.Equal(t, http.StatusOK, response.Code)
-	assert.Contains(t, response.Body.String(), `"formId":"FRM-1-00"`)
-	assert.Contains(t, response.Body.String(), `"attempts":1`)
+	require.Equal(t, http.StatusAccepted, response.Code)
+	var accepted domain.Run
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &accepted))
+	assert.Equal(t, uint(7), accepted.ID)
+	assert.Equal(t, "running", accepted.Status)
+	assert.Equal(t, "00", accepted.Stage)
 }
 
-func TestRunStageReportsABlockedStageWithGaps(t *testing.T) {
-	fixture := newStageAPI(usecase.StageOutcome{Stage: "00", Attempts: 3, Blocked: true, Gaps: []string{"goals: must contain at least one entry"}}, nil)
+func TestRunStageAnswersAnAcceptEvenForABlockedOutcome(t *testing.T) {
+	// The blocked outcome belongs to the run row now: the POST still answers at once.
+	starter := &fakeRunStarter{}
+	fixture := newStageAPI(starter)
 
-	response := fixture.run(t, "/api/v1/targetsystems/1/stages/00/run", `{"pipelineId":"1"}`)
-
-	assert.Equal(t, http.StatusOK, response.Code, "a blocked stage is an outcome, not an error")
-	assert.Contains(t, response.Body.String(), `"blocked":true`)
-	assert.Contains(t, response.Body.String(), "goals")
+	assert.Equal(t, http.StatusAccepted, fixture.run(t, "/api/v1/targetsystems/1/stages/00/run", `{"pipelineId":"9"}`).Code)
 }
 
-func TestRunStageReportsAMissingInput(t *testing.T) {
-	fixture := newStageAPI(usecase.StageOutcome{}, usecase.ErrStageInputMissing)
+func TestRunStageReportsARecordingFailure(t *testing.T) {
+	starter := &fakeRunStarter{err: errors.New("record run: db down")}
+	fixture := newStageAPI(starter)
 
-	response := fixture.run(t, "/api/v1/targetsystems/1/stages/00/run", `{"pipelineId":"1"}`)
-
-	assert.Equal(t, http.StatusConflict, response.Code)
-	assert.Contains(t, response.Body.String(), "input form is missing")
-}
-
-func TestRunStageReportsAMissingAgentConfig(t *testing.T) {
-	fixture := newStageAPI(usecase.StageOutcome{}, usecase.ErrAgentNotConfigured)
-
-	response := fixture.run(t, "/api/v1/targetsystems/1/stages/00/run", `{"pipelineId":"1"}`)
-
-	assert.Equal(t, http.StatusConflict, response.Code)
-}
-
-func TestRunStageReportsAModelFailure(t *testing.T) {
-	fixture := newStageAPI(usecase.StageOutcome{}, errors.New("model call to http://localhost:11434/v1: connection refused"))
-
-	response := fixture.run(t, "/api/v1/targetsystems/1/stages/00/run", `{"pipelineId":"1"}`)
+	response := fixture.run(t, "/api/v1/targetsystems/1/stages/00/run", `{"pipelineId":"9"}`)
 
 	assert.Equal(t, http.StatusBadGateway, response.Code)
-	assert.Contains(t, response.Body.String(), "connection refused")
+	assert.Contains(t, response.Body.String(), "db down")
 }
 
 func TestRunStageRejectsBadRequests(t *testing.T) {
-	fixture := newStageAPI(usecase.StageOutcome{}, nil)
+	starter := &fakeRunStarter{}
+	fixture := newStageAPI(starter)
 
-	assert.Equal(t, http.StatusBadRequest, fixture.run(t, "/api/v1/targetsystems/abc/stages/00/run", `{"pipelineId":"1"}`).Code)
+	assert.Equal(t, http.StatusBadRequest, fixture.run(t, "/api/v1/targetsystems/abc/stages/00/run", `{"pipelineId":"9"}`).Code)
 	assert.Equal(t, http.StatusBadRequest, fixture.run(t, "/api/v1/targetsystems/1/stages/00/run", `not json`).Code)
 	assert.Equal(t, http.StatusBadRequest, fixture.run(t, "/api/v1/targetsystems/1/stages/00/run", `{"route":"greenfield"}`).Code)
 	assert.Equal(t, http.StatusBadRequest, fixture.run(t, "/api/v1/targetsystems/1/stages/00/run", `{"pipelineId":"1","route":"change"}`).Code)
+	assert.Equal(t, http.StatusBadRequest, fixture.run(t, "/api/v1/targetsystems/1/stages/00/run", `{"pipelineId":"PIPE-9"}`).Code,
+		"a run the table cannot keep has no row: refuse it at once")
 }
 
 func TestRunStagePassesTheRequestThrough(t *testing.T) {
-	fixture := newStageAPI(usecase.StageOutcome{Stage: "00"}, nil)
+	starter := &fakeRunStarter{}
+	fixture := newStageAPI(starter)
 
-	fixture.run(t, "/api/v1/targetsystems/7/stages/00/run", `{"pipelineId":"PIPE-9"}`)
+	fixture.run(t, "/api/v1/targetsystems/7/stages/00/run", `{"pipelineId":"9"}`)
 
-	require.True(t, fixture.runner.called, "the runner must be called")
 	assert.Equal(t, usecase.StageRequest{
-		PipelineID: "PIPE-9", TargetSystemID: 7, Route: domain.RouteGreenfield, StageID: "00",
-	}, fixture.runner.request)
+		PipelineID: "9", TargetSystemID: 7, Route: domain.RouteGreenfield, StageID: "00",
+	}, starter.request)
 }

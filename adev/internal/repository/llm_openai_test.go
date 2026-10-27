@@ -82,7 +82,8 @@ func TestOpenAICompatibleCompleteSendsTheStageRequest(t *testing.T) {
 		_ = json.Unmarshal(raw, &received.body)
 		w.Header().Set("Content-Type", "application/json")
 		// A fenced answer, as small models often produce.
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Here is the form:\n` + "```json" + `\n{\"goals\":[]}\n` + "```" + `"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Here is the form:\n` + "```json" + `\n{\"goals\":[]}\n` + "```" + `"}}],` +
+			`"usage":{"prompt_tokens":11,"completion_tokens":22}}`))
 	}))
 	defer server.Close()
 
@@ -93,11 +94,9 @@ func TestOpenAICompatibleCompleteSendsTheStageRequest(t *testing.T) {
 	require.NoError(t, err)
 
 	response, err := client.Complete(context.Background(), usecase.LLMRequest{
-		Role:        domain.RoleAnalyst,
-		Instruction: "You fill the BRD of stage 00.",
-		Shape:       "goals[], metrics[]",
-		Context:     json.RawMessage(`{"USER_INPUT":{"payload":{"rawRequest":{"text":"two branches"}}}}`),
-		Problems:    []string{"goals: must contain at least one entry"},
+		Role:   domain.RoleAnalyst,
+		System: "system prompt of the stage",
+		User:   "projected input and gate failures",
 	})
 	require.NoError(t, err)
 
@@ -110,11 +109,13 @@ func TestOpenAICompatibleCompleteSendsTheStageRequest(t *testing.T) {
 	require.Len(t, messages, 2)
 	system := messages[0].(map[string]any)["content"].(string)
 	user := messages[1].(map[string]any)["content"].(string)
-	assert.Contains(t, system, "goals[], metrics[]", "the shape must reach the model")
-	assert.Contains(t, user, "two branches", "the projected input must reach the model")
-	assert.Contains(t, user, "goals: must contain at least one entry", "the gate failure must reach the model")
+	assert.Equal(t, "system prompt of the stage", system, "the adapter sends the system message as given")
+	assert.Equal(t, "projected input and gate failures", user, "the adapter sends the user message as given")
 
 	assert.JSONEq(t, `{"goals":[]}`, string(response.Payload), "the code fence must be stripped")
+	assert.Equal(t, 11, response.Usage.TokensIn, "the token counts of the provider must reach the caller")
+	assert.Equal(t, 22, response.Usage.TokensOut)
+	assert.GreaterOrEqual(t, response.Usage.LatencyMs, 0, "the adapter measures the call")
 }
 
 func TestOpenAICompatibleCompleteReportsAnHTTPFailure(t *testing.T) {
@@ -129,7 +130,7 @@ func TestOpenAICompatibleCompleteReportsAnHTTPFailure(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = client.Complete(context.Background(), usecase.LLMRequest{Shape: "x", Context: json.RawMessage(`{}`)})
+	_, err = client.Complete(context.Background(), usecase.LLMRequest{System: "x", User: "{}"})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
@@ -147,7 +148,7 @@ func TestOpenAICompatibleCompleteRejectsAnEmptyChoice(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = client.Complete(context.Background(), usecase.LLMRequest{Shape: "x", Context: json.RawMessage(`{}`)})
+	_, err = client.Complete(context.Background(), usecase.LLMRequest{System: "x", User: "{}"})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no choice")

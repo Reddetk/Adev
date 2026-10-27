@@ -1,0 +1,1 @@
+ALTER TABLE operator_requests ADD COLUMN IF NOT EXISTS options TEXT[] NOT NULL DEFAULT '{}';

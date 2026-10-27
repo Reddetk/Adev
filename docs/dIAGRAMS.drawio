@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram id="GFVEnyqVrbrHVM95poTF" name="entitys">
-        <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+        <mxGraphModel dx="1397" dy="1271" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -347,7 +347,7 @@
         </mxGraphModel>
     </diagram>
     <diagram id="dyNx6Le0gCTjK7qz4NCk" name="Страница-2">
-        <mxGraphModel dx="808" dy="877" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+        <mxGraphModel dx="2261" dy="882" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
             <root>
                 <mxCell id="TG8eWEituuEfRMNPfwl5-0"/>
                 <mxCell id="TG8eWEituuEfRMNPfwl5-1" parent="TG8eWEituuEfRMNPfwl5-0"/>

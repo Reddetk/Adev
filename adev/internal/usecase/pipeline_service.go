@@ -1,9 +1,20 @@
 package usecase
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/Reddetk/Adev/internal/domain"
 	"github.com/Reddetk/Adev/internal/messages"
 )
+
+// ErrPipelineExists reports a duplicate pipeline of the same route for one
+// target system. The greenfield route builds the baseline once.
+var ErrPipelineExists = errors.New("the pipeline already exists for this target system")
+
+// ErrPipelineRunning refuses to delete a pipeline whose stage is still running:
+// its chain would write into the rows that were just removed.
+var ErrPipelineRunning = errors.New("the pipeline has a running stage: stop it first")
 
 type pipelineService struct {
 	repo PipelineRepository
@@ -16,6 +27,21 @@ func NewPipelineService(repo PipelineRepository) PipelineUseCase {
 func (p *pipelineService) CreatePipeline(input CreatePipelineInput) (CreatePipelineOutput, error) {
 	if err := input.Validate(); err != nil {
 		return CreatePipelineOutput{}, err
+	}
+
+	// One feature-design pipeline per target system: the registry index enforces
+	// the same rule in the database.
+	if input.Route == string(domain.RouteGreenfield) {
+		all, err := p.repo.FindAll()
+		if err != nil {
+			return CreatePipelineOutput{}, err
+		}
+		for _, existing := range all {
+			if existing.TargetSystemID == input.TargetSystemID && existing.Route == string(domain.RouteGreenfield) {
+				return CreatePipelineOutput{}, fmt.Errorf("%w: target system %d already owns greenfield pipeline %d",
+					ErrPipelineExists, input.TargetSystemID, existing.ID)
+			}
+		}
 	}
 
 	pipeline := domain.Pipeline{

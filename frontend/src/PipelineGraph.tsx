@@ -1,0 +1,59 @@
+// The pipeline is a chain of stages: the registry owns the order and the agent
+// never picks the next one. The graph shows that chain and the state of each node,
+// so the operator sees where the pipeline stands before reading any document.
+import { stageTitle, type Stage } from './api';
+
+export type NodeState = 'planned' | 'current' | 'running' | 'draft' | 'valid' | 'waiting_operator' | 'approved';
+
+// The stored status of a form, in the words of the operator. The agent board reads
+// the same map, so a document state never reaches the screen as a raw enum.
+export const NODE_LABELS: Record<string, string> = {
+  planned: 'не запускалась',
+  current: 'текущая',
+  running: 'работает',
+  draft: 'черновик',
+  valid: 'валидна',
+  waiting_operator: 'ждёт ответа',
+  approved: 'утверждена',
+};
+
+export function PipelineGraph({
+  stages,
+  states,
+  selected,
+  onSelect,
+}: {
+  stages: Stage[];
+  states: Record<string, NodeState>;
+  selected: string | null;
+  onSelect: (stageID: string) => void;
+}) {
+  return (
+    <div className="graph" role="list">
+      {stages.map((stage, index) => {
+        const state = states[stage.id] ?? 'planned';
+        return (
+          <div className="graph-step" role="listitem" key={stage.id}>
+            <button
+              type="button"
+              className={`node ${state}${selected === stage.id ? ' selected' : ''}`}
+              aria-pressed={selected === stage.id}
+              onClick={() => onSelect(stage.id)}
+            >
+              <span className="node-id">{stage.id}</span>
+              <span className="node-name">{stageTitle(stage)}</span>
+              <span className="node-owner">{stage.owner}</span>
+              {stage.conditional && (
+                <span className="tag" title="запускается только после проваленного вердикта">
+                  условная
+                </span>
+              )}
+              <span className="node-state">{NODE_LABELS[state] ?? state}</span>
+            </button>
+            {index < stages.length - 1 && <span className="edge" aria-hidden="true" />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

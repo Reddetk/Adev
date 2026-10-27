@@ -59,11 +59,16 @@ func (c *ModelCheck) call(ctx context.Context, agent domain.AgentConfig) (ModelC
 		return ModelCheckResult{}, err
 	}
 
+	system, user := promptMessages(
+		`Answer with the payload only: {"ok":true}`,
+		`{"ok":true}`,
+		json.RawMessage(`{}`),
+		nil,
+	)
 	response, err := client.Complete(ctx, LLMRequest{
-		Role:        agent.Role,
-		Instruction: `Answer with the payload only: {"ok":true}`,
-		Shape:       `{"ok":true}`,
-		Context:     json.RawMessage(`{}`),
+		Role:   agent.Role,
+		System: system,
+		User:   user,
 	})
 	if err != nil {
 		return ModelCheckResult{}, fmt.Errorf("model of role %q: %w", agent.Role, err)

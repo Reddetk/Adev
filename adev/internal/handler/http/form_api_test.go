@@ -186,8 +186,8 @@ func TestSubmitFormRefusesADuplicateVersion(t *testing.T) {
 
 func TestSubmitFormRefusesATypeWithoutGates(t *testing.T) {
 	body := userInputBody()
-	body["formType"] = "SRS"
-	body["stage"] = "02"
+	body["formType"] = "QUESTION"
+	body["stage"] = "\u2014"
 
 	response := newFormAPI().send(t, http.MethodPost, "/api/v1/forms", body)
 
@@ -261,10 +261,10 @@ func TestListFormsByPipeline(t *testing.T) {
 	assert.Contains(t, response.Body.String(), userInputFormID)
 }
 
-func TestListFormsByPipelineRequiresAType(t *testing.T) {
+func TestListFormsByPipelineWithoutATypeListsEveryType(t *testing.T) {
 	response := newFormAPI().send(t, http.MethodGet, "/api/v1/pipelines/"+pipelineID+"/forms", nil)
 
-	assert.Equal(t, http.StatusBadRequest, response.Code)
+	assert.Equal(t, http.StatusOK, response.Code)
 }
 
 func TestListFormsByPipelineRejectsAnUnknownType(t *testing.T) {

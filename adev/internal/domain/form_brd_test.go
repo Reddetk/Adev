@@ -40,15 +40,71 @@ func TestBRDRejectsDesignTerms(t *testing.T) {
 func TestBRDRejectsBlockingGapOnApproval(t *testing.T) {
 	brd := validBRD()
 	brd.OpenGaps = []Gap{{
-		ID: "GAP-1", Pointer: "/payload/metrics", Blocking: true,
+		ID: "GAP-1", Pointer: "/metrics", Blocking: true,
 		Question: Text{Value: "Which value applies?", Lang: LangSTE100},
 	}}
+	form := newBRDForm(t, brd)
 
-	if err := ValidateBRD(brd, StatusApproved); err == nil {
-		t.Fatal("want a blocking gap error, got nil")
+	// Gate 5: a blocking gap is closed before the form is accepted. The shared
+	// gate lives in ValidatePayloadWithStatus for every question-phase form.
+	form.Status = StatusApproved
+	if err := form.ValidatePayloadWithStatus(); err == nil {
+		t.Fatal("want a blocking gap error on approved, got nil")
 	}
-	if err := ValidateBRD(brd, StatusValid); err != nil {
-		t.Fatalf("a blocking gap must be allowed before approval: %v", err)
+	form.Status = StatusValid
+	if err := form.ValidatePayloadWithStatus(); err == nil {
+		t.Fatal("want a blocking gap error on valid, got nil")
+	}
+	form.Status = StatusDraft
+	if err := form.ValidatePayloadWithStatus(); err != nil {
+		t.Fatalf("a draft may hold a blocking gap: %v", err)
+	}
+
+	// A gap that asks the operator holds the acceptance, blocking or not.
+	brd.OpenGaps[0].Blocking = false
+	form = newBRDForm(t, brd)
+	form.Status = StatusValid
+	if err := form.ValidatePayloadWithStatus(); err == nil {
+		t.Fatal("an unanswered operator question must hold the valid state")
+	}
+
+	// A plain gap without a question is only a marked open issue.
+	brd.OpenGaps = []Gap{{ID: "GAP-2", Pointer: "/payload/metrics"}}
+	form = newBRDForm(t, brd)
+	form.Status = StatusValid
+	if err := form.ValidatePayloadWithStatus(); err != nil {
+		t.Fatalf("a questionless gap may survive the acceptance: %v", err)
+	}
+}
+
+func TestBRDRejectsAGapPointerOutsideThePayload(t *testing.T) {
+	brd := validBRD()
+	brd.OpenGaps = []Gap{{
+		ID: "GAP-1", Pointer: "/feasibility/costEstimate",
+		Question: Text{Value: "What is the cost?", Lang: LangSTE100},
+	}}
+	form := newBRDForm(t, brd)
+	form.Status = StatusDraft
+
+	// The model invented a section: the operator has nowhere to write the answer.
+	if err := form.ValidatePayloadWithStatus(); err == nil || !strings.Contains(err.Error(), "/feasibility/costEstimate") {
+		t.Fatalf("want a pointer error, got %v", err)
+	}
+
+	brd.OpenGaps[0].Pointer = "/metrics/0/baseline"
+	form = newBRDForm(t, brd)
+	form.Status = StatusDraft
+	if err := form.ValidatePayloadWithStatus(); err != nil {
+		t.Fatalf("a pointer to a real field must pass: %v", err)
+	}
+
+	// A word where the array takes an index names no slot: the answer would fail
+	// on arrival, so the question must never reach the operator.
+	brd.OpenGaps[0].Pointer = "/metrics/baseline"
+	form = newBRDForm(t, brd)
+	form.Status = StatusDraft
+	if err := form.ValidatePayloadWithStatus(); err == nil {
+		t.Fatal("a pointer that the payload cannot take must fail the gate")
 	}
 }
 

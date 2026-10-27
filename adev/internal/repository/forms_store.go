@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Reddetk/Adev/internal/domain"
+	"github.com/Reddetk/Adev/internal/usecase"
 )
 
 const formColumns = `form_id, form_version, form_type, schema_version, previous_form, status,
@@ -22,6 +23,9 @@ const formColumns = `form_id, form_version, form_type, schema_version, previous_
 type FormsStore struct {
 	pool *pgxpool.Pool
 }
+
+// FormsStore and MemoryFormsStore are the adapters of the same port.
+var _ usecase.FormStore = (*FormsStore)(nil)
 
 // OpenFormsStore opens a pool and checks the connection.
 func OpenFormsStore(ctx context.Context, dsn string) (*FormsStore, error) {
@@ -53,16 +57,10 @@ func (s *FormsStore) Save(ctx context.Context, form *domain.Form) error {
 	if form == nil {
 		return fmt.Errorf("save: form is nil")
 	}
-	if form.FormID == "" || form.FormVersion < 1 {
-		return fmt.Errorf("save: formId and a formVersion of at least 1 are required")
+	if err := form.ValidateNewVersion(); err != nil {
+		return err
 	}
 	if form.FormVersion > 1 {
-		switch {
-		case form.PreviousFormVersion == nil:
-			return fmt.Errorf("%w: formVersion %d needs previousFormVersion", domain.ErrMissingPrevious, form.FormVersion)
-		case form.PreviousFormVersion.FormVersion != form.FormVersion-1:
-			return fmt.Errorf("%w: previousFormVersion must be %d", domain.ErrMissingPrevious, form.FormVersion-1)
-		}
 		exists, err := s.exists(ctx, form.FormID, form.FormVersion-1)
 		if err != nil {
 			return err
@@ -131,7 +129,7 @@ func (s *FormsStore) Latest(ctx context.Context, formID string) (*domain.Form, e
 
 // ByPipeline reads the versions of one form type in one pipeline, oldest first.
 func (s *FormsStore) ByPipeline(ctx context.Context, pipelineID string, formType domain.FormType) ([]*domain.Form, error) {
-	rows, err := s.pool.Query(ctx, `SELECT `+formColumns+` FROM forms WHERE pipeline_id = $1 AND form_type = $2 ORDER BY form_version ASC`, pipelineID, formType)
+	rows, err := s.pool.Query(ctx, `SELECT `+formColumns+` FROM forms WHERE pipeline_id = $1 AND ($2::text = '' OR form_type = $2::text) ORDER BY stage, form_version ASC`, pipelineID, formType)
 	if err != nil {
 		return nil, fmt.Errorf("by pipeline: %w", err)
 	}
@@ -146,6 +144,22 @@ func (s *FormsStore) ByPipeline(ctx context.Context, pipelineID string, formType
 		result = append(result, form)
 	}
 	return result, rows.Err()
+}
+
+// UpdatePayload rewrites the payload of a version that waits for the operator.
+// An operator answer is a decision on the same draft, not a new version: only a
+// waiting version may change its payload, the database trigger enforces it.
+func (s *FormsStore) UpdatePayload(ctx context.Context, form *domain.Form) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE forms SET payload = $3, payload_hash = $4 WHERE form_id = $1 AND form_version = $2 AND status = 'waiting_operator'`,
+		form.FormID, form.FormVersion, form.Payload, form.PayloadHash)
+	if err != nil {
+		return fmt.Errorf("update payload: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: %s:%d is not waiting for the operator", domain.ErrInvalidStatusChange, form.FormID, form.FormVersion)
+	}
+	return nil
 }
 
 // SetStatus changes the status of one form version.
@@ -166,6 +180,29 @@ func (s *FormsStore) SetStatus(ctx context.Context, formID string, version int, 
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("%w: %s:%d", domain.ErrInvalidStatusChange, formID, version)
+	}
+	return nil
+}
+
+// Delete removes one version (version > 0) or every version of the document
+// (version <= 0).
+func (s *FormsStore) Delete(ctx context.Context, formID string, version int) error {
+	if version > 0 {
+		tag, err := s.pool.Exec(ctx, `DELETE FROM forms WHERE form_id = $1 AND form_version = $2`, formID, version)
+		if err != nil {
+			return fmt.Errorf("delete form: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return fmt.Errorf("%w: %s:%d", domain.ErrFormNotFound, formID, version)
+		}
+		return nil
+	}
+	tag, err := s.pool.Exec(ctx, `DELETE FROM forms WHERE form_id = $1`, formID)
+	if err != nil {
+		return fmt.Errorf("delete form: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: %s", domain.ErrFormNotFound, formID)
 	}
 	return nil
 }

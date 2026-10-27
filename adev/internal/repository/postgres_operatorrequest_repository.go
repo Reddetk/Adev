@@ -12,7 +12,16 @@ import (
 	"github.com/Reddetk/Adev/internal/domain"
 )
 
-const operatorRequestColumns = `id, pipeline_id, pointer, question, blocking, status`
+const operatorRequestColumns = `id, pipeline_id, pointer, question, options, format, blocking, status`
+
+// optionsOrEmpty writes an empty array for a question without choices: the column
+// is NOT NULL, and a nil slice would travel as NULL and break the insert.
+func optionsOrEmpty(options []string) []string {
+	if options == nil {
+		return []string{}
+	}
+	return options
+}
 
 type postgresOperatorRequestRepository struct {
 	pool *pgxpool.Pool
@@ -24,9 +33,9 @@ func NewPostgresOperatorRequestRepository(pool *pgxpool.Pool) usecase.OperatorRe
 
 func (p *postgresOperatorRequestRepository) Save(request *domain.OperatorRequest) error {
 	return p.pool.QueryRow(context.Background(),
-		`INSERT INTO operator_requests (pipeline_id, pointer, question, blocking, status)
-		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-		request.PipelineID, request.Pointer, request.Question, request.Blocking, request.Status,
+		`INSERT INTO operator_requests (pipeline_id, pointer, question, options, format, blocking, status)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		request.PipelineID, request.Pointer, request.Question, optionsOrEmpty(request.Options), request.Format, request.Blocking, request.Status,
 	).Scan(&request.ID)
 }
 
@@ -42,7 +51,7 @@ func (p *postgresOperatorRequestRepository) FindByPipelineID(pipelineID int) (*d
 
 func (p *postgresOperatorRequestRepository) FindByPointer(pointer string) (*domain.OperatorRequest, error) {
 	return scanOperatorRequest(p.pool.QueryRow(context.Background(),
-		`SELECT `+operatorRequestColumns+` FROM operator_requests WHERE pointer = $1`, pointer))
+		`SELECT `+operatorRequestColumns+` FROM operator_requests WHERE pointer = $1 AND status = 'active' LIMIT 1`, pointer))
 }
 
 func (p *postgresOperatorRequestRepository) FindByQuestion(question string) (*domain.OperatorRequest, error) {
@@ -58,8 +67,8 @@ func (p *postgresOperatorRequestRepository) FindByStatus(status string) (*domain
 func (p *postgresOperatorRequestRepository) Update(request *domain.OperatorRequest) error {
 	_, err := p.pool.Exec(context.Background(),
 		`UPDATE operator_requests SET pipeline_id = $1, pointer = $2, question = $3,
-		 blocking = $4, status = $5 WHERE id = $6`,
-		request.PipelineID, request.Pointer, request.Question, request.Blocking, request.Status, request.ID)
+		 options = $4, format = $5, blocking = $6, status = $7 WHERE id = $8`,
+		request.PipelineID, request.Pointer, request.Question, optionsOrEmpty(request.Options), request.Format, request.Blocking, request.Status, request.ID)
 	return err
 }
 
@@ -80,7 +89,7 @@ func (p *postgresOperatorRequestRepository) FindAll() ([]domain.OperatorRequest,
 	for rows.Next() {
 		var entity domain.OperatorRequest
 		if err := rows.Scan(&entity.ID, &entity.PipelineID, &entity.Pointer, &entity.Question,
-			&entity.Blocking, &entity.Status); err != nil {
+			&entity.Options, &entity.Format, &entity.Blocking, &entity.Status); err != nil {
 			return nil, err
 		}
 		result = append(result, entity)
@@ -91,7 +100,7 @@ func (p *postgresOperatorRequestRepository) FindAll() ([]domain.OperatorRequest,
 func scanOperatorRequest(row pgx.Row) (*domain.OperatorRequest, error) {
 	var entity domain.OperatorRequest
 	if err := row.Scan(&entity.ID, &entity.PipelineID, &entity.Pointer, &entity.Question,
-		&entity.Blocking, &entity.Status); err != nil {
+		&entity.Options, &entity.Format, &entity.Blocking, &entity.Status); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
