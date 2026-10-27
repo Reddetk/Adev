@@ -42,13 +42,16 @@ func TestPR0OneQuestionRuleReachesEveryStage(t *testing.T) {
 	f.run(t, "00")
 	f.run(t, "03")
 
-	require.Len(t, f.llm.requests, 2)
+	// The HLD is filled level by level: the skeleton call and one call per
+	// container. Every call teaches the same question rule.
+	require.Len(t, f.llm.requests, 3)
 	for _, request := range f.llm.requests {
 		assert.Contains(t, request.User, "put one openGaps entry",
 			"every stage teaches the same question rule")
 	}
 	assert.Contains(t, f.llm.requests[0].User, "stage 00")
 	assert.Contains(t, f.llm.requests[1].User, "stage 03")
+	assert.Contains(t, f.llm.requests[2].User, "the containers entry with objectId")
 }
 
 // PR0 acceptance: the last stage of the route completes the pipeline.

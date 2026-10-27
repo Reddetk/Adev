@@ -27,8 +27,9 @@ var shapeChoices = map[string]string{
 	"ContextRelationType": `"sync|async"`,
 	"LayerName":           `"adapter|domain|app|infra"`,
 	"PathKind":            `"happy|negative"`,
-	// The operator picks the whole document, so the choice is a list of values.
-	"ReportType":    `["tej","rar"]`,
+	// The operator picks the whole document: the choices are values to show a
+	// human, not a schema. The model needs one scalar, or it copies the array.
+	"ReportType":    `"tej"`,
 	"PlanTaskType":  `"feature|fix|refactor|config|docs|test"`,
 	"PlanTaskOwner": `"dev|devops"`,
 }

@@ -18,7 +18,7 @@ func NewRegistryService(store ObjectStore) *RegistryService {
 }
 
 // Propose registers a new object with status planned and returns it with its id.
-func (s *RegistryService) Propose(ctx context.Context, targetSystemID int64, kind domain.Kind, name, path, containerID string, by domain.Ref) (domain.Object, error) {
+func (s *RegistryService) Propose(ctx context.Context, targetSystemID int64, kind domain.Kind, name, path, containerID string, by domain.Ref, fields map[string]any) (domain.Object, error) {
 	if targetSystemID < 1 {
 		return domain.Object{}, fmt.Errorf("propose: targetSystemId must be positive")
 	}
@@ -45,6 +45,7 @@ func (s *RegistryService) Propose(ctx context.Context, targetSystemID int64, kin
 		Path:           path,
 		ContainerID:    containerID,
 		Status:         domain.ObjectPlanned,
+		Fields:         fields,
 		IntroducedBy:   by,
 		ChangedBy:      []domain.Ref{},
 	}

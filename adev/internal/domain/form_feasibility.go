@@ -62,7 +62,10 @@ const (
 	VerdictRevise Verdict = "revise"
 )
 
-// Feasibility is the feasibility study that compares options for the BRD goals.
+// Feasibility is the techno-economic justification of the greenfield route: it
+// compares options for the BRD goals, prices them and picks a verdict.
+// shortcut: the Risk field and ReportRAR stay in the schema for a future change
+// route with a running baseline; the greenfield gates accept a TEJ only.
 type Feasibility struct {
 	ReportType        ReportType   `json:"reportType"`
 	Options           []Option     `json:"options"`

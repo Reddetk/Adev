@@ -38,7 +38,7 @@ else
 RM      := rm -rf
 PRODBIN := CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w $(LDFLAGS)' -o bin/$(APP_NAME) ./cmd/server
 endif
-.PHONY: help deps tools build run test test-race test-coverage test-db ci fmt vet lint clean \
+.PHONY: help deps tools build run test test-race test-tdd test-coverage test-db ci fmt vet lint clean \
         migrate-install migrate-up migrate-down migrate-force db-reset \
         dev-db dev-db-stop \
         docker-build docker-run compose-up compose-down \
@@ -54,6 +54,7 @@ help:
 	@echo   make ci               vet + unit tests, the unit CI job in one command
 	@echo   make test             run all tests
 	@echo   make test-race        run all tests with the race detector, needs cgo
+	@echo   make test-tdd         acceptance tests of docs/refactor-plan.md, red until the PR lands
 	@echo   make test-db          postgres store tests, needs ADEV_TEST_DATABASE_URL
 	@echo   make test-coverage    write coverage.out and coverage.html
 	@echo   make fmt              gofmt the tree
@@ -127,13 +128,17 @@ tag:
 
 
 run:
-	go run ./cmd/server
+	go run .\cmd\server\main.go
 
 test:
 	go test ./...
 
 test-race:
 	go test -race ./...
+
+# Red by design: each test names the PR acceptance criterion it checks.
+test-tdd:
+	go test -tags tdd ./internal/acceptance/...
 
 # The postgres store tests truncate the forms table, so they need a dedicated database.
 test-db:

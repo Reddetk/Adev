@@ -103,6 +103,18 @@ func (s *FormService) SetStatus(ctx context.Context, formID string, version int,
 	return s.store.SetStatus(ctx, formID, version, status)
 }
 
+// UpdatePayload rewrites the payload of the waiting draft in place.
+func (s *FormService) UpdatePayload(ctx context.Context, form *domain.Form) error {
+	return s.store.UpdatePayload(ctx, form)
+}
+
+// Delete removes one version (version > 0) or every version of the document
+// (version <= 0). It is the escape hatch for a document that blocks the
+// pipeline and cannot be repaired by an operator answer.
+func (s *FormService) Delete(ctx context.Context, formID string, version int) error {
+	return s.store.Delete(ctx, formID, version)
+}
+
 // Get reads one stored form version.
 func (s *FormService) Get(ctx context.Context, formID string, version int) (*domain.Form, error) {
 	return s.store.Get(ctx, formID, version)

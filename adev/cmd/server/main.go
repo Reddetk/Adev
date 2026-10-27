@@ -97,7 +97,7 @@ func main() {
 	apphttp.SetupAuditEventRoutes(apiRouter, container.AuditEventUseCase())           // auditevent routes
 
 	// adev settings and pipeline plan
-	apphttp.SetupSettingsRoutes(apiRouter, apphttp.NewSettingsHandler(container.SettingsService(), container.Planner(), container.PipelineUseCase(), container.ModelCheck()))
+	apphttp.SetupSettingsRoutes(apiRouter, apphttp.NewSettingsHandler(container.SettingsService(), container.Planner(), container.PipelineUseCase(), container.ModelCheck()).WithRegistry(container.RegistryService()))
 	// adev form contract
 	apphttp.SetupFormRoutes(apiRouter, container.FormHandler())
 	// adev stage runs
@@ -198,6 +198,12 @@ func main() {
 			log.Fatalf("Server startup failed: %v", err)
 		}
 	}()
+
+	// The runs of previous processes still say running: their chains died with
+	// the process. Resume them from the stage they were on.
+	if resumed := container.StageRunService().Resume(context.Background()); resumed > 0 {
+		log.Printf("stage runs: resumed %d run(s) of previous process(es)", resumed)
+	}
 
 	// Wait for interrupt signal to gracefully shutdown
 	quit := make(chan os.Signal, 1)

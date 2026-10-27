@@ -44,10 +44,12 @@ type Container struct {
 	pipelineService *usecase.Planner
 	activityService *usecase.ActivityService
 	stageService    *usecase.StageService
+	stageRuns       *usecase.StageRunService
 	modelCheck      *usecase.ModelCheck
 	formHandler     *http.FormHandler
 	stageHandler    *http.StageHandler
 	questionHandler *http.QuestionHandler
+	registryService *usecase.RegistryService
 }
 
 func NewContainer(pool *pgxpool.Pool) *Container {
@@ -74,8 +76,13 @@ func (c *Container) setupAdEvServices() {
 	questions := usecase.NewQuestionService(c.formService, c.operatorrequestRepo)
 	activities := usecase.NewActivityService()
 	c.activityService = activities
-	c.stageService = usecase.NewStageService(c.formService, c.settingsService, factory, nil).WithQuestions(questions).WithActivity(activities).WithModelCalls(c.modelcallRepo)
-	c.stageHandler = http.NewStageHandler(c.stageOrchestrator())
+	c.registryService = usecase.NewRegistryService(repository.NewPostgresObjectStore(c.pool))
+	c.stageService = usecase.NewStageService(c.formService, c.settingsService, factory, nil).
+		WithQuestions(questions).WithActivity(activities).WithModelCalls(c.modelcallRepo).WithRegistry(c.registryService)
+	// Stage runs go to the background: the answer carries the run row, the chain
+	// keeps going in the process, and a restart resumes the runs it lost.
+	c.stageRuns = usecase.NewStageRunService(c.stageOrchestrator(), c.runRepo, c.pipelineRepo)
+	c.stageHandler = http.NewStageHandler(c.stageRuns)
 	c.questionHandler = http.NewQuestionHandler(questions)
 	c.modelCheck = usecase.NewModelCheck(c.settingsService, factory)
 }
@@ -209,6 +216,9 @@ func (c *Container) FormHandler() *http.FormHandler { return c.formHandler }
 // StageHandler returns the stage handler.
 func (c *Container) StageHandler() *http.StageHandler { return c.stageHandler }
 
+// StageRunService keeps the runs the process started and resumes the lost ones.
+func (c *Container) StageRunService() *usecase.StageRunService { return c.stageRuns }
+
 // QuestionHandler returns the question handler.
 func (c *Container) QuestionHandler() *http.QuestionHandler { return c.questionHandler }
 
@@ -220,6 +230,9 @@ func (c *Container) ModelCheck() *usecase.ModelCheck { return c.modelCheck }
 
 // SettingsService returns the target system settings service.
 func (c *Container) SettingsService() *usecase.SettingsService { return c.settingsService }
+
+// RegistryService returns the target system object registry.
+func (c *Container) RegistryService() *usecase.RegistryService { return c.registryService }
 
 // Planner returns the pipeline planning service.
 func (c *Container) Planner() *usecase.Planner { return c.pipelineService }

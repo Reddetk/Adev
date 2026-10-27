@@ -65,12 +65,14 @@ var formSpecs = []formSpecEntry{
 		payload:    func() any { return &HLD{} },
 		validate:   func(payload any, _ Status) error { return ValidateHLD(*payload.(*HLD)) },
 		texts:      func(payload any) []Text { return payload.(*HLD).Texts() },
+		gaps:       func(payload any) []Gap { return payload.(*HLD).OpenGaps },
 		projection: openDesignProjection,
 	}},
 	{TypeADR, formSpec{
 		payload:    func() any { return &ADR{} },
 		validate:   func(payload any, _ Status) error { return ValidateADR(*payload.(*ADR)) },
 		texts:      func(payload any) []Text { return payload.(*ADR).Texts() },
+		gaps:       func(payload any) []Gap { return payload.(*ADR).OpenGaps },
 		projection: openDesignProjection,
 	}},
 	{TypeLLD, formSpec{

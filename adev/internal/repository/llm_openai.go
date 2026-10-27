@@ -34,6 +34,7 @@ var apiEndpoint = map[domain.Provider]string{
 	domain.ProviderOllama:     "http://localhost:11434/v1",
 	domain.ProviderOpenAI:     "https://api.openai.com/v1",
 	domain.ProviderOpenRouter: "https://openrouter.ai/api/v1",
+	domain.ProviderOpencode:   "https://opencode.ai/inference/openai/v1",
 	domain.ProviderDeepSeek:   "https://api.deepseek.com/v1",
 	domain.ProviderQwen:       "https://dashscope.aliyuncs.com/compatible-mode/v1",
 }
@@ -92,6 +93,9 @@ type openAICompatibleLLM struct {
 type chatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// Reasoning carries the thinking text of reasoning models; it is read only,
+	// so the request side never sends it.
+	Reasoning string `json:"reasoning,omitempty"`
 }
 
 type completionRequest struct {
@@ -112,16 +116,29 @@ type completionResponse struct {
 	} `json:"usage"`
 }
 
-// Complete asks the model for one payload.
+// maxTokensOrDefault keeps a zero (unset) config from inheriting a tiny provider
+// default that truncates JSON documents mid-way. Reasoning models spend a large
+// share of the budget before the answer, so the reserve is generous.
+func maxTokensOrDefault(value int) int {
+	if value <= 0 {
+		return 32768
+	}
+	return value
+}
+
+// Complete asks the model for one payload. Attached text files travel inside
+// the user message: every OpenAI-compatible provider accepts multiline text,
+// while binary or provider-specific file parts do not.
 func (l *openAICompatibleLLM) Complete(ctx context.Context, request usecase.LLMRequest) (usecase.LLMResponse, error) {
+	user := request.UserWithFiles()
 	body, err := json.Marshal(completionRequest{
 		Model: l.agent.Model,
 		Messages: []chatMessage{
 			{Role: "system", Content: request.System},
-			{Role: "user", Content: request.User},
+			{Role: "user", Content: user},
 		},
 		Temperature: l.agent.Temperature,
-		MaxTokens:   l.agent.MaxTokens,
+		MaxTokens:   maxTokensOrDefault(l.agent.MaxTokens),
 	})
 	if err != nil {
 		return usecase.LLMResponse{}, fmt.Errorf("model call: encode request: %w", err)
@@ -156,10 +173,18 @@ func (l *openAICompatibleLLM) Complete(ctx context.Context, request usecase.LLMR
 		return usecase.LLMResponse{}, fmt.Errorf("model call: decode response: %w", err)
 	}
 	if len(parsed.Choices) == 0 {
-		return usecase.LLMResponse{}, fmt.Errorf("model call: the response has no choice")
+		return usecase.LLMResponse{}, fmt.Errorf("model call: the response has no choice: %s", firstLine(raw))
+	}
+	content := parsed.Choices[0].Message.Content
+	// A reasoning model that ran out of tokens answers with an empty content
+	// and the whole budget spent on thinking: keep the thinking text, so the
+	// operator sees where the call went instead of an empty row.
+	if content == "" {
+		content = parsed.Choices[0].Message.Reasoning
 	}
 	return usecase.LLMResponse{
-		Payload: extractJSON(parsed.Choices[0].Message.Content),
+		Payload: extractJSON(content),
+		Raw:     content,
 		Usage: usecase.LLMUsage{
 			TokensIn:  parsed.Usage.PromptTokens,
 			TokensOut: parsed.Usage.CompletionTokens,

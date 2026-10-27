@@ -67,6 +67,7 @@ type HLD struct {
 	Aggregates          []Aggregate       `json:"aggregates"`
 	ContextRelations    []ContextRelation `json:"contextRelations,omitempty"`
 	DegradationStrategy []Degradation     `json:"degradationStrategy,omitempty"`
+	OpenGaps            []Gap             `json:"openGaps,omitempty"`
 }
 
 // Texts returns every free-text value for the language checker.

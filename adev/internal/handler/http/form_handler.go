@@ -25,9 +25,12 @@ func NewFormHandler(forms *usecase.FormService) *FormHandler {
 // SetupFormRoutes registers the form routes.
 func SetupFormRoutes(router *mux.Router, handler *FormHandler) {
 	router.HandleFunc("/forms", handler.Submit).Methods(http.MethodPost)
+	router.HandleFunc("/forms/{formId}", handler.DeleteForm).Methods(http.MethodDelete)
 	router.HandleFunc("/forms/{formId}/latest", handler.Latest).Methods(http.MethodGet)
 	router.HandleFunc("/forms/{formId}/versions/{version}", handler.GetVersion).Methods(http.MethodGet)
+	router.HandleFunc("/forms/{formId}/versions/{version}", handler.DeleteVersion).Methods(http.MethodDelete)
 	router.HandleFunc("/forms/{formId}/versions/{version}/status", handler.SetStatus).Methods(http.MethodPut)
+	router.HandleFunc("/forms/{formId}/versions/{version}/payload", handler.UpdatePayload).Methods(http.MethodPut)
 	router.HandleFunc("/pipelines/{pipelineId}/forms", handler.ByPipeline).Methods(http.MethodGet)
 }
 
@@ -145,6 +148,90 @@ func (h *FormHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// DeleteForm removes every version of a document. It is the escape hatch for a
+// document that blocks the pipeline and cannot be repaired by an operator answer.
+// @Summary Delete a form document
+// @Tags forms
+// @Param formId path string true "Form ID"
+// @Success 204
+// @Failure 404 {object} map[string]string
+// @Router /forms/{formId} [delete]
+func (h *FormHandler) DeleteForm(w http.ResponseWriter, r *http.Request) {
+	if err := h.forms.Delete(r.Context(), mux.Vars(r)["formId"], 0); err != nil {
+		writeError(w, formStatus(err), err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// DeleteVersion removes one version of a form.
+// @Summary Delete one form version
+// @Tags forms
+// @Param formId path string true "Form ID"
+// @Param version path int true "Form version"
+// @Success 204
+// @Failure 404 {object} map[string]string
+// @Router /forms/{formId}/versions/{version} [delete]
+func (h *FormHandler) DeleteVersion(w http.ResponseWriter, r *http.Request) {
+	version, ok := formVersion(w, r)
+	if !ok {
+		return
+	}
+	if err := h.forms.Delete(r.Context(), mux.Vars(r)["formId"], version); err != nil {
+		writeError(w, formStatus(err), err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UpdatePayload rewrites the payload of a stored version in place. Only a version
+// that waits for the operator (or that the operator first moved to that state)
+// may change its payload, matching the append-only rule of the forms table.
+// @Summary Rewrite the payload of a form version
+// @Tags forms
+// @Accept json
+// @Produce json
+// @Param formId path string true "Form ID"
+// @Param version path int true "Form version"
+// @Param body body map[string]any true "New payload"
+// @Success 200 {object} map[string]any "Stored form"
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Router /forms/{formId}/versions/{version}/payload [put]
+func (h *FormHandler) UpdatePayload(w http.ResponseWriter, r *http.Request) {
+	version, ok := formVersion(w, r)
+	if !ok {
+		return
+	}
+	formID := mux.Vars(r)["formId"]
+	var body struct {
+		Payload json.RawMessage `json:"payload"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(body.Payload) == 0 {
+		writeError(w, http.StatusBadRequest, "payload is required")
+		return
+	}
+	form, err := h.forms.Get(r.Context(), formID, version)
+	if err != nil {
+		writeError(w, formStatus(err), err.Error())
+		return
+	}
+	if err := form.SetRawPayload(body.Payload); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	if err := h.forms.UpdatePayload(r.Context(), form); err != nil {
+		writeError(w, formStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, form)
 }
 
 // ByPipeline reads the forms of one pipeline. Every filter is optional: the

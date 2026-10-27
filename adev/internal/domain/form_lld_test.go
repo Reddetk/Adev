@@ -25,7 +25,7 @@ func TestLLDPointsTheMissingPathAtTheEndOfTheList(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "paths/-") {
 		t.Fatalf("want the finding to name paths/-, got %v", err)
 	}
-	if !Patchable([]byte(`{"paths":[]}`), "/paths/-") {
+	if !Patchable(TypeLLD, []byte(`{"paths":[]}`), "/paths/-") {
 		t.Fatal("the answer must land past the end of the list")
 	}
 }

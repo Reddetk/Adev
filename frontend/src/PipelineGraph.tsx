@@ -1,15 +1,16 @@
 // The pipeline is a chain of stages: the registry owns the order and the agent
 // never picks the next one. The graph shows that chain and the state of each node,
 // so the operator sees where the pipeline stands before reading any document.
-import type { Stage } from './api';
+import { stageTitle, type Stage } from './api';
 
-export type NodeState = 'planned' | 'current' | 'draft' | 'valid' | 'waiting_operator' | 'approved';
+export type NodeState = 'planned' | 'current' | 'running' | 'draft' | 'valid' | 'waiting_operator' | 'approved';
 
 // The stored status of a form, in the words of the operator. The agent board reads
 // the same map, so a document state never reaches the screen as a raw enum.
 export const NODE_LABELS: Record<string, string> = {
   planned: 'не запускалась',
   current: 'текущая',
+  running: 'работает',
   draft: 'черновик',
   valid: 'валидна',
   waiting_operator: 'ждёт ответа',
@@ -40,7 +41,7 @@ export function PipelineGraph({
               onClick={() => onSelect(stage.id)}
             >
               <span className="node-id">{stage.id}</span>
-              <span className="node-name">{stage.name}</span>
+              <span className="node-name">{stageTitle(stage)}</span>
               <span className="node-owner">{stage.owner}</span>
               {stage.conditional && (
                 <span className="tag" title="запускается только после проваленного вердикта">

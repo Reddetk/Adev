@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -51,7 +52,7 @@ func (f *Form) ValidatePayloadWithStatus() error {
 		if position.Gap.Question.Value == "" {
 			continue
 		}
-		if !Patchable(f.Payload, position.Gap.Pointer) {
+		if !Patchable(f.FormType, f.Payload, position.Gap.Pointer) {
 			errs = append(errs, invalid(fmt.Sprintf("openGaps[%d].pointer", i),
 				fmt.Sprintf("%s has no parent field in the payload; point the gap at a field the shape has, or fill the value yourself", position.Gap.Pointer)))
 		}
@@ -69,7 +70,10 @@ func (f *Form) ValidatePayloadWithStatus() error {
 // Patchable reports whether an answer can land on the pointer. The field itself
 // may be absent while its parent object or array exists: RFC 6902 add fills the
 // slot, and naming the index right past an array appends.
-func Patchable(payload json.RawMessage, pointer string) bool {
+func Patchable(formType FormType, payload json.RawMessage, pointer string) bool {
+	// Accept the bracket index form ("/nfr[0]/unit") too: older drafts and
+	// operator requests may still carry it. Normalise before walking.
+	pointer = regexp.MustCompile(`\[([^\]]+)\]`).ReplaceAllString(pointer, "/$1")
 	if pointer == "" || pointer == "/payload" {
 		return true
 	}
@@ -82,22 +86,28 @@ func Patchable(payload json.RawMessage, pointer string) bool {
 	}
 	segments := strings.Split(pointer[1:], "/")
 	current := doc
-	for _, raw := range segments[:len(segments)-1] {
+	for i, raw := range segments[:len(segments)-1] {
 		segment := strings.ReplaceAll(strings.ReplaceAll(raw, "~1", "/"), "~0", "~")
 		switch node := current.(type) {
 		case map[string]any:
 			current = node[segment]
 		case []any:
 			index, err := strconv.Atoi(segment)
-			if err != nil || index < 0 || index >= len(node) {
+			if err != nil || index < 0 || index > len(node) {
 				return false
+			}
+			if index == len(node) {
+				// The entry past the end of the list is created by the answer.
+				return true
 			}
 			current = node[index]
 		default:
 			return false
 		}
 		if current == nil {
-			return false
+			// The answer adds the missing objects, but only those the schema has: a
+			// section the model invented has nowhere to be answered into.
+			return keysOnly(segments[i+1:]) && inShape(formType, segments)
 		}
 	}
 	switch node := current.(type) {
@@ -114,6 +124,59 @@ func Patchable(payload json.RawMessage, pointer string) bool {
 		return err == nil && index >= 0 && index <= len(node)
 	}
 	return false
+}
+
+// keysOnly reports whether a path names object keys only; a list index or "-"
+// cannot be created by an answer.
+func keysOnly(segments []string) bool {
+	for _, segment := range segments {
+		if _, err := strconv.Atoi(segment); err == nil || segment == "-" {
+			return false
+		}
+	}
+	return true
+}
+
+// inShape reports whether the path names a place of the payload skeleton: every
+// list is read through its first entry, which is the entry the schema shows.
+func inShape(formType FormType, segments []string) bool {
+	raw, err := PayloadShape(formType)
+	if err != nil {
+		return false
+	}
+	var current any
+	if err := json.Unmarshal([]byte(raw), &current); err != nil {
+		return false
+	}
+	for _, segment := range segments {
+		switch node := current.(type) {
+		case map[string]any:
+			next, ok := node[segment]
+			if !ok {
+				return false
+			}
+			current = next
+		case []any:
+			if len(node) == 0 {
+				return false
+			}
+			current = node[0]
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// ShapePointer reports whether the pointer names a field of the payload shape.
+// A note the model glued into the path ("/constraints/0/ (budget)") fails, a
+// real field ("/metrics/0/name") holds.
+func ShapePointer(formType FormType, pointer string) bool {
+	pointer = regexp.MustCompile(`\[([^\]]+)\]`).ReplaceAllString(pointer, "/$1")
+	if !strings.HasPrefix(pointer, "/") {
+		return false
+	}
+	return inShape(formType, strings.Split(pointer[1:], "/"))
 }
 
 // payloadMismatch reports a payload that does not fit its form type as a validation

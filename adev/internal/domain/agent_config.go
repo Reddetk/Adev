@@ -12,13 +12,14 @@ const (
 	ProviderOpenAI     Provider = "openai"
 	ProviderOllama     Provider = "ollama"
 	ProviderOpenRouter Provider = "openrouter"
+	ProviderOpencode   Provider = "opencode"
 	ProviderQwen       Provider = "qwen"
 	ProviderDeepSeek   Provider = "deepseek"
 	ProviderArk        Provider = "ark"
 )
 
 var knownProviders = map[Provider]bool{
-	ProviderOpenAI: true, ProviderOllama: true, ProviderOpenRouter: true,
+	ProviderOpenAI: true, ProviderOllama: true, ProviderOpenRouter: true, ProviderOpencode: true,
 	ProviderQwen: true, ProviderDeepSeek: true, ProviderArk: true,
 }
 

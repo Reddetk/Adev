@@ -183,10 +183,14 @@ var brdBannedTerms = []string{"container", "module", "package", "struct", "datab
 func ValidateBRD(brd BRD, status Status) error {
 	var errs []error
 
-	if len(brd.Goals) == 0 {
+	// A draft that waits for operator answers is judged on shape only: the
+	// answers fill the lists, and the completeness gates run when the document
+	// is assembled.
+	waiting := status == StatusDraft && len(brd.OpenGaps) > 0
+	if !waiting && len(brd.Goals) == 0 {
 		errs = append(errs, invalid("goals", "must contain at least one entry"))
 	}
-	if len(brd.Metrics) == 0 {
+	if !waiting && len(brd.Metrics) == 0 {
 		errs = append(errs, invalid("metrics", "must contain at least one entry"))
 	}
 

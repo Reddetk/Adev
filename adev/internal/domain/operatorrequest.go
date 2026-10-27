@@ -6,8 +6,10 @@ type OperatorRequest struct {
 	Pointer    string   `json:"pointer" validate:"required"`
 	Question   string   `json:"question" validate:"required"`
 	Options    []string `json:"options,omitempty"`
-	Blocking   bool     `json:"blocking"`
-	Status     string   `json:"status" validate:"required"`
+	// Format names the input control: choice, number, list or text.
+	Format   string `json:"format,omitempty"`
+	Blocking bool   `json:"blocking"`
+	Status   string `json:"status" validate:"required"`
 }
 
 func (o *OperatorRequest) Validate() error {

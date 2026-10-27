@@ -24,10 +24,10 @@ func ValidateFeasibility(f Feasibility) error {
 		errs = append(errs, invalid("scopeDelta", "must not be empty when verdict is revise"))
 	}
 
-	// TEJ and RAR are alternatives: the operator picks one, and each has its own
-	// gate. A TEJ answers "how much and how long"; a RAR answers "what can stop us".
-	switch f.ReportType {
-	case ReportTEJ:
+	// The greenfield route writes a techno-economic justification: a system that
+	// does not exist yet has no risk register to assess. A change route with a
+	// running baseline can add a risk report later.
+	if f.ReportType == ReportTEJ {
 		for i, option := range f.Options {
 			if option.Cost == nil {
 				errs = append(errs, invalid(fmt.Sprintf("options[%d].cost", i), "is required for a TEJ"))
@@ -36,12 +36,8 @@ func ValidateFeasibility(f Feasibility) error {
 				errs = append(errs, invalid(fmt.Sprintf("options[%d].scheduleDays", i), "is required for a TEJ"))
 			}
 		}
-	case ReportRAR:
-		if len(f.Risks) == 0 {
-			errs = append(errs, invalid("risks", "must contain at least one entry for a RAR"))
-		}
-	default:
-		errs = append(errs, invalid("reportType", fmt.Sprintf("unknown value %q", f.ReportType)))
+	} else {
+		errs = append(errs, invalid("reportType", fmt.Sprintf("unknown value %q; the greenfield route writes a TEJ", f.ReportType)))
 	}
 
 	for i, option := range f.Options {
@@ -223,6 +219,11 @@ func ValidateLLD(l LLD) error {
 			continue
 		}
 		contractIDs[contract.ID] = true
+		// 2.8: container -> layer -> module -> contract is one chain, so a contract
+		// without a moduleRef has no place in the structure.
+		if contract.ModuleRef.FormID == "" {
+			errs = append(errs, invalid(fmt.Sprintf("contracts[%d].moduleRef", i), "is empty"))
+		}
 	}
 
 	// Gate: each contract has at least one happy path and one negative path.

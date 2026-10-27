@@ -12,16 +12,17 @@ import (
 	"github.com/Reddetk/Adev/internal/domain"
 )
 
-// PR3 acceptance: the operator picks TEJ or RAR, so the choice is part of the
-// document and of its shape.
+// PR3 acceptance: the shape carries the report type. The greenfield route was
+// changed to TEJ-only (2026-10 decision), so the RAR choice left the shape.
 func TestPR3FeasibilityCarriesTheReportType(t *testing.T) {
 	shape, err := domain.PayloadShape(domain.TypeFeasibility)
 	require.NoError(t, err)
 
 	assert.Contains(t, shape, "reportType",
-		"the model must see the TEJ/RAR switch in the payload shape")
+		"the model must see the report type in the payload shape")
 	assert.Contains(t, shape, `"tej`)
-	assert.Contains(t, shape, `"rar`)
+	assert.NotContains(t, shape, `"rar`,
+		"the greenfield route writes a TEJ, the RAR branch waits for the change route")
 }
 
 // PR3 acceptance: a TEJ report without a cost estimate does not pass the gate.
@@ -42,8 +43,9 @@ func TestPR3ATEJReportNeedsCostScheduleAndConfidence(t *testing.T) {
 		"a technical and economic justification without the money is not a TEJ")
 }
 
-// PR3 acceptance: a RAR report without a risk register does not pass the gate.
-func TestPR3ARARReportNeedsARiskRegister(t *testing.T) {
+// PR3 acceptance: a greenfield stage writes a TEJ: the system that does not
+// exist yet has no risk register to assess.
+func TestPR3AReportThatIsNotATechnoEconomicJustificationFailsTheGates(t *testing.T) {
 	payload, err := json.Marshal(map[string]any{
 		"reportType": "rar",
 		"options": []any{map[string]any{
@@ -57,8 +59,8 @@ func TestPR3ARARReportNeedsARiskRegister(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.NotEmpty(t, gateFailures(t, domain.TypeFeasibility, payload),
-		"a risk assessment without risks is not a RAR")
+	assert.Contains(t, gateFailures(t, domain.TypeFeasibility, payload), "writes a TEJ",
+		"a greenfield run prices the options, it does not assess risks of a system that does not exist")
 }
 
 // gateFailures runs the payload gates of one form type on a raw payload.

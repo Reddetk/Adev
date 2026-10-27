@@ -3,7 +3,8 @@ import { FormDocument } from './FormDocument';
 import { PipelineGraph, type NodeState } from './PipelineGraph';
 import { QuestionsDashboard } from './QuestionsDashboard';
 import { AgentsDashboard } from './AgentsDashboard';
-import { DocsTab } from './DocsTab';
+import { TargetSystemTab } from './TargetSystemTab';
+import { stageTitle, type PointerChoice } from './api';
 import {
   ApiError,
   createApi,
@@ -14,11 +15,11 @@ import {
   type OperatorRequest,
   type PipelineRow,
   type Plan,
-  type StageOutcome,
+  type RunRow,
   type TargetSystemSummary,
 } from './api';
 
-const PROVIDERS = ['ollama', 'openrouter', 'openai', 'deepseek', 'qwen'];
+const PROVIDERS = ['ollama', 'openrouter', 'opencode', 'openai', 'deepseek', 'qwen'];
 const STAGE_INPUT = '00';
 const ROUTE_GREENFIELD = 'greenfield';
 
@@ -34,7 +35,7 @@ const DOCUMENT_OUTLINE: Record<string, string[]> = {
     'Success measurement',
     'Missing data',
   ],
-  FEASIBILITY: ['Option set', 'Cost and schedule', 'Risk register', 'Recommendation', 'BRD correction'],
+  FEASIBILITY: ['Option set', 'Cost and schedule', 'Recommendation', 'BRD correction'],
   SRS: [
     'Functional requirement',
     'Acceptance scenario',
@@ -134,8 +135,8 @@ type SavedState = {
   request: string;
 };
 
-// View is the tab the operator works in. The dashboard is the home screen.
-type View = 'dashboard' | 'docs' | 'questions' | 'settings';
+// View is the tab the operator works in. The target system overview opens first.
+type View = 'targetsystem' | 'pipeline' | 'settings';
 
 // PipelineChoice is the pipeline the console watches.
 type PipelineChoice = { id: number; stage: string; route: string; status: string };
@@ -185,7 +186,9 @@ export default function App() {
   // An older console stored different tab names: anything unknown opens the dashboard.
   const [view, setView] = useState<View>(() => {
     const restored: string = saved.view ?? '';
-    return restored === 'settings' || restored === 'docs' || restored === 'questions' ? restored : 'dashboard';
+    return restored === 'targetsystem' || restored === 'pipeline' || restored === 'settings'
+      ? restored
+      : 'targetsystem';
   });
   const [request, setRequest] = useState(
     saved.request ?? 'The operator needs a library accounting system for two branches.',
@@ -195,7 +198,7 @@ export default function App() {
   const [formsByType, setFormsByType] = useState<Record<string, FormDetail[]>>({});
   const [opened, setOpened] = useState<FormDetail | null>(null);
   const [rawPayload, setRawPayload] = useState(false);
-  const [outcome, setOutcome] = useState<StageOutcome | null>(null);
+  const [accepted, setAccepted] = useState<RunRow | null>(null);
   const [runError, setRunError] = useState('');
   const [running, setRunning] = useState(false);
   const [questions, setQuestions] = useState<OperatorRequest[]>([]);
@@ -203,6 +206,13 @@ export default function App() {
   const [activitiesLoading, setActivitiesLoading] = useState(true);
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState('');
+  // A question whose pointer names a list with several entries waits for the operator's pick.
+  const [choice, setChoice] = useState<{
+    asked: string;
+    value: unknown;
+    pipelineId: number;
+    choices: PointerChoice[];
+  } | null>(null);
   const [panel, setPanel] = useState<'journal' | 'server'>('journal');
   const [serverLines, setServerLines] = useState<string[]>([]);
 
@@ -261,15 +271,22 @@ export default function App() {
   useEffect(() => {
     void api
       .listTargetSystems()
-      .then((list) => setSystems(list.targetsystems))
+      .then((list) => {
+        setSystems(list.targetsystems);
+        // A saved system that no longer exists would send every request to nothing.
+        if (targetSystemId && !list.targetsystems.some((system) => system.id === targetSystemId)) {
+          const first = list.targetsystems[0];
+          setTargetSystem(first ? { id: first.id } : null);
+        }
+      })
       .catch(() => undefined);
   }, [api, targetSystemId]);
 
   // The dashboard and the document list watch every pipeline, not only the ones of
   // the selected system; the plan and its readiness belong to the system.
   useEffect(() => {
-    if (view === 'settings' || view === 'questions') return;
-    void api.listPipelines().then((list) => setPipelines(list.pipelines)).catch(() => setPipelines([]));
+    if (view === 'settings') return;
+    void refreshPipelines().catch(() => setPipelines([]));
     if (!targetSystemId) {
       setPlan(null);
       return;
@@ -290,31 +307,56 @@ export default function App() {
     ]);
   }, [plan]);
 
-  // The node state comes from the stored forms of the watched pipeline.
+  // The node state comes from the stored forms of the watched pipeline; both the
+  // pipeline view and the target system overview read it.
   useEffect(() => {
-    if (view !== 'dashboard' || !pipelineId) {
+    if (view === 'settings' || !pipelineId) {
       setFormsByType({});
       return;
     }
     void loadPipelineForms(pipelineId);
   }, [api, view, pipelineId, plan]);
 
-  // The dashboard watches for questions while it is open: a model asks and the
-  // stage stops until the operator answers.
+  // The operator questions and the agent board live in the pipeline tab: a model
+  // asks and the stage stops until the operator answers.
   useEffect(() => {
-    if (view !== 'questions') return;
+    if (view !== 'pipeline') return;
     void loadQuestions();
     const timer = window.setInterval(() => void loadQuestions(), 10000);
     return () => window.clearInterval(timer);
   }, [api, view]);
 
-  // The live board of stage runs feeds the dashboard while it is open.
+  // The live board of stage runs feeds the pipeline tab while it is open.
   useEffect(() => {
-    if (view !== 'dashboard') return;
+    if (view !== 'pipeline') return;
     void loadActivities();
     const timer = window.setInterval(() => void loadActivities(), 5000);
     return () => window.clearInterval(timer);
   }, [api, view]);
+
+  // A run ends out of band now: the chain works in the background, so when the
+  // board loses a running id, the forms, the questions and the cursor may all
+  // have moved. One finish can chain several stages; one reload covers them all.
+  const lastRunning = useRef('');
+  useEffect(() => {
+    const ids = activities
+      .filter((item) => item?.status === 'running')
+      .map((item) => item.id)
+      .join(',');
+    const lost = lastRunning.current
+      ? lastRunning.current
+          .split(',')
+          .filter(Boolean)
+          .filter((id) => !ids.split(',').includes(id))
+      : [];
+    lastRunning.current = ids;
+    if (lost.length === 0) return;
+    void refreshPipelines();
+    if (pipelineId) {
+      void loadPipelineForms(pipelineId);
+      void loadQuestions();
+    }
+  }, [activities]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The server log panel polls while it is open: the server writes lines that never
   // reach this browser any other way.
@@ -435,12 +477,26 @@ export default function App() {
     }
   }
 
+  // deletePipeline removes the run for good with its forms, questions and runs. A
+  // running stage refuses it on the server: the operator stops it first.
+  async function deletePipeline(row: PipelineRow) {
+    if (!window.confirm(`Удалить пайплайн #${row.id} вместе с формами и вопросами? Это необратимо.`)) return;
+    try {
+      await api.deletePipeline(row.id);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Пайплайн не удалён');
+      return;
+    }
+    if (pipeline?.id === row.id) setPipeline(null);
+    await refreshPipelines().catch(() => setPipelines([]));
+  }
+
   // choosePipeline switches the console to one run and drops the view of the old one.
   function choosePipeline(row: PipelineRow) {
     setPipeline({ id: row.id, stage: row.currentstage, route: row.route, status: row.status });
     setOpened(null);
     setSelectedStage(null);
-    setOutcome(null);
+    setAccepted(null);
     setInputForm(null);
   }
 
@@ -483,7 +539,7 @@ export default function App() {
 
   function selectStage(stageID: string) {
     setSelectedStage(stageID);
-    setOutcome(null);
+    setAccepted(null);
     setRunError('');
     const stage = plan?.stages.find((item) => item.id === stageID);
     const type = stage?.outputs?.[0];
@@ -511,6 +567,9 @@ export default function App() {
         formType: 'USER_INPUT',
         schemaVersion: 1,
         formVersion: (formsByType.USER_INPUT?.length ?? 0) + 1,
+        previousFormVersion: (formsByType.USER_INPUT?.length ?? 0) > 0
+          ? { formId: `FRM-IN-${pipelineId}`, formType: 'USER_INPUT', formVersion: formsByType.USER_INPUT!.length }
+          : undefined,
         status: 'draft',
         route: ROUTE_GREENFIELD,
         // The stage of an operator form is the em dash, as the registry defines.
@@ -537,30 +596,33 @@ export default function App() {
     }
   }
 
+  // refreshPipelines re-reads the cursor: a chain moves it in the background, and
+  // the shared logic also drops a pipeline the database lost.
+  async function refreshPipelines() {
+    const list = await api.listPipelines().catch(() => null);
+    if (!list) return;
+    const rows = list.pipelines ?? [];
+    setPipelines(rows);
+    setPipeline((previous) => {
+      if (!previous) return previous;
+      const row = rows.find((item) => item.id === previous.id);
+      return row ? { ...previous, stage: row.currentstage, status: row.status } : null;
+    });
+  }
+
   async function runStage(stageID: string) {
     if (!targetSystemId || !pipelineId) return;
     setRunning(true);
     setRunError('');
-    setOutcome(null);
+    setAccepted(null);
     try {
-      const result = await api.runStage(targetSystemId, stageID, pipelineId);
-      setOutcome(result);
-      await loadPipelineForms(pipelineId);
-      // The orchestrator moved the cursor on success: read it again, so the graph
-      // shows the next stage as the current one.
-      const refreshed = await api.listPipelines().catch(() => null);
-      if (refreshed) {
-        setPipelines(refreshed.pipelines);
-        const row = refreshed.pipelines.find((item) => item.id === Number(pipelineId));
-        if (row) {
-          setPipeline((previous) =>
-            previous ? { ...previous, stage: row.currentstage, status: row.status } : previous,
-          );
-        }
-      }
-      // The result of the stage is the form it stored: open it right away.
-      setOpened(result.blocked ? null : await api.form(result.formId, result.formVersion).catch(() => null));
+      const run = await api.runStage(targetSystemId, stageID, pipelineId);
+      // The run is accepted: the chain works in the background now. The board
+      // card, the questions and the forms update themselves from the polls; the
+      // cursor and the documents move on their own when the chain ends.
+      setAccepted(run);
       void loadQuestions();
+      await loadActivities();
     } catch (error) {
       setRunError(`${String(error)}${failureHint(error)}`);
     } finally {
@@ -574,9 +636,18 @@ export default function App() {
   const currentSystem = systems.find((system) => system.id === targetSystemId);
   const openQuestions = questions.filter((question) => question.status !== 'completed').length;
 
-  // Node states: the stored form of the stage output wins over the pipeline cursor.
+  // Node states: the stored form of the stage output wins over the pipeline cursor,
+  // and a running agent wins over both: the stage is visible as working even
+  // before its first form exists.
+  const runningStages = new Set(
+    activities.filter((activity) => activity?.status === 'running').map((activity) => activity.stage),
+  );
   const nodeStates: Record<string, NodeState> = {};
   for (const stage of plan?.stages ?? []) {
+    if (runningStages.has(stage.id)) {
+      nodeStates[stage.id] = 'running';
+      continue;
+    }
     const type = stage.outputs?.[0];
     const versions = type ? formsByType[type] ?? [] : [];
     if (versions.length > 0) {
@@ -592,14 +663,11 @@ export default function App() {
       <header>
         <h1>adev · консоль оператора</h1>
         <div className="tabs">
-          <button className={view === 'dashboard' ? '' : 'ghost'} onClick={() => setView('dashboard')}>
-            Пайплайны
+          <button className={view === 'targetsystem' ? '' : 'ghost'} onClick={() => setView('targetsystem')}>
+            Target System
           </button>
-          <button className={view === 'docs' ? '' : 'ghost'} onClick={() => setView('docs')}>
-            Документы
-          </button>
-          <button className={view === 'questions' ? '' : 'ghost'} onClick={() => setView('questions')}>
-            Вопросы{openQuestions > 0 ? ` · ${openQuestions}` : ''}
+          <button className={view === 'pipeline' ? '' : 'ghost'} onClick={() => setView('pipeline')}>
+            Пайплайн{openQuestions > 0 ? ` · ${openQuestions}` : ''}
           </button>
           <button className={view === 'settings' ? '' : 'ghost'} onClick={() => setView('settings')}>
             Настройки
@@ -616,11 +684,9 @@ export default function App() {
         <div>
           {view === 'settings'
             ? settingsView()
-            : view === 'questions'
-              ? questionsView()
-              : view === 'docs'
-                ? <DocsTab api={api} pipelines={pipelines} />
-                : dashboardView()}
+            : view === 'targetsystem'
+              ? <TargetSystemTab api={api} pipelineId={pipelineId} />
+              : pipelineView()}
         </div>
 
         <details className="console">
@@ -802,7 +868,7 @@ export default function App() {
                 {plan.stages.map((stage) => (
                   <tr key={stage.id}>
                     <td>{stage.id}</td>
-                    <td>{stage.name}</td>
+                    <td>{stageTitle(stage)}</td>
                     <td>{stage.owner}</td>
                     <td className="mono">{(stage.inputs ?? []).join(', ')}</td>
                     <td className="mono">{(stage.outputs ?? []).join(', ')}</td>
@@ -816,12 +882,17 @@ export default function App() {
     );
   }
 
-  async function answerQuestion(pointer: string, value: unknown) {
-    if (!pipeline) return;
-    const form = await api.answerQuestion(pipeline.id, pointer, value).catch((error) => {
-      setQuestionsError(`ответ не принят: ${String(error)}`);
+  // asked is set when the operator picked an entry for a question about a list.
+  async function answerQuestion(pointer: string, value: unknown, questionPipeline: number, asked?: string) {
+    const form = await api.answerQuestion(questionPipeline, pointer, value, asked).catch((error) => {
+      if (!asked && error instanceof ApiError && error.choices.length > 0) {
+        setChoice({ asked: pointer, value, pipelineId: questionPipeline, choices: error.choices });
+      } else {
+        setQuestionsError(`ответ не принят: ${String(error)}`);
+      }
       return null;
     });
+    if (form) setChoice(null);
     await loadQuestions();
     if (pipelineId) await loadPipelineForms(pipelineId);
     // The answer decided the field: the corrected form already passed the gates,
@@ -831,19 +902,39 @@ export default function App() {
     }
   }
 
-  function questionsView() {
-    return (
-      <QuestionsDashboard
-        questions={questions}
-        loading={questionsLoading}
-        error={questionsError}
-        onRefresh={() => void loadQuestions()}
-        onAnswer={(pointer, value) => void answerQuestion(pointer, value)}
-      />
-    );
+  async function deleteOpenedForm() {
+    if (!opened) return;
+    if (!window.confirm(`Удалить документ ${opened.formId} v${opened.formVersion}?`)) return;
+    try {
+      await api.deleteForm(opened.formId);
+      setOpened(null);
+      if (pipelineId) await loadPipelineForms(pipelineId);
+    } catch (error) {
+      setRunError(`не удалось удалить документ: ${String(error)}`);
+    }
   }
 
-  function dashboardView() {
+  async function editOpenedPayload() {
+    if (!opened) return;
+    const raw = window.prompt('Новый payload (JSON):', JSON.stringify(opened.payload));
+    if (raw === null) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      setRunError('невалидный JSON в payload');
+      return;
+    }
+    try {
+      const updated = await api.updateFormPayload(opened.formId, opened.formVersion, parsed);
+      setOpened(updated);
+      if (pipelineId) await loadPipelineForms(pipelineId);
+    } catch (error) {
+      setRunError(`не удалось изменить payload: ${String(error)}`);
+    }
+  }
+
+  function pipelineView() {
     if (!ready) {
       return (
         <Section title="Работа" hint="Нужен target system.">
@@ -865,10 +956,9 @@ export default function App() {
               <button disabled={!configured} onClick={createPipeline}>
                 Создать пайплайн
               </button>
-              {openQuestions > 0 && <button onClick={() => setView('questions')}>Вопросов: {openQuestions}</button>}
             </Actions>
           </div>
-          <span className="hint">{`готовность: ${configured ? 'ready' : 'не готова'}`}</span>
+          <span className="hint">{`готовность: ${configured ? 'ready' : 'не готова'} · пайплайн featureDesign: последовательность агентов, маршрут принадлежит реестру`}</span>
         </div>
 
         <div className="versions">
@@ -882,6 +972,13 @@ export default function App() {
               #{row.id} · система {row.targetsystemid} · {row.status} · стадия {row.currentstage}
             </button>
           ))}
+          {pipelines
+            .filter((row) => row.id === pipeline?.id)
+            .map((row) => (
+              <button key={`delete-${row.id}`} className="ghost" onClick={() => void deletePipeline(row)}>
+                Удалить пайплайн
+              </button>
+            ))}
         </div>
 
         {plan && !configured && (
@@ -902,6 +999,29 @@ export default function App() {
           />
         )}
 
+        <AgentsDashboard
+          api={api}
+          activities={activities}
+          loading={activitiesLoading}
+          documentStatus={documentStatus}
+          onStop={(activity) => {
+            void api
+              .stopAgent(activity.pipelineId, activity.role)
+              .then(() => void loadActivities())
+              .catch((error) => setQuestionsError(`стоп не принят: ${String(error)}`));
+          }}
+        />
+
+        <QuestionsDashboard
+          questions={questions}
+          loading={questionsLoading}
+          error={questionsError}
+          onRefresh={() => void loadQuestions()}
+          onAnswer={(pointer, value, questionPipeline) => void answerQuestion(pointer, value, questionPipeline)}
+          choice={choice}
+          onChoose={(chosen) => choice && void answerQuestion(chosen, choice.value, choice.pipelineId, choice.asked)}
+        />
+
         {hasPipeline && selectedStage ? (
           stagePanel()
         ) : (
@@ -909,12 +1029,6 @@ export default function App() {
             {hasPipeline ? 'Нажмите стадию на схеме — покажу документ, который она создаёт.' : 'Создайте или выберите пайплайн.'}
           </p>
         )}
-
-        <AgentsDashboard
-          activities={activities}
-          loading={activitiesLoading}
-          documentStatus={documentStatus}
-        />
       </>
     );
   }
@@ -930,7 +1044,7 @@ export default function App() {
         <div className="section-head">
           <div>
             <h2>
-              Стадия {stage.id} · {stage.name}
+              Стадия {stage.id} · {stageTitle(stage)}
             </h2>
             <p className="hint">
               владелец: {stage.owner} · вход: {(stage.inputs ?? []).join(', ') || '—'} · выход:{' '}
@@ -981,29 +1095,16 @@ export default function App() {
             <Badge tone="bad">ошибка</Badge> {runError}
           </p>
         )}
-        {outcome && (
+        {accepted && (
           <div className="cards">
             <Card>
-              {outcome.blocked ? (
-                <>
-                  <Badge tone="bad">ждёт ответа</Badge> попыток: {outcome.attempts}
-                  <p className="hint">
-                    Стадия остановлена вопросом: ответьте во вкладке «Вопросы» — ответ запишется в
-                    форму, и стадия продолжится сама.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <Badge tone="ok">done</Badge> {outcome.formId} v{outcome.formVersion} · попыток:{' '}
-                  {outcome.attempts}
-                </>
-              )}
+              <Badge tone="ok">запуск принят</Badge> run #{accepted.id} · стадия {accepted.stage}
+              <p className="hint">
+                Цепочка работает в фоне: обновление страницы и перезапуск сервера её не отменяют.
+                Ход и вызовы к модели — в карточке агента; формы, вопросы и курсор обновятся сами,
+                когда серия попыток закончится.
+              </p>
             </Card>
-            {(outcome.gaps ?? []).map((gap) => (
-              <Card key={gap}>
-                <span className="mono">{gap}</span>
-              </Card>
-            ))}
           </div>
         )}
 
@@ -1035,7 +1136,19 @@ export default function App() {
           );
         })}
 
-        {opened && <FormDocument form={opened} raw={rawPayload} />}
+        {opened && (
+          <>
+            <div className="actions">
+              <button className="ghost" onClick={() => void deleteOpenedForm()}>
+                Удалить документ
+              </button>
+              <button className="ghost" onClick={() => void editOpenedPayload()}>
+                Изменить payload вручную
+              </button>
+            </div>
+            <FormDocument form={opened} raw={rawPayload} />
+          </>
+        )}
       </section>
     );
   }

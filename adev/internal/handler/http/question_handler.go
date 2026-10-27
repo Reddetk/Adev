@@ -2,10 +2,12 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/gorilla/mux"
 
+	"github.com/Reddetk/Adev/internal/domain"
 	"github.com/Reddetk/Adev/internal/usecase"
 )
 
@@ -30,6 +32,8 @@ type AnswerRequest struct {
 	PipelineID int             `json:"pipelineId"`
 	Pointer    string          `json:"pointer"`
 	Value      json.RawMessage `json:"value"`
+	// Asked is the pointer of the question when Pointer is the entry picked from choices.
+	Asked string `json:"asked,omitempty"`
 }
 
 // Answer applies the value to the waiting form and closes the question.
@@ -54,8 +58,19 @@ func (h *QuestionHandler) Answer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	form, err := h.questions.AnswerOnPipeline(r.Context(), body.PipelineID, body.Pointer, body.Value)
+	var form *domain.Form
+	var err error
+	if body.Asked != "" {
+		form, err = h.questions.AnswerChoice(r.Context(), body.PipelineID, body.Asked, body.Pointer, body.Value)
+	} else {
+		form, err = h.questions.AnswerOnPipeline(r.Context(), body.PipelineID, body.Pointer, body.Value)
+	}
 	if err != nil {
+		var ambiguous *usecase.AmbiguousPointerError
+		if errors.As(err, &ambiguous) {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error(), "choices": ambiguous.Choices})
+			return
+		}
 		writeError(w, questionStatus(err), err.Error())
 		return
 	}

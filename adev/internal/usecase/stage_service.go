@@ -17,6 +17,8 @@ var (
 	ErrStageInputMissing = errors.New("a required input form is missing")
 	// ErrAgentNotConfigured reports a stage whose owner has no valid agent config.
 	ErrAgentNotConfigured = errors.New("the agent config of this role is not set")
+	// ErrStageStopped reports a run the operator cancelled mid-flight.
+	ErrStageStopped = errors.New("the run was stopped by the operator")
 )
 
 // StageRequest selects one stage of one pipeline.
@@ -57,6 +59,7 @@ type StageRunRecorder interface {
 // bookkeeping: a failure to record never fails the stage.
 type ModelCallRecorder interface {
 	Save(call *domain.ModelCall) error
+	Update(call *domain.ModelCall) error
 }
 
 // StageService runs one stage: it reads the input forms, asks the model for the
@@ -69,12 +72,12 @@ type StageService struct {
 	modelCalls ModelCallRecorder
 	questions  *QuestionService
 	activities *ActivityService
-	maxTries   int
+	registry   *RegistryService
 }
 
-// NewStageService builds the stage runner. maxTries defaults to three.
+// NewStageService builds the stage runner.
 func NewStageService(forms *FormService, settings *SettingsService, llm LLMFactory, runs StageRunRecorder) *StageService {
-	return &StageService{forms: forms, settings: settings, llm: llm, runs: runs, maxTries: 3}
+	return &StageService{forms: forms, settings: settings, llm: llm, runs: runs}
 }
 
 // WithQuestions attaches the question publisher. A stage without it blocks and
@@ -98,6 +101,13 @@ func (s *StageService) WithModelCalls(calls ModelCallRecorder) *StageService {
 	return s
 }
 
+// WithRegistry attaches the target system registry: a stored HLD proposes its
+// containers, a stored LLD proposes its layers, packages and modules.
+func (s *StageService) WithRegistry(registry *RegistryService) *StageService {
+	s.registry = registry
+	return s
+}
+
 // Run executes one stage and returns its outcome. Every form type of the stage
 // output is its own run: the architect writes the HLD and the ADR as two forms
 // from the same context, and a blocked form stops the stage.
@@ -105,6 +115,15 @@ func (s *StageService) Run(ctx context.Context, request StageRequest) (StageOutc
 	stage, err := domain.StageByID(request.Route, request.StageID)
 	if err != nil {
 		return StageOutcome{}, err
+	}
+
+	// The operator can stop any agent: the run context carries the cancel, and the
+	// attempt loops leave at the next check.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if s.activities != nil {
+		registration := s.activities.RegisterRun(request.PipelineID, string(stage.Owner), cancel)
+		defer s.activities.DropRun(registration)
 	}
 
 	agent, err := s.settings.Agent(ctx, request.TargetSystemID, stage.Owner)
@@ -135,8 +154,16 @@ func (s *StageService) Run(ctx context.Context, request StageRequest) (StageOutc
 			formID, finished, version, previous = input.FormID, nil, input.FormVersion+1, &input
 		}
 		if finished != nil {
-			// The operator answer already made this version valid: the run just confirms it.
 			outcome.FormID, outcome.FormVersion = finished.FormID, finished.FormVersion
+			if finished.Status == domain.StatusWaitingOperator {
+				// The questions from the earlier attempt still wait: the run pauses
+				// again instead of calling the model.
+				outcome.Blocked = true
+				outcome.Gaps = []string{"the draft waits for operator answers"}
+				s.record(ctx, request, stage, "blocked", 0, outcome.Gaps[0])
+				continue
+			}
+			// The operator answer already made this version valid: the run just confirms it.
 			s.record(ctx, request, stage, "done", 0, "")
 			continue
 		}
@@ -150,8 +177,12 @@ func (s *StageService) Run(ctx context.Context, request StageRequest) (StageOutc
 	return outcome, nil
 }
 
-// runForm fills one output form of the stage: up to maxTries model calls, each
-// gate failure goes back to the model, and the last one becomes an operator question.
+// runForm fills one output form of a stage with one model call. Any answer is
+// accepted: a gate mismatch rides on the stored draft as an indicator, and the
+// rerun and the answers are the operator's decisions, so no auto-fix loop burns
+// model calls.
+// shortcut: the mismatch of one run does not reach the prompt of the next run;
+// feed the last run row back when the operator's reruns visibly regress.
 func (s *StageService) runForm(
 	ctx context.Context,
 	request StageRequest,
@@ -165,7 +196,7 @@ func (s *StageService) runForm(
 	version int,
 	previous *domain.Ref,
 ) (StageOutcome, error) {
-	outcome := StageOutcome{Stage: stage.ID}
+	outcome := StageOutcome{Stage: stage.ID, Attempts: 1}
 	shape, err := domain.PayloadShape(output)
 	if err != nil {
 		s.record(ctx, request, stage, "failed", 0, err.Error())
@@ -179,97 +210,124 @@ func (s *StageService) runForm(
 			activity.Finish("failed", "the run stopped before the stage completed")
 		}
 	}()
+	activity.Attempt()
 
-	// problems feeds every earlier failure back to the model, so it does not
-	// regress; the operator sees only the failures of the last attempt.
-	var problems, lastProblems []string
-	var gateFailures, lastGateFailures []domain.ValidationError
-	var form *domain.Form
+	// The BRD is filled in two phases: the first call collects the operator
+	// questions, and every later run assembles the document from the answers
+	// that already stand in the stored draft. The draft belongs to the same
+	// document: a fresh output of a different type starts without it.
+	resume := json.RawMessage(nil)
+	if previous != nil && previous.FormType == output {
+		if prior, err := s.forms.Get(ctx, previous.FormID, previous.FormVersion); err == nil && len(prior.Payload) > 0 {
+			resume = prior.Payload
+		}
+	}
 
-	for attempt := 1; attempt <= s.maxTries; attempt++ {
-		outcome.Attempts = attempt
-		activity.Attempt()
-		lastProblems, lastGateFailures = nil, nil
+	system, user := stagePrompt(stage, output, shape, stageContext, nil)
+	if output == domain.TypeBRD && previous == nil {
+		system, user = promptMessages(questionsInstruction(stage, output), shape, stageContext, nil)
+	}
+	if len(resume) > 0 {
+		user += fmt.Sprintf("\nThe previousDraft holds the draft of this document and the operator answers: keep the answered values and fill only what the answers or the context cover.\n%s\n", resume)
+	}
+	// Record the attempt before the model answers: the dashboard shows the prompt
+	// and the "running" state at once, instead of waiting for the whole call.
+	complete := LLMRequest{Role: agent.Role, System: system, User: user, Files: registryFiles(output)}
+	call := s.startModelCall(request, agent, complete)
+	response, err := client.Complete(ctx, complete)
+	if err != nil {
+		if ctx.Err() != nil {
+			activity.Finish("stopped", "stopped by the operator")
+			s.record(ctx, request, stage, "failed", 1, ErrStageStopped.Error())
+			return StageOutcome{}, ErrStageStopped
+		}
+		activity.Finish("failed", err.Error())
+		s.record(ctx, request, stage, "failed", 1, err.Error())
+		// A call that never answered is on the book, too: the operator sees
+		// the model request that produced the failure.
+		s.finishModelCall(call, LLMResponse{}, nil, []string{err.Error()})
+		return StageOutcome{}, err
+	}
 
-		system, user := stagePrompt(stage, output, shape, stageContext, problems)
-		response, err := client.Complete(ctx, LLMRequest{
-			Role:   agent.Role,
-			System: system,
-			User:   user,
-		})
+	form := s.buildForm(request, stage, refs, output, formID, version, previous)
+	payload := normalizeGapPointers(response.Payload)
+	// A composite document goes out in batches: the skeleton first, then one
+	// call per entry, so no single answer has to carry the whole list.
+	if plans, ok := batchPlans[output]; ok {
+		payload = s.detailBatches(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload)
+	}
+	// The model answers the meaning and loses the wrapper: a question arrives
+	// as a plain string instead of the Text record. Repair the wrapping only;
+	// the gates still judge the values.
+	payload = coercePayload(output, payload)
+	// Unaskable gaps must leave the payload before the gates see it.
+	payload = purgeUnaskableGaps(output, payload)
+	if err := form.SetRawPayload(payload); err != nil {
+		activity.Finish("failed", err.Error())
+		s.record(ctx, request, stage, "failed", 1, err.Error())
+		s.finishModelCall(call, response, payload, []string{err.Error()})
+		return StageOutcome{}, err
+	}
+
+	var mismatch []string
+	if err := s.forms.Submit(ctx, form); err != nil {
+		if !isFormRejection(err) {
+			activity.Finish("failed", err.Error())
+			s.record(ctx, request, stage, "failed", 1, err.Error())
+			s.finishModelCall(call, response, payload, []string{err.Error()})
+			return StageOutcome{}, err
+		}
+		if draftErr := s.forms.SubmitDraft(ctx, form); draftErr != nil {
+			activity.Finish("failed", draftErr.Error())
+			s.record(ctx, request, stage, "failed", 1, draftErr.Error())
+			s.finishModelCall(call, response, payload, []string{draftErr.Error()})
+			return StageOutcome{}, draftErr
+		}
+		mismatch = []string{err.Error()}
+		log.Printf("stage %s: the draft holds a gate mismatch: %v", stage.ID, err)
+	}
+
+	outcome.FormID, outcome.FormVersion = form.FormID, form.FormVersion
+	s.finishModelCall(call, response, payload, mismatch)
+	s.registerObjects(ctx, request, form)
+
+	// The model may have left open gaps: the questions hold the stage until the
+	// operator answers every one of them. They come from the draft even when
+	// its gates failed, so the operator can answer instead of rerunning.
+	reasons := mismatch
+	blocked := len(mismatch) > 0
+	if s.questions != nil && request.PipelineID != "" {
+		pipelineID, _ := strconv.Atoi(request.PipelineID)
+		_, gapBlocked, err := s.questions.PublishGaps(ctx, form, pipelineID)
 		if err != nil {
-			activity.Finish("failed", err.Error())
-			s.record(ctx, request, stage, "failed", attempt, err.Error())
-			return StageOutcome{}, err
+			log.Printf("stage %s pipeline %s: publish gap: %v", stage.ID, request.PipelineID, err)
 		}
-		s.recordModelCall(request, agent, response.Usage)
-
-		form = s.buildForm(request, stage, refs, output, formID, version, previous)
-		payload := normalizeGapPointers(response.Payload)
-		// A composite document goes out in batches: the skeleton first, then one
-		// call per entry, so no single answer has to carry the whole list.
-		if plans, ok := batchPlans[output]; ok {
-			payload = s.detailBatches(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload)
-		}
-		// Gap pointers arrive in whatever syntax the model chose; questions
-		// and answers need JSON Pointers, so they are fixed before storing.
-		if err := form.SetRawPayload(payload); err != nil {
-			problems = append(problems, err.Error())
-			lastProblems = append(lastProblems, err.Error())
-			continue
-		}
-
-		if err := s.forms.Submit(ctx, form); err != nil {
-			if isFormRejection(err) {
-				problems = append(problems, err.Error())
-				lastProblems = append(lastProblems, err.Error())
-				if failure := validationFailure(err); failure != nil {
-					gateFailures = append(gateFailures, *failure)
-					lastGateFailures = append(lastGateFailures, *failure)
-				}
-				continue
+		if gapBlocked {
+			blocked = true
+			reasons = append(reasons, "the draft holds open questions for the operator")
+		} else if blocked {
+			// No gap went out: the gate mismatch itself asks the operator, the
+			// same repair path the answer flow uses.
+			asked, gateErr := s.questions.PublishGate(ctx, form, mismatch, pipelineID)
+			if gateErr != nil {
+				log.Printf("stage %s pipeline %s: publish gate: %v", stage.ID, request.PipelineID, gateErr)
 			}
-			activity.Finish("failed", err.Error())
-			s.record(ctx, request, stage, "failed", attempt, err.Error())
-			return StageOutcome{}, err
-		}
-
-		outcome.FormID, outcome.FormVersion = form.FormID, form.FormVersion
-		s.record(ctx, request, stage, "done", attempt, "")
-
-		// The model filled the gates but may have left open gaps: the questions
-		// hold the stage until the operator answers every one of them.
-		blocked := false
-		if s.questions != nil && request.PipelineID != "" {
-			pipelineID, _ := strconv.Atoi(request.PipelineID)
-			_, blocked, err = s.questions.PublishGaps(ctx, form, pipelineID)
-			if err != nil {
-				log.Printf("stage %s pipeline %s: publish gap: %v", stage.ID, request.PipelineID, err)
+			if asked {
+				reasons = append(reasons, "the draft holds open questions for the operator")
 			}
 		}
-		if blocked {
-			outcome.Blocked = true
-			outcome.Gaps = []string{"the draft holds open questions for the operator"}
-			s.record(ctx, request, stage, "blocked", attempt, "open questions")
-			activity.Finish("blocked", "waiting for the operator answers")
-		} else {
-			// The gates passed and nothing waits for the operator: the document is
-			// accepted, not a draft.
-			s.markValid(ctx, form)
-			activity.Finish("done", "")
-		}
+	}
+	if blocked {
+		outcome.Blocked = true
+		outcome.Gaps = reasons
+		s.record(ctx, request, stage, "blocked", 1, strings.Join(reasons, "; "))
+		activity.Finish("blocked", strings.Join(reasons, "; "))
 		return outcome, nil
 	}
-
-	outcome.Blocked = true
-	// A question that never reached the store leaves the operator with nothing to
-	// answer: the reason belongs in the outcome, not only in the server log.
-	if err := s.publishQuestion(ctx, request, stage, form, lastGateFailures); err != nil {
-		problems = append(problems, "publish question: "+err.Error())
-	}
-	outcome.Gaps = problems
-	s.record(ctx, request, stage, "blocked", s.maxTries, strings.Join(lastProblems, "; "))
-	activity.Finish("blocked", strings.Join(problems, "; "))
+	// Nothing waits for the operator and the gates passed: the document is accepted.
+	s.markValid(ctx, form)
+	s.record(ctx, request, stage, "done", 1, "")
+	activity.Finish("done", "")
 	return outcome, nil
 }
 
@@ -333,6 +391,11 @@ func (s *StageService) nextVersion(ctx context.Context, formID string) (*domain.
 		if latest.Status == domain.StatusValid {
 			return latest, 0, nil, nil
 		}
+		if latest.Status == domain.StatusWaitingOperator {
+			// The stage already waits on the operator: another model call would
+			// only stack a draft over the waiting version and hide its questions.
+			return latest, 0, nil, nil
+		}
 		return nil, latest.FormVersion + 1, &domain.Ref{
 			FormID: latest.FormID, FormType: latest.FormType,
 			FormVersion: latest.FormVersion, Hash: latest.PayloadHash,
@@ -368,29 +431,6 @@ func isFormRejection(err error) bool {
 	return errors.As(err, &validation) || errors.Is(err, domain.ErrNoPayloadGates)
 }
 
-// validationFailure returns the gate failure when the error carries one.
-func validationFailure(err error) *domain.ValidationError {
-	var failure *domain.ValidationError
-	if errors.As(err, &failure) {
-		return failure
-	}
-	return nil
-}
-
-// publishQuestion saves the failed draft and asks the operator about the first
-// gate failure, so the next version of the form can be completed by an answer.
-func (s *StageService) publishQuestion(ctx context.Context, request StageRequest, stage domain.Stage, form *domain.Form, failures []domain.ValidationError) error {
-	if s.questions == nil || form == nil {
-		return nil
-	}
-	pipelineID, _ := strconv.Atoi(request.PipelineID)
-	if err := s.questions.Publish(ctx, form, failures, pipelineID); err != nil {
-		log.Printf("stage %s pipeline %s: publish question: %v", stage.ID, request.PipelineID, err)
-		return err
-	}
-	return nil
-}
-
 func (s *StageService) record(ctx context.Context, request StageRequest, stage domain.Stage, status string, attempts int, lastError string) {
 	// The operator console reads these lines when a stage fails: it is the only place
 	// that shows why the model or a gate refused an attempt.
@@ -410,21 +450,50 @@ func (s *StageService) record(ctx context.Context, request StageRequest, stage d
 	})
 }
 
-// batchPlan names a top-level list of a composite document. With names a companion
-// list whose entries belong to one entry through their ref field: a detail call
-// for one contract writes that contract and its paths.
+// batchPlan names one list of a document. Children name the lists nested inside
+// each entry: every level of nesting is its own model call, so no single answer
+// carries the whole document.
 type batchPlan struct {
-	kind string // the JSON name of the list
-	with string // the JSON name of the companion list, if any
-	ref  string // the field of a companion entry that names its owner
+	kind    string // the JSON name of the list
+	idField string // the JSON name of the field that identifies one entry (default "id")
+	with    string // the JSON name of a companion list at the document root
+	ref     string // the field of a companion entry that names its owner
+	// children lists live inside each entry of this list.
+	children []batchPlan
 }
 
-// batchPlans marks the documents that are filled entry by entry. The skeleton call
-// returns the list; every later call details one entry of it.
+// idFieldOf returns the id field of a plan; the fr, nfr and tasks lists use id.
+func (p batchPlan) idFieldOf() string {
+	if p.idField == "" {
+		return "id"
+	}
+	return p.idField
+}
+
+// batchPlans marks the documents that are filled entry by entry. The skeleton
+// call returns the outline; every later call details one entry of one level.
 var batchPlans = map[domain.FormType][]batchPlan{
 	domain.TypeSRS:      {{kind: "fr"}, {kind: "nfr"}},
 	domain.TypeTaskPlan: {{kind: "tasks"}},
-	domain.TypeLLD:      {{kind: "contracts", with: "paths", ref: "contractRef"}},
+	// The HLD is detailed by one call per container, which writes the aggregates
+	// with their invariants of that container.
+	domain.TypeHLD: {{kind: "containers", idField: "objectId", with: "aggregates", ref: "containerId"}},
+	domain.TypeLLD: {
+		{kind: "containers", idField: "containerId", children: []batchPlan{
+			{kind: "layers", idField: "name", children: []batchPlan{
+				{kind: "packages", idField: "path", children: []batchPlan{
+					{kind: "modules", idField: "objectId"},
+				}},
+			}},
+		}},
+		{kind: "contracts", with: "paths", ref: "contractRef"},
+	},
+}
+
+// alias names the walk from the payload root to one list, level by level.
+type entryLabel struct {
+	plan    batchPlan
+	idValue string
 }
 
 // detailBatches asks the model to fill one entry per call and merges the answers
@@ -432,40 +501,129 @@ var batchPlans = map[domain.FormType][]batchPlan{
 // still judge the document, and the operator sees what is missing.
 // shortcut: openGaps written by a detail call are dropped at the merge; merge them
 // when the detail calls start to ask the operator questions of their own.
+// shortcut: a detail call echoes the whole payload, so a long LLD pays for the
+// full document on every level; answer with the entry only when calls get slow.
 func (s *StageService) detailBatches(ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig, stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage, plans []batchPlan, payload json.RawMessage) json.RawMessage {
+	return s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload, nil)
+}
+
+// detailLevel fills one level of the document: every entry of every plan names a
+// model call, the answer is merged, and the children of the entry go through the
+// same walk on the updated entry.
+func (s *StageService) detailLevel(
+	ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig,
+	stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage,
+	plans []batchPlan, doc json.RawMessage, parents []entryLabel,
+) json.RawMessage {
 	for _, plan := range plans {
-		entries, err := listOf(payload, plan.kind)
+		entries, err := listOf(doc, plan.kind)
 		if err != nil {
 			continue
 		}
-		for _, entry := range entries {
-			id := fieldOf(entry, "id")
+		for index, entry := range entries {
+			id := fieldOf(entry, plan.idFieldOf())
 			if id == "" {
 				continue
 			}
-			instruction := fmt.Sprintf(
-				"You fill the %s form of stage %s. Answer with the payload only. "+
-					"Detail exactly one entry: the %s entry with id %q, now %s. Keep every other entry unchanged.",
-				output, stage.ID, plan.kind, id, entry)
-			if plan.with != "" {
-				instruction += fmt.Sprintf(" Also write the %s entries whose %s is %q.", plan.with, plan.ref, id)
-			}
-			system, user := promptMessages(instruction, shape, stageContext, nil)
-			response, err := client.Complete(ctx, LLMRequest{Role: agent.Role, System: system, User: user})
-			if err != nil {
-				log.Printf("stage %s: detail %s %s: %v", stage.ID, plan.kind, id, err)
+			labels := append(append([]entryLabel{}, parents...), entryLabel{plan: plan, idValue: id})
+			echo := s.detailCall(ctx, request, client, agent, stage, output, shape, stageContext, labels, plan)
+			updated, ok := entryFromEcho(echo, labels)
+			if !ok {
+				log.Printf("stage %s: detail %s %s: the answer does not carry the entry", stage.ID, plan.kind, id)
 				continue
 			}
-			s.recordModelCall(request, agent, response.Usage)
-			merged, err := mergeEntry(payload, response.Payload, plan, id)
-			if err != nil {
-				log.Printf("stage %s: merge %s %s: %v", stage.ID, plan.kind, id, err)
-				continue
+			if plan.with != "" && len(parents) == 0 {
+				// The companion list lives at the document root: the answer merges
+				// beside the entry, the entry itself is set back below.
+				if merged, err := replaceOwned(doc, echo, plan, id); err == nil {
+					doc = merged
+				} else {
+					log.Printf("stage %s: merge %s of %s %s: %v", stage.ID, plan.with, plan.kind, id, err)
+				}
 			}
-			payload = merged
+			if len(plan.children) > 0 {
+				updated = s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plan.children, updated, labels)
+			}
+			entries[index] = updated
+		}
+		doc, err = setList(doc, plan.kind, entries)
+		if err != nil {
+			log.Printf("stage %s: store %s: %v", stage.ID, plan.kind, err)
 		}
 	}
-	return payload
+	return doc
+}
+
+// detailCall runs one model call for one entry of one plan. The labels read like
+// a path from the payload root: "the layers entry named app of the containers
+// entry with containerId c-1".
+func (s *StageService) detailCall(
+	ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig,
+	stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage,
+	labels []entryLabel, plan batchPlan,
+) json.RawMessage {
+	last := labels[len(labels)-1]
+	instruction := fmt.Sprintf(
+		"You fill the %s form of stage %s. Answer with the payload only. Do not add fields. "+
+			"Detail exactly one entry: the %s entry with %s %q, now %s. Keep every other entry unchanged. "+
+			"If the context does not give a concrete value or you are not sure, do not invent it: "+
+			"put one openGaps entry with the question, the pointer of the field it would fill, "+
+			"and the options when it is a choice.",
+		output, stage.ID, plan.kind, plan.idFieldOf(), last.idValue, lastValue(labels))
+	if plan.with != "" {
+		instruction += fmt.Sprintf(" Also write the %s entries whose %s is %q.", plan.with, plan.ref, last.idValue)
+	}
+	for index := len(labels) - 2; index >= 0; index-- {
+		parent := labels[index]
+		instruction += fmt.Sprintf(" The %s entry belongs to the %s entry with %s %q.",
+			plan.kind, parent.plan.kind, parent.plan.idFieldOf(), parent.idValue)
+	}
+	system, user := promptMessages(instruction, shape, stageContext, nil)
+	complete := LLMRequest{Role: agent.Role, System: system, User: user, Files: registryFiles(output)}
+	call := s.startModelCall(request, agent, complete)
+	response, err := client.Complete(ctx, complete)
+	if err != nil {
+		s.finishModelCall(call, LLMResponse{}, nil, []string{err.Error()})
+		log.Printf("stage %s: detail %s %s: %v", stage.ID, plan.kind, last.idValue, err)
+		return nil
+	}
+	s.finishModelCall(call, response, response.Payload, nil)
+	return response.Payload
+}
+
+// lastValue is the full value of the entry id: the root entry uses its id, a
+// nested entry prints the path through its parents.
+func lastValue(labels []entryLabel) string {
+	parts := make([]string, 0, len(labels))
+	for _, label := range labels {
+		parts = append(parts, label.idValue)
+	}
+	return strings.Join(parts, " / ")
+}
+
+// entryFromEcho takes the entry of the walk out of the answer. The answer echoes
+// the payload after the detail, so the walk follows the same labels from the
+// payload root: the root list, then the lists inside each parent entry.
+func entryFromEcho(echo json.RawMessage, labels []entryLabel) (json.RawMessage, bool) {
+	if len(echo) == 0 {
+		return nil, false
+	}
+	doc := echo
+	for index, label := range labels {
+		entries, err := listOf(doc, label.plan.kind)
+		if err != nil {
+			return nil, false
+		}
+		entry, ok := entryByID(entries, label.plan.idFieldOf(), label.idValue)
+		if !ok {
+			return nil, false
+		}
+		if index == len(labels)-1 {
+			return entry, true
+		}
+		doc = entry
+	}
+	return nil, false
 }
 
 func listOf(payload json.RawMessage, kind string) ([]json.RawMessage, error) {
@@ -513,7 +671,7 @@ func replaceEntry(payload, detail json.RawMessage, kind, id string) (json.RawMes
 	if err != nil {
 		return nil, err
 	}
-	detailed, ok := entryByID(details, id)
+	detailed, ok := entryByID(details, "id", id)
 	if !ok {
 		return payload, nil
 	}
@@ -567,13 +725,114 @@ func setList(payload json.RawMessage, kind string, entries []json.RawMessage) (j
 	return json.Marshal(document)
 }
 
-func entryByID(entries []json.RawMessage, id string) (json.RawMessage, bool) {
+func entryByID(entries []json.RawMessage, idField, id string) (json.RawMessage, bool) {
 	for _, entry := range entries {
-		if fieldOf(entry, "id") == id {
+		if fieldOf(entry, idField) == id {
 			return entry, true
 		}
 	}
 	return nil, false
+}
+
+// registerObjects proposes the objects a stored document names: an HLD names its
+// containers, an LLD names the layers, packages and modules of every container.
+// A bookkeeping failure never fails the stage.
+func (s *StageService) registerObjects(ctx context.Context, request StageRequest, form *domain.Form) {
+	if s.registry == nil {
+		return
+	}
+	targetSystemID, err := strconv.ParseInt(form.TargetSystemID, 10, 64)
+	if err != nil {
+		log.Printf("stage %s: registry: bad target system id %q: %v", stageFormID(request.PipelineID, form.Stage, "", false), form.TargetSystemID, err)
+		return
+	}
+	by := domain.Ref{FormID: form.FormID, FormType: form.FormType, FormVersion: form.FormVersion}
+	known, proposalErr := s.proposalsOf(form)
+	if proposalErr != nil {
+		log.Printf("stage %s pipeline %s: registry: %v", form.Stage, request.PipelineID, proposalErr)
+		return
+	}
+	if len(known) == 0 {
+		return
+	}
+	existing, err := s.registry.List(ctx, targetSystemID)
+	if err != nil {
+		log.Printf("stage %s pipeline %s: registry list: %v", form.Stage, request.PipelineID, err)
+		return
+	}
+	seen := map[string]bool{}
+	for _, object := range existing {
+		seen[registryKey(object.Kind, object.ContainerID, object.Name)] = true
+	}
+	for _, proposal := range known {
+		key := registryKey(proposal.Kind, proposal.ContainerID, proposal.Name)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if _, err := s.registry.Propose(ctx, targetSystemID, proposal.Kind, proposal.Name, proposal.Path, proposal.ContainerID, by, proposal.Fields); err != nil {
+			// A duplicate id race stays in the log: the registry entry comes back
+			// with the next version of the document.
+			log.Printf("stage %s pipeline %s: propose %s %s: %v", form.Stage, request.PipelineID, proposal.Kind, proposal.Name, err)
+		}
+	}
+}
+
+// registryKey groups the objects of one container under one key, so a layer
+// named the same does not collapse across containers.
+func registryKey(kind domain.Kind, containerID, name string) string {
+	return string(kind) + "|" + containerID + "|" + name
+}
+
+// proposalsOf extracts the registry objects a document names. The model-chosen
+// objectId stays the name of the object: the documents answer with it, and the
+// map of the target system matches it against the registry entries.
+func (s *StageService) proposalsOf(form *domain.Form) ([]domain.Object, error) {
+	switch form.FormType {
+	case domain.TypeHLD:
+		var payload domain.HLD
+		if err := json.Unmarshal(form.Payload, &payload); err != nil {
+			return nil, fmt.Errorf("read hld: %w", err)
+		}
+		out := make([]domain.Object, 0, len(payload.Containers))
+		for _, container := range payload.Containers {
+			if container.ObjectID == "" {
+				continue
+			}
+			fields := map[string]any{"tech": container.Tech, "boundedContextId": container.BoundedContextID}
+			out = append(out, domain.Object{Kind: domain.KindContainer, Name: container.ObjectID, Fields: fields})
+		}
+		return out, nil
+	case domain.TypeLLD:
+		var payload domain.LLD
+		if err := json.Unmarshal(form.Payload, &payload); err != nil {
+			return nil, fmt.Errorf("read lld: %w", err)
+		}
+		out := make([]domain.Object, 0)
+		for _, container := range payload.Containers {
+			for _, layer := range container.Layers {
+				out = append(out, domain.Object{
+					Kind: domain.KindLayer, Name: string(layer.Name), ContainerID: container.ContainerID,
+				})
+				for _, pkg := range layer.Packages {
+					out = append(out, domain.Object{
+						Kind: domain.KindPackage, Name: pkg.Path, Path: pkg.Path, ContainerID: container.ContainerID,
+					})
+					for _, module := range pkg.Modules {
+						if module.ObjectID == "" && module.Path == "" {
+							continue
+						}
+						out = append(out, domain.Object{
+							Kind: domain.KindModule, Name: module.ObjectID, Path: module.Path, ContainerID: container.ContainerID,
+						})
+					}
+				}
+			}
+		}
+		return out, nil
+	default:
+		return nil, nil
+	}
 }
 
 // markValid accepts a stored form that raised no question. A failure keeps the
@@ -596,24 +855,59 @@ func refOfType(refs []domain.Ref, formType domain.FormType) (domain.Ref, bool) {
 	return domain.Ref{}, false
 }
 
-// recordModelCall stores the tokens and the time of one attempt. The book must
-// never fail a stage: a lost row costs the operator a number, a failed save
-// would cost the form.
-func (s *StageService) recordModelCall(request StageRequest, agent domain.AgentConfig, usage LLMUsage) {
+// recordModelCall stores one attempt as its whole dialogue: tokens and time,
+// which stage and role, the full prompt the agent sent, the raw answer, and the
+// gate verdicts that rejected the draft. The book must never fail a stage: a
+// lost row costs the operator a number, a failed save would cost the form.
+// startModelCall stores a placeholder row before the model answers, so the
+// console shows the prompt and the running state at once. It returns the row id,
+// or 0 when there is no recorder or the save failed.
+func (s *StageService) startModelCall(request StageRequest, agent domain.AgentConfig, req LLMRequest) *domain.ModelCall {
 	if s.modelCalls == nil {
-		return
+		return nil
 	}
 	pipelineID, _ := strconv.Atoi(request.PipelineID)
 	call := &domain.ModelCall{
 		// shortcut: run_id carries the pipeline id: the run table stores no stage
 		// runs yet. Point it at the run row when the recorder is wired.
-		RunID:    pipelineID,
-		Profile:  string(agent.Role),
-		Model:    agent.Model,
-		TokensIn: usage.TokensIn, TokensOut: usage.TokensOut, LatencyMs: usage.LatencyMs,
+		RunID:   pipelineID,
+		Profile: string(agent.Role),
+		Model:   agent.Model,
+		Stage:   request.StageID,
+		// The prompt is stored the way the model read it: system rules first,
+		// then the user message with the context, the previous verdicts and the
+		// attached registry files.
+		Request:  req.System + "\n\n=== USER MESSAGE ===\n\n" + req.UserWithFiles(),
+		Response: "",
 	}
 	if err := s.modelCalls.Save(call); err != nil {
 		log.Printf("stage %s pipeline %s: save model call: %v", request.StageID, request.PipelineID, err)
+		return nil
+	}
+	return call
+}
+
+// finishModelCall fills in the result of an attempt that startModelCall recorded.
+// A zero id means there was no placeholder, so nothing is updated.
+func (s *StageService) finishModelCall(call *domain.ModelCall, response LLMResponse, payload json.RawMessage, problems []string) {
+	if call == nil {
+		return
+	}
+	usage := response.Usage
+	call.TokensIn = usage.TokensIn
+	call.TokensOut = usage.TokensOut
+	call.LatencyMs = usage.LatencyMs
+	call.Response = string(payload)
+	if len(call.Response) == 0 && len(response.Raw) > 0 {
+		// The model answered, but the answer did not survive as JSON: keep its
+		// text, so the operator sees what went wrong instead of an empty row.
+		call.Response = response.Raw
+	}
+	call.Errors = strings.Join(problems, "\n")
+	if err := s.modelCalls.Update(call); err != nil {
+		log.Printf("model call %d: update: %v", call.ID, err)
+	} else {
+		log.Printf("model call %d: updated, response=%d chars", call.ID, len(call.Response))
 	}
 }
 

@@ -32,6 +32,7 @@ type Decision struct {
 // ADR is the set of architecture decisions of the design.
 type ADR struct {
 	Decisions []Decision `json:"decisions"`
+	OpenGaps  []Gap      `json:"openGaps,omitempty"`
 }
 
 // Texts returns every free-text value for the language checker.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/Reddetk/Adev/internal/domain"
@@ -146,6 +147,59 @@ func (m *MemoryFormsStore) SetStatus(ctx context.Context, formID string, version
 		return fmt.Errorf("%w: %s to %s", domain.ErrInvalidStatusChange, form.Status, status)
 	}
 	form.Status = status
+	return nil
+}
+
+// UpdatePayload rewrites the payload of a version that waits for the operator.
+func (m *MemoryFormsStore) UpdatePayload(ctx context.Context, update *domain.Form) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	form, ok := m.forms[update.FormID][update.FormVersion]
+	if !ok {
+		return fmt.Errorf("%w: %s:%d", domain.ErrFormNotFound, update.FormID, update.FormVersion)
+	}
+	if form.Status != domain.StatusWaitingOperator {
+		return fmt.Errorf("%w: %s:%d is not waiting for the operator", domain.ErrInvalidStatusChange, update.FormID, update.FormVersion)
+	}
+	form.Payload = update.Payload
+	form.PayloadHash = update.PayloadHash
+	return nil
+}
+
+// Delete removes one version (version > 0) or every version of the document
+// (version <= 0).
+func (m *MemoryFormsStore) Delete(ctx context.Context, formID string, version int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	versions, ok := m.forms[formID]
+	if !ok || len(versions) == 0 {
+		return fmt.Errorf("%w: %s", domain.ErrFormNotFound, formID)
+	}
+	if version > 0 {
+		if _, ok := versions[version]; !ok {
+			return fmt.Errorf("%w: %s:%d", domain.ErrFormNotFound, formID, version)
+		}
+		delete(versions, version)
+		delete(m.created, formKey(formID, version))
+		if len(versions) == 0 {
+			delete(m.forms, formID)
+		}
+		return nil
+	}
+	delete(m.forms, formID)
+	for key := range m.created {
+		if strings.HasPrefix(key, formID+":") {
+			delete(m.created, key)
+		}
+	}
 	return nil
 }
 

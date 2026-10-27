@@ -27,7 +27,7 @@ type Stage struct {
 var greenfieldStages = []Stage{
 	{ID: "00", Name: "BRD", Owner: RoleAnalyst,
 		Inputs: []FormType{TypeUserInput}, Outputs: []FormType{TypeBRD}},
-	{ID: "01", Name: "Feasibility Study", Owner: RoleAnalyst,
+	{ID: "01", Name: "Techno-Economic Justification", Owner: RoleAnalyst,
 		// The registry names an as-is HLD input, too. Greenfield has no current
 		// architecture, so the route ships without it.
 		Inputs: []FormType{TypeBRD}, Outputs: []FormType{TypeFeasibility, TypeBRD}},

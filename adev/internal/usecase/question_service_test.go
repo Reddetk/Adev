@@ -98,13 +98,13 @@ func TestQuestionRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected request: %+v", question)
 	}
 
-	// The answer completes the field: the next version passes the gates and is valid.
+	// The answer completes the field in place: the draft keeps its version.
 	answer, err := service.AnswerOnPipeline(ctx, 15, "/metrics/0/unit", json.RawMessage(`"hour"`))
 	if err != nil {
 		t.Fatalf("answer: %v", err)
 	}
-	if answer.FormVersion != 2 || answer.PreviousFormVersion == nil {
-		t.Fatalf("the answer must be a new version: %+v", answer.Envelope)
+	if answer.FormVersion != 1 || answer.PreviousFormVersion != nil {
+		t.Fatalf("the answer must stay on the same version: %+v", answer.Envelope)
 	}
 	// The metric still has no target: the next failure becomes the new question.
 	if len(requests.saved) != 2 || requests.saved[1].Pointer != "/metrics/0/target" {
@@ -119,12 +119,12 @@ func TestQuestionRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second answer: %v", err)
 	}
-	if answer.FormVersion != 3 {
-		t.Fatalf("want version 3, got %d", answer.FormVersion)
+	if answer.FormVersion != 1 {
+		t.Fatalf("want version 1, got %d", answer.FormVersion)
 	}
-	stored, err := store.Get(ctx, "FRM-15-00", 3)
+	stored, err := store.Get(ctx, "FRM-15-00", 1)
 	if err != nil {
-		t.Fatalf("get v2: %v", err)
+		t.Fatalf("get v1: %v", err)
 	}
 	if stored.Status != domain.StatusValid {
 		t.Fatalf("want status valid, got %s", stored.Status)
@@ -215,12 +215,12 @@ func TestOpenGapBecomesAnOperatorQuestion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("answer: %v", err)
 	}
-	if answer.FormVersion != 2 {
-		t.Fatalf("want version 2, got %d", answer.FormVersion)
+	if answer.FormVersion != 1 {
+		t.Fatalf("want version 1, got %d", answer.FormVersion)
 	}
-	stored, err := store.Get(ctx, "FRM-15-00", 2)
+	stored, err := store.Get(ctx, "FRM-15-00", 1)
 	if err != nil {
-		t.Fatalf("get v2: %v", err)
+		t.Fatalf("get v1: %v", err)
 	}
 	var corrected domain.BRD
 	if err := stored.BindPayload(&corrected); err != nil {
@@ -240,10 +240,323 @@ func TestOpenGapBecomesAnOperatorQuestion(t *testing.T) {
 	}
 }
 
-// TestAnswerThatBreaksTheShapeKeepsTheVersionWaiting: the operator replaces a list
-// with one sentence. The draft no longer fits the shape and no new question goes
-// out, but the open questions must still find the version: it stays waiting.
-func TestAnswerThatBreaksTheShapeKeepsTheVersionWaiting(t *testing.T) {
+func TestAnswerOnAFieldOfTheOnlyListEntryLands(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), &fakeQuestionRequests{})
+
+	form := &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-20-00", FormType: domain.TypeBRD, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusWaitingOperator, Route: domain.RouteGreenfield, Stage: "00", Mode: domain.ModeFull,
+		PipelineID: "20", TargetSystemID: "23", ProducedBy: domain.RoleAnalyst,
+	}}
+	if err := form.SetRawPayload(json.RawMessage(`{"goals": [], "metrics": [{"id": "12", "name": "ABtests"}], "openGaps": [
+		{"id": "GAP-3", "pointer": "/metrics/unit", "question": {"text": "Which unit?", "lang": "STE100"}}]}`)); err != nil {
+		t.Fatalf("set payload: %v", err)
+	}
+	if err := store.Save(ctx, form); err != nil {
+		t.Fatalf("save draft: %v", err)
+	}
+
+	answered, err := service.AnswerOnPipeline(ctx, 20, "/metrics/unit", json.RawMessage(`"count"`))
+
+	if err != nil {
+		t.Fatalf("a field of the only list entry must land: %v", err)
+	}
+	var payload struct {
+		Metrics []struct {
+			Unit string `json:"unit"`
+		} `json:"metrics"`
+		OpenGaps []json.RawMessage `json:"openGaps"`
+	}
+	if err := json.Unmarshal(answered.Payload, &payload); err != nil {
+		t.Fatalf("decode answered payload: %v", err)
+	}
+	if len(payload.Metrics) != 1 || payload.Metrics[0].Unit != "count" {
+		t.Fatalf("the answer must set metrics[0].unit, got %s", answered.Payload)
+	}
+	if len(payload.OpenGaps) != 0 {
+		t.Fatalf("the answered gap must leave the draft, got %s", answered.Payload)
+	}
+}
+
+func TestAnswerCreatesTheMissingObjectOfAGapPointer(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), &fakeQuestionRequests{})
+
+	form := &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-22-01", FormType: domain.TypeFeasibility, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusWaitingOperator, Route: domain.RouteGreenfield, Stage: "01", Mode: domain.ModeFull,
+		PipelineID: "22", TargetSystemID: "24", ProducedBy: domain.RoleAnalyst,
+	}}
+	if err := form.SetRawPayload(json.RawMessage(`{"options": [{"id": "OPT-01"}], "openGaps": [
+		{"id": "GAP-02", "pointer": "/options/0/cost/amount", "question": {"text": "How much?", "lang": "STE100"}}]}`)); err != nil {
+		t.Fatalf("set payload: %v", err)
+	}
+	if err := store.Save(ctx, form); err != nil {
+		t.Fatalf("save draft: %v", err)
+	}
+
+	answered, err := service.AnswerOnPipeline(ctx, 22, "/options/0/cost/amount", json.RawMessage(`1000`))
+
+	if err != nil {
+		t.Fatalf("a field under a missing object must land: %v", err)
+	}
+	var payload struct {
+		Options []struct {
+			Cost struct {
+				Amount float64 `json:"amount"`
+			} `json:"cost"`
+		} `json:"options"`
+		OpenGaps []json.RawMessage `json:"openGaps"`
+	}
+	if err := json.Unmarshal(answered.Payload, &payload); err != nil {
+		t.Fatalf("decode answered payload: %v", err)
+	}
+	if len(payload.Options) != 1 || payload.Options[0].Cost.Amount != 1000 {
+		t.Fatalf("the answer must set options[0].cost.amount, got %s", answered.Payload)
+	}
+	if len(payload.OpenGaps) != 0 {
+		t.Fatalf("the answered gap must leave the draft, got %s", answered.Payload)
+	}
+}
+
+func TestAnAnswerThatBreaksTheDecodeReturnsTheDraftToTheStage(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), &fakeQuestionRequests{})
+
+	form := &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-24-00", FormType: domain.TypeBRD, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusWaitingOperator, Route: domain.RouteGreenfield, Stage: "00", Mode: domain.ModeFull,
+		PipelineID: "24", TargetSystemID: "26", ProducedBy: domain.RoleAnalyst,
+	}}
+	if err := form.SetRawPayload(json.RawMessage(`{"goals": "a string where the list belongs", "metrics": []}`)); err != nil {
+		t.Fatalf("set payload: %v", err)
+	}
+	if err := store.Save(ctx, form); err != nil {
+		t.Fatalf("save draft: %v", err)
+	}
+
+	if _, err := service.AnswerOnPipeline(ctx, 24, "/goals", json.RawMessage(`"improve user experience"`)); err != nil {
+		t.Fatalf("answer: %v", err)
+	}
+	stored, err := store.Get(ctx, "FRM-24-00", 1)
+	if err != nil {
+		t.Fatalf("get draft: %v", err)
+	}
+	if stored.Status != domain.StatusDraft {
+		t.Fatalf("no question can wake a version that does not decode: want draft so the stage re-runs, got %s", stored.Status)
+	}
+}
+
+func TestAnEntryNamedByItsIDLandsOnItsIndex(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), &fakeQuestionRequests{})
+
+	form := &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-25-01", FormType: domain.TypeFeasibility, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusWaitingOperator, Route: domain.RouteGreenfield, Stage: "01", Mode: domain.ModeFull,
+		PipelineID: "25", TargetSystemID: "27", ProducedBy: domain.RoleAnalyst,
+	}}
+	if err := form.SetRawPayload(json.RawMessage(`{"options": [{"id": "OPT-1"}, {"id": "OPT-2"}], "openGaps": [
+		{"id": "GAP-1", "pointer": "/options/OPT-2/cost/amount", "question": {"text": "How much?", "lang": "STE100"}}]}`)); err != nil {
+		t.Fatalf("set payload: %v", err)
+	}
+	if err := store.Save(ctx, form); err != nil {
+		t.Fatalf("save draft: %v", err)
+	}
+
+	answered, err := service.AnswerOnPipeline(ctx, 25, "/options/OPT-2/cost/amount", json.RawMessage(`1000`))
+	if err != nil {
+		t.Fatalf("an entry named by its id must land: %v", err)
+	}
+	var payload struct {
+		Options []struct {
+			Cost struct {
+				Amount float64 `json:"amount"`
+			} `json:"cost"`
+		} `json:"options"`
+		OpenGaps []json.RawMessage `json:"openGaps"`
+	}
+	if err := json.Unmarshal(answered.Payload, &payload); err != nil {
+		t.Fatalf("decode answered payload: %v", err)
+	}
+	if payload.Options[1].Cost.Amount != 1000 || len(payload.OpenGaps) != 0 {
+		t.Fatalf("the answer must set options[1].cost.amount and close the gap, got %s", answered.Payload)
+	}
+}
+
+func TestAnAnswerToAnObjectPlaceOffersItsFields(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), &fakeQuestionRequests{})
+
+	form := &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-26-01", FormType: domain.TypeFeasibility, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusWaitingOperator, Route: domain.RouteGreenfield, Stage: "01", Mode: domain.ModeFull,
+		PipelineID: "26", TargetSystemID: "28", ProducedBy: domain.RoleAnalyst,
+	}}
+	if err := form.SetRawPayload(json.RawMessage(`{"options": [{"id": "OPT-1"}], "openGaps": [
+		{"id": "GAP-1", "pointer": "/options/0/cost", "question": {"text": "Which currency and amount?", "lang": "STE100"}}]}`)); err != nil {
+		t.Fatalf("set payload: %v", err)
+	}
+	if err := store.Save(ctx, form); err != nil {
+		t.Fatalf("save draft: %v", err)
+	}
+
+	_, err := service.AnswerOnPipeline(ctx, 26, "/options/0/cost", json.RawMessage(`"USD"`))
+	ambiguous, ok := err.(*usecase.AmbiguousPointerError)
+	if !ok || len(ambiguous.Choices) != 2 || ambiguous.Choices[0].Pointer != "/options/0/cost/amount" {
+		t.Fatalf("a text answer to an object must offer its fields, got %v", err)
+	}
+
+	answered, err := service.AnswerChoice(ctx, 26, "/options/0/cost", "/options/0/cost/currency", json.RawMessage(`"USD"`))
+	if err != nil {
+		t.Fatalf("the chosen field must take the answer: %v", err)
+	}
+	var payload struct {
+		Options []struct {
+			Cost struct {
+				Currency string `json:"currency"`
+			} `json:"cost"`
+		} `json:"options"`
+	}
+	if err := json.Unmarshal(answered.Payload, &payload); err != nil {
+		t.Fatalf("decode answered payload: %v", err)
+	}
+	if payload.Options[0].Cost.Currency != "USD" {
+		t.Fatalf("the currency must land on options[0].cost.currency, got %s", answered.Payload)
+	}
+}
+
+func TestAmbiguousPointerOffersTheEntriesAndTheChoiceLands(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), &fakeQuestionRequests{})
+
+	form := &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-23-00", FormType: domain.TypeBRD, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusWaitingOperator, Route: domain.RouteGreenfield, Stage: "00", Mode: domain.ModeFull,
+		PipelineID: "23", TargetSystemID: "25", ProducedBy: domain.RoleAnalyst,
+	}}
+	if err := form.SetRawPayload(json.RawMessage(`{"metrics": [{"id": "M1", "name": "uptime"}, {"id": "M2", "name": "latency"}], "openGaps": [
+		{"id": "GAP-3", "pointer": "/metrics/unit", "question": {"text": "Which unit?", "lang": "STE100"}}]}`)); err != nil {
+		t.Fatalf("set payload: %v", err)
+	}
+	if err := store.Save(ctx, form); err != nil {
+		t.Fatalf("save draft: %v", err)
+	}
+
+	_, err := service.AnswerOnPipeline(ctx, 23, "/metrics/unit", json.RawMessage(`"ms"`))
+	ambiguous, ok := err.(*usecase.AmbiguousPointerError)
+	if !ok || len(ambiguous.Choices) != 2 {
+		t.Fatalf("want the two entries to choose from, got %v", err)
+	}
+	if ambiguous.Choices[1].Pointer != "/metrics/1/unit" || ambiguous.Choices[1].Label != "#1 · latency" {
+		t.Fatalf("want /metrics/1/unit labelled by its name, got %+v", ambiguous.Choices[1])
+	}
+
+	answered, err := service.AnswerChoice(ctx, 23, "/metrics/unit", "/metrics/1/unit", json.RawMessage(`"ms"`))
+	if err != nil {
+		t.Fatalf("the chosen entry must take the answer: %v", err)
+	}
+	var payload struct {
+		Metrics []struct {
+			Unit string `json:"unit"`
+		} `json:"metrics"`
+		OpenGaps []json.RawMessage `json:"openGaps"`
+	}
+	if err := json.Unmarshal(answered.Payload, &payload); err != nil {
+		t.Fatalf("decode answered payload: %v", err)
+	}
+	if payload.Metrics[1].Unit != "ms" || payload.Metrics[0].Unit != "" {
+		t.Fatalf("the unit must land on the chosen entry only, got %s", answered.Payload)
+	}
+	if len(payload.OpenGaps) != 0 {
+		t.Fatalf("the gap asked about /metrics/unit must leave the draft, got %s", answered.Payload)
+	}
+}
+
+func TestAnswerOnAStaleListPointerLandsOnTheFirstEntry(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), &fakeQuestionRequests{})
+
+	form := &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-18-00", FormType: domain.TypeBRD, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusWaitingOperator, Route: domain.RouteGreenfield, Stage: "00", Mode: domain.ModeFull,
+		PipelineID: "18", TargetSystemID: "21", ProducedBy: domain.RoleAnalyst,
+	}}
+	if err := form.SetRawPayload(json.RawMessage(`{"goals": [], "metrics": [], "openGaps": [
+		{"id": "GAP-1", "pointer": "/goals/outcome", "question": {"text": "What market purpose?", "lang": "STE100"}}]}`)); err != nil {
+		t.Fatalf("set payload: %v", err)
+	}
+	if err := store.Save(ctx, form); err != nil {
+		t.Fatalf("save draft: %v", err)
+	}
+
+	answered, err := service.AnswerOnPipeline(ctx, 18, "/goals/outcome", json.RawMessage(`"improve user experience"`))
+
+	if err != nil {
+		t.Fatalf("a stale pointer must still land: %v", err)
+	}
+	var payload struct {
+		Goals []struct {
+			Outcome domain.Text `json:"outcome"`
+		} `json:"goals"`
+		OpenGaps []json.RawMessage `json:"openGaps"`
+	}
+	if err := json.Unmarshal(answered.Payload, &payload); err != nil {
+		t.Fatalf("decode answered payload: %v", err)
+	}
+	if len(payload.Goals) != 1 || payload.Goals[0].Outcome.Value != "improve user experience" {
+		t.Fatalf("the answer must create goals[0].outcome, got %s", answered.Payload)
+	}
+	if len(payload.OpenGaps) != 0 {
+		t.Fatalf("the answered gap must leave the draft, got %s", answered.Payload)
+	}
+}
+
+func TestAnswerOnAListTheModelWroteAsAStringStillLands(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), &fakeQuestionRequests{})
+
+	form := &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-19-00", FormType: domain.TypeBRD, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusWaitingOperator, Route: domain.RouteGreenfield, Stage: "00", Mode: domain.ModeFull,
+		PipelineID: "19", TargetSystemID: "22", ProducedBy: domain.RoleAnalyst,
+	}}
+	if err := form.SetRawPayload(json.RawMessage(`{"goals": "10 user after MVP run", "metrics": [], "openGaps": [
+		{"id": "GAP-1", "pointer": "/goals/outcome", "question": {"text": "What market purpose?", "lang": "STE100"}}]}`)); err != nil {
+		t.Fatalf("set payload: %v", err)
+	}
+	if err := store.Save(ctx, form); err != nil {
+		t.Fatalf("save draft: %v", err)
+	}
+
+	answered, err := service.AnswerOnPipeline(ctx, 19, "/goals/outcome", json.RawMessage(`"improve user experience"`))
+
+	if err != nil {
+		t.Fatalf("the answer must land on a list the model wrote as a string: %v", err)
+	}
+	var payload struct {
+		Goals []struct {
+			Outcome domain.Text `json:"outcome"`
+		} `json:"goals"`
+	}
+	if err := json.Unmarshal(answered.Payload, &payload); err != nil {
+		t.Fatalf("decode answered payload: %v", err)
+	}
+	if len(payload.Goals) != 1 || payload.Goals[0].Outcome.Value != "improve user experience" {
+		t.Fatalf("the answer must create goals[0].outcome, got %s", answered.Payload)
+	}
+}
+
+func TestAnswerThatBreaksTheShapeReturnsTheDraft(t *testing.T) {
 	ctx := context.Background()
 	store := repository.NewMemoryFormsStore()
 	requests := &fakeQuestionRequests{}
@@ -269,12 +582,14 @@ func TestAnswerThatBreaksTheShapeKeepsTheVersionWaiting(t *testing.T) {
 	if _, err := service.Answer(ctx, form, "/scope", json.RawMessage(`"every room"`), 17); err != nil {
 		t.Fatalf("answer: %v", err)
 	}
-	stored, err := store.Get(ctx, "FRM-17-00", 2)
+	stored, err := store.Get(ctx, "FRM-17-00", 1)
 	if err != nil {
-		t.Fatalf("get v2: %v", err)
+		t.Fatalf("get v1: %v", err)
 	}
-	if stored.Status != domain.StatusWaitingOperator {
-		t.Fatalf("a version with open questions must keep waiting, got %s", stored.Status)
+	// The draft no longer decodes and no question can be asked about it: waiting
+	// would hold the stage forever, so the draft goes back for a re-run.
+	if stored.Status != domain.StatusDraft {
+		t.Fatalf("a version no question can wake must return to draft, got %s", stored.Status)
 	}
 	for _, request := range requests.saved {
 		if request.Pointer == "/payload" {
@@ -385,8 +700,8 @@ func TestAnswerLandsOnTheFormThatHoldsThePointer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("answer: %v", err)
 	}
-	if answer.FormID != lld.FormID || answer.FormVersion != 2 {
-		t.Fatalf("the answer must land on the LLD as version 2, got %s v%d", answer.FormID, answer.FormVersion)
+	if answer.FormID != lld.FormID || answer.FormVersion != 1 {
+		t.Fatalf("the answer must land on the LLD in place as version 1, got %s v%d", answer.FormID, answer.FormVersion)
 	}
 	var corrected domain.LLD
 	if err := answer.BindPayload(&corrected); err != nil {

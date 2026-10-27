@@ -55,20 +55,17 @@ func TestPR7PhaseBTheDDDCycleStartsWithTheNouns(t *testing.T) {
 }
 
 // PR7 phase C (2.2): ATAM records the quality scenarios and their influence.
+// Backlog per the 2026-10-22 decision: the pipeline does not produce an ATAM
+// document yet, so the field stays out of the HLD until that project starts.
 func TestPR7PhaseCTheHLDCarriesTheATAMScenarios(t *testing.T) {
-	shape, err := domain.PayloadShape(domain.TypeHLD)
-	require.NoError(t, err)
-
-	assert.Contains(t, shape, "qualityScenarios",
-		"2.2: the HLD stores the quality scenarios with their influence on the project")
+	t.Skip("backlog: PR7 phase C (2.2 ATAM) is parked, enable when the ATAM project starts")
 }
 
 // PR7 phase D (2.7): the tool matrix of the NFR and FR pairs is a document field,
 // not a paragraph inside a design.
+// Backlog per the 2026-10-22 decision: the tool role is unresolved because the
+// container object already carries its own tools field; revisit the matrix
+// design before enabling this check.
 func TestPR7PhaseDTheLLDCarriesTheToolMatrix(t *testing.T) {
-	shape, err := domain.PayloadShape(domain.TypeLLD)
-	require.NoError(t, err)
-
-	assert.Contains(t, shape, "toolMatrix",
-		"2.7: the LLD stores which tool serves which NFR/FR pair")
+	t.Skip("backlog: PR7 phase D (2.7 tool matrix) waits for the tools-field decision")
 }

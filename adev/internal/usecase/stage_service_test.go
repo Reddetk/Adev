@@ -53,7 +53,23 @@ func (r *recordedRuns) Record(_ context.Context, run usecase.StageRun) error {
 type recordedCalls struct{ calls []domain.ModelCall }
 
 func (r *recordedCalls) Save(call *domain.ModelCall) error {
+	call.ID = uint(len(r.calls) + 1)
 	r.calls = append(r.calls, *call)
+	return nil
+}
+
+func (r *recordedCalls) Update(call *domain.ModelCall) error {
+	for i := range r.calls {
+		if r.calls[i].ID == call.ID {
+			// Keep the prompt and identity written by Save; update the result.
+			r.calls[i].TokensIn = call.TokensIn
+			r.calls[i].TokensOut = call.TokensOut
+			r.calls[i].LatencyMs = call.LatencyMs
+			r.calls[i].Response = call.Response
+			r.calls[i].Errors = call.Errors
+			return nil
+		}
+	}
 	return nil
 }
 
@@ -185,7 +201,7 @@ func TestH1Stage00StoresABRDOnTheFirstAttempt(t *testing.T) {
 
 // --- H2 ---------------------------------------------------------------------
 
-func TestH2TheModelGetsTheGateFailureBackAndFixesIt(t *testing.T) {
+func TestH2AMismatchIsStoredAsDraftWithoutARetry(t *testing.T) {
 	fixture := newM2Fixture(t, brdWithoutGoals(), validBRD())
 	fixture.configure(t)
 	fixture.submitUserInput(t, 1)
@@ -193,16 +209,17 @@ func TestH2TheModelGetsTheGateFailureBackAndFixesIt(t *testing.T) {
 	outcome, err := fixture.runStage00(t)
 
 	require.NoError(t, err)
-	assert.False(t, outcome.Blocked)
-	assert.Equal(t, 2, outcome.Attempts)
-	require.Len(t, fixture.llm.requests, 2)
-	assert.NotContains(t, fixture.llm.requests[0].User, "The previous answer failed these gates")
-	assert.Contains(t, fixture.llm.requests[1].User, "The previous answer failed these gates")
-	assert.Contains(t, fixture.llm.requests[1].User, "goals")
+	assert.True(t, outcome.Blocked, "the mismatch waits for the operator")
+	assert.Equal(t, 1, outcome.Attempts)
+	require.Len(t, fixture.llm.requests, 1, "the model is not called again: the operator decides")
 
 	stored, err := fixture.forms.Latest(context.Background(), stageOutput)
 	require.NoError(t, err)
-	assert.Equal(t, 1, stored.FormVersion, "a failed attempt must not store a version")
+	assert.Equal(t, 1, stored.FormVersion)
+	assert.Equal(t, domain.StatusDraft, stored.Status)
+	require.Len(t, fixture.runs.runs, 1)
+	assert.Equal(t, "blocked", fixture.runs.runs[0].Status)
+	assert.Contains(t, fixture.runs.runs[0].LastError, "goals")
 }
 
 func TestTheModelCallOfAnAttemptIsRecorded(t *testing.T) {
@@ -278,7 +295,7 @@ func TestN2AStageWithoutAnAgentConfigStops(t *testing.T) {
 
 // --- N3 ---------------------------------------------------------------------
 
-func TestN3ThreeRejectionsBlockTheStage(t *testing.T) {
+func TestN3AMismatchBlocksTheStageButKeepsTheDraft(t *testing.T) {
 	fixture := newM2Fixture(t, brdWithoutGoals(), brdWithoutGoals(), brdWithoutGoals())
 	fixture.configure(t)
 	fixture.submitUserInput(t, 1)
@@ -287,14 +304,11 @@ func TestN3ThreeRejectionsBlockTheStage(t *testing.T) {
 
 	require.NoError(t, err, "a blocked stage is an outcome, not a crash")
 	assert.True(t, outcome.Blocked)
-	assert.Equal(t, 3, outcome.Attempts)
-	assert.Len(t, outcome.Gaps, 3)
-	_, err = fixture.forms.Latest(context.Background(), stageOutput)
-	assert.ErrorIs(t, err, domain.ErrFormNotFound, "nothing is stored when every attempt fails")
-
-	require.Len(t, fixture.runs.runs, 1)
-	assert.Equal(t, "blocked", fixture.runs.runs[0].Status)
-	assert.Contains(t, fixture.runs.runs[0].LastError, "goals")
+	assert.Len(t, fixture.llm.requests, 1)
+	assert.Len(t, outcome.Gaps, 1)
+	stored, err := fixture.forms.Latest(context.Background(), stageOutput)
+	require.NoError(t, err, "the draft is kept for the operator to read")
+	assert.Equal(t, domain.StatusDraft, stored.Status)
 }
 
 // --- N4 ---------------------------------------------------------------------
@@ -331,45 +345,19 @@ func TestN5AnUnknownStageStops(t *testing.T) {
 
 // --- N6 ---------------------------------------------------------------------
 
-func TestN6ANonJSONPayloadCountsAsARejection(t *testing.T) {
-	notJSON := json.RawMessage(`this is not json`)
-	fixture := newM2Fixture(t, notJSON, notJSON, notJSON)
+func TestN6ANonJSONPayloadFailsTheRunWithoutAStoredForm(t *testing.T) {
+	fixture := newM2Fixture(t, json.RawMessage(`this is not json`))
 	fixture.configure(t)
 	fixture.submitUserInput(t, 1)
 
-	outcome, err := fixture.runStage00(t)
+	_, err := fixture.runStage00(t)
 
-	require.NoError(t, err)
-	assert.True(t, outcome.Blocked)
-	assert.Len(t, outcome.Gaps, 3)
-	assert.True(t, strings.Contains(strings.ToLower(outcome.Gaps[0]), "json"), "the reason must name the encoding problem")
-}
-
-// --- E2 ---------------------------------------------------------------------
-
-func TestE2AValidPayloadOnTheLastAttemptSucceeds(t *testing.T) {
-	fixture := newM2Fixture(t, brdWithoutGoals(), brdWithoutGoals(), validBRD())
-	fixture.configure(t)
-	fixture.submitUserInput(t, 1)
-
-	outcome, err := fixture.runStage00(t)
-
-	require.NoError(t, err)
-	assert.False(t, outcome.Blocked, "the last allowed attempt must not be given up on")
-	assert.Equal(t, 3, outcome.Attempts)
-	assert.Equal(t, 1, outcome.FormVersion)
-
-	require.Len(t, fixture.llm.requests, 3)
-	assert.Equal(t, 2, strings.Count(fixture.llm.requests[2].User, "goals: must contain at least one entry"),
-		"the last attempt must see both earlier failures")
-
-	stored, err := fixture.forms.Latest(context.Background(), stageOutput)
-	require.NoError(t, err)
-	assert.Equal(t, 1, stored.FormVersion)
-
+	require.Error(t, err)
+	assert.True(t, strings.Contains(strings.ToLower(err.Error()), "json"), "the reason must name the encoding problem")
 	require.Len(t, fixture.runs.runs, 1)
-	assert.Equal(t, "done", fixture.runs.runs[0].Status)
-	assert.Equal(t, 3, fixture.runs.runs[0].Attempts)
+	assert.Equal(t, "failed", fixture.runs.runs[0].Status)
+	_, err = fixture.forms.Latest(context.Background(), stageOutput)
+	assert.ErrorIs(t, err, domain.ErrFormNotFound)
 }
 
 // --- E3 ---------------------------------------------------------------------

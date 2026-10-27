@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"context"
 	"sort"
 	"strconv"
 	"sync"
@@ -30,11 +31,21 @@ type Activity struct {
 type ActivityService struct {
 	mu   sync.Mutex
 	book []*Activity
+	// cancels keeps the live cancel handles of running stage runs, so an operator
+	// can stop an agent between attempts.
+	cancels map[cancelKey][]*cancelRegistration
+}
+
+// cancelKey selects the runs of one agent role inside one pipeline. An empty
+// role cancels every role of the pipeline.
+type cancelKey struct {
+	pipelineID string
+	role       string
 }
 
 // NewActivityService builds the activity book.
 func NewActivityService() *ActivityService {
-	return &ActivityService{}
+	return &ActivityService{cancels: map[cancelKey][]*cancelRegistration{}}
 }
 
 // Start registers a running activity and returns its live handle.
@@ -70,6 +81,70 @@ func (a *Activity) Attempt() {
 	a.book.mu.Lock()
 	defer a.book.mu.Unlock()
 	a.Attempts++
+}
+
+// cancelRegistration is one live handle the stage keeps in the book. DropRun
+// removes it by identity: cancel funcs are not comparable values.
+type cancelRegistration struct {
+	key    cancelKey
+	cancel context.CancelFunc
+}
+
+// RegisterRun keeps the cancel handle of one running stage. The caller removes
+// it by deferring DropRun.
+func (s *ActivityService) RegisterRun(pipelineID, role string, cancel context.CancelFunc) *cancelRegistration {
+	if s == nil || cancel == nil {
+		return nil
+	}
+	registration := &cancelRegistration{key: cancelKey{pipelineID, role}, cancel: cancel}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cancels[registration.key] = append(s.cancels[registration.key], registration)
+	return registration
+}
+
+// DropRun forgets one handle the stage registered.
+func (s *ActivityService) DropRun(registration *cancelRegistration) {
+	if s == nil || registration == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.cancels[registration.key][:0]
+	for _, candidate := range s.cancels[registration.key] {
+		if candidate != registration {
+			kept = append(kept, candidate)
+		}
+	}
+	if len(kept) == 0 {
+		delete(s.cancels, registration.key)
+	} else {
+		s.cancels[registration.key] = kept
+	}
+}
+
+// Cancel stops the registered stage runs of one role, or of the whole pipeline
+// when the role is empty. It returns how many runs were cancelled.
+func (s *ActivityService) Cancel(pipelineID, role string) int {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	var stopped []*cancelRegistration
+	for key, registrations := range s.cancels {
+		if key.pipelineID != pipelineID || (role != "" && key.role != role) {
+			continue
+		}
+		for _, registration := range registrations {
+			stopped = append(stopped, registration)
+		}
+		delete(s.cancels, key)
+	}
+	s.mu.Unlock()
+	for _, registration := range stopped {
+		registration.cancel()
+	}
+	return len(stopped)
 }
 
 // Finish marks the activity ended. A finished activity never changes status again.

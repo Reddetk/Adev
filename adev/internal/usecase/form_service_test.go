@@ -41,6 +41,8 @@ func (f *fakeFormStore) ByPipeline(context.Context, string, domain.FormType) ([]
 }
 
 func (f *fakeFormStore) SetStatus(context.Context, string, int, domain.Status) error { return nil }
+func (f *fakeFormStore) UpdatePayload(context.Context, *domain.Form) error           { return nil }
+func (f *fakeFormStore) Delete(context.Context, string, int) error                   { return nil }
 
 type failingChecker struct{}
 

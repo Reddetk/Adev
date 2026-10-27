@@ -1,0 +1,4 @@
+ALTER TABLE model_calls DROP COLUMN IF EXISTS errors;
+ALTER TABLE model_calls DROP COLUMN IF EXISTS response;
+ALTER TABLE model_calls DROP COLUMN IF EXISTS request;
+ALTER TABLE model_calls DROP COLUMN IF EXISTS stage;

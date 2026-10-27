@@ -146,6 +146,22 @@ func (s *FormsStore) ByPipeline(ctx context.Context, pipelineID string, formType
 	return result, rows.Err()
 }
 
+// UpdatePayload rewrites the payload of a version that waits for the operator.
+// An operator answer is a decision on the same draft, not a new version: only a
+// waiting version may change its payload, the database trigger enforces it.
+func (s *FormsStore) UpdatePayload(ctx context.Context, form *domain.Form) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE forms SET payload = $3, payload_hash = $4 WHERE form_id = $1 AND form_version = $2 AND status = 'waiting_operator'`,
+		form.FormID, form.FormVersion, form.Payload, form.PayloadHash)
+	if err != nil {
+		return fmt.Errorf("update payload: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: %s:%d is not waiting for the operator", domain.ErrInvalidStatusChange, form.FormID, form.FormVersion)
+	}
+	return nil
+}
+
 // SetStatus changes the status of one form version.
 func (s *FormsStore) SetStatus(ctx context.Context, formID string, version int, status domain.Status) error {
 	current, err := s.Get(ctx, formID, version)
@@ -164,6 +180,29 @@ func (s *FormsStore) SetStatus(ctx context.Context, formID string, version int, 
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("%w: %s:%d", domain.ErrInvalidStatusChange, formID, version)
+	}
+	return nil
+}
+
+// Delete removes one version (version > 0) or every version of the document
+// (version <= 0).
+func (s *FormsStore) Delete(ctx context.Context, formID string, version int) error {
+	if version > 0 {
+		tag, err := s.pool.Exec(ctx, `DELETE FROM forms WHERE form_id = $1 AND form_version = $2`, formID, version)
+		if err != nil {
+			return fmt.Errorf("delete form: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return fmt.Errorf("%w: %s:%d", domain.ErrFormNotFound, formID, version)
+		}
+		return nil
+	}
+	tag, err := s.pool.Exec(ctx, `DELETE FROM forms WHERE form_id = $1`, formID)
+	if err != nil {
+		return fmt.Errorf("delete form: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: %s", domain.ErrFormNotFound, formID)
 	}
 	return nil
 }

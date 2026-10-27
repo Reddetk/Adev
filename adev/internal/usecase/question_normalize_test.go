@@ -47,6 +47,27 @@ func TestCoerceAnswerShapesTheAnswerLikeTheField(t *testing.T) {
 			want:     `95`,
 		},
 		{
+			name:     "the number inside a sentence wins",
+			formType: domain.TypeBRD,
+			pointer:  "/metrics/0/target",
+			value:    `"1 user"`,
+			want:     `1`,
+		},
+		{
+			name:     "a decimal with a comma lands as a number",
+			formType: domain.TypeBRD,
+			pointer:  "/metrics/0/baseline",
+			value:    `"0,5 users"`,
+			want:     `0.5`,
+		},
+		{
+			name:     "a sentence without a number stays a string, so the shape refuses it",
+			formType: domain.TypeBRD,
+			pointer:  "/metrics/0/target",
+			value:    `"several users"`,
+			want:     `"several users"`,
+		},
+		{
 			name:     "the operator may write the list as JSON",
 			formType: domain.TypeBRD,
 			pointer:  "/scope/in",
