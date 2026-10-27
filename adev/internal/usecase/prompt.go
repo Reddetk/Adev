@@ -51,6 +51,85 @@ func registryFiles(formType domain.FormType) []LLMFile {
 	return []LLMFile{file}
 }
 
+// registryParagraphs names the template paragraphs one detail call reads: the
+// paragraphs of its own list and the gates. The other paragraphs describe lists
+// that this call does not touch.
+// shortcut: only the LLD is mapped; map the other batched pages when their
+// detail calls get slow.
+var registryParagraphs = map[domain.FormType]map[string][]int{
+	domain.TypeLLD: {
+		"containers": {1, 2},
+		"layers":     {1, 2},
+		"packages":   {1, 2},
+		"modules":    {1, 2},
+		"contracts":  {3, 4, 5, 6},
+	},
+}
+
+// registryFileFor returns the registry page of one detail call: the paragraphs
+// of its list and the gates. A page without the numbered template ships whole.
+func registryFileFor(formType domain.FormType, kind string) []LLMFile {
+	file, ok := registryFile(formType)
+	if !ok {
+		return nil
+	}
+	paragraphs, mapped := registryParagraphs[formType][kind]
+	if !mapped {
+		return []LLMFile{file}
+	}
+	focused, ok := keepSections(file.Content, paragraphs)
+	if !ok {
+		return []LLMFile{file}
+	}
+	return []LLMFile{{Name: file.Name, Content: focused}}
+}
+
+// keepSections keeps the numbered template paragraphs and the gates of a
+// registry page: "### Paragraph 3 — Contract" stays for 3, "## Gates" stays
+// always. A page whose paragraphs are not found ships whole.
+func keepSections(page string, paragraphs []int) (string, bool) {
+	keep := map[string]bool{"## Gates": true}
+	for _, number := range paragraphs {
+		keep[fmt.Sprintf("### Paragraph %d", number)] = true
+	}
+	var out, section strings.Builder
+	kept, found := false, false
+	flush := func() {
+		if kept {
+			out.WriteString(section.String())
+		}
+		section.Reset()
+	}
+	for _, line := range strings.Split(page, "\n") {
+		if strings.HasPrefix(line, "### ") || strings.HasPrefix(line, "## ") {
+			flush()
+			key := headingKey(line)
+			kept = keep[key]
+			if kept && key != "## Gates" {
+				found = true
+			}
+		}
+		section.WriteString(line)
+		section.WriteString("\n")
+	}
+	flush()
+	if !found {
+		return page, false
+	}
+	return out.String(), true
+}
+
+// headingKey drops the title of a heading: "### Paragraph 3 - Contract" becomes
+// "### Paragraph 3".
+func headingKey(line string) string {
+	for _, separator := range []string{" - ", " — "} {
+		if prefix, _, ok := strings.Cut(line, separator); ok {
+			return prefix
+		}
+	}
+	return line
+}
+
 // promptMessages composes the two messages of one model call. The adapter only
 // transports them; what an agent sees is decided here.
 func promptMessages(instruction, shape string, context json.RawMessage, problems []string) (system, user string) {
