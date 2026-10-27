@@ -135,6 +135,28 @@ func IsLastStage(route Route, id string) bool {
 	return stages[len(stages)-1].ID == id
 }
 
+// IsAhead reports whether stage comes after cursor in the route order: the
+// operator may run a later stage while the cursor still stands on a blocked one.
+func IsAhead(route Route, cursor, stage string) bool {
+	if cursor == stage {
+		return false
+	}
+	stages, err := Stages(route)
+	if err != nil {
+		return false
+	}
+	cursorIdx, stageIdx := -1, -1
+	for index, s := range stages {
+		if s.ID == cursor {
+			cursorIdx = index
+		}
+		if s.ID == stage {
+			stageIdx = index
+		}
+	}
+	return cursorIdx >= 0 && stageIdx > cursorIdx
+}
+
 // Roles returns the distinct owner roles of the stages, in stage order.
 func Roles(stages []Stage) []Role {
 	seen := map[Role]bool{}

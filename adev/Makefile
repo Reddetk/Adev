@@ -51,6 +51,8 @@ help:
 	@echo   make tools            install migrate, golangci-lint, gosec, swag
 	@echo   make build            build bin/$(APP_NAME), version $(VERSION)
 	@echo   make run              run the server with the .env settings
+	@echo   make stop             stop the running server
+	@echo   make restart          stop the server and run it again
 	@echo   make ci               vet + unit tests, the unit CI job in one command
 	@echo   make test             run all tests
 	@echo   make test-race        run all tests with the race detector, needs cgo
@@ -129,6 +131,13 @@ tag:
 
 run:
 	go run .\cmd\server\main.go
+
+# go run names the process main; a built binary names it adev.
+stop:
+	@powershell -NoProfile -Command "Get-Process main,$(APP_NAME) -ErrorAction SilentlyContinue | Stop-Process -Force; exit 0"
+
+restart: stop
+	$(MAKE) run
 
 test:
 	go test ./...

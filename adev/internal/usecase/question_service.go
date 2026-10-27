@@ -51,6 +51,8 @@ func (s *QuestionService) PublishGaps(ctx context.Context, form *domain.Form, pi
 	if s.requests == nil || form == nil {
 		return false, false, nil
 	}
+	// Questions whose document can no longer take an answer leave the dashboard.
+	s.CloseStale(ctx, pipelineID)
 	for _, position := range form.Gaps() {
 		gap := position.Gap
 		if gap.Question.Value == "" {
@@ -899,6 +901,11 @@ func toJSONPointer(p string) string {
 			b.WriteString("/" + name)
 		}
 		if idx != "" {
+			// The model names a list entry by its id: contracts[id=CTR-A] reads
+			// like contracts[0], and entryIDs resolves the id to the slot.
+			if id, ok := strings.CutPrefix(idx, "id="); ok {
+				idx = strings.Trim(id, `"'`)
+			}
 			b.WriteString("/" + idx)
 		}
 	}
@@ -954,6 +961,8 @@ func (s *QuestionService) answerOnPipeline(ctx context.Context, pipelineID int, 
 	asked = normalizePointer(asked)
 	pointer = normalizePointer(pointer)
 	pipeline := strconv.Itoa(pipelineID)
+	// An answer to a dead question dismisses it instead of failing forever.
+	s.CloseStale(ctx, pipelineID)
 	waiting := false
 	var choices []PointerChoice
 	for _, formType := range domain.FormTypesWithGates() {
@@ -1084,6 +1093,56 @@ func (s *QuestionService) closeRequests(ctx context.Context, pipelineID int, poi
 		if normalizePointer(request.Pointer) == pointer && request.PipelineID == pipelineID && request.Status == "active" {
 			request.Status = "completed"
 			_ = s.requests.Update(request)
+		}
+	}
+}
+
+// waitingForm returns the version an answer to pointer would land on, or nil
+// when no version can take it: the answer lookup skips a document type whose
+// newest version already passed the gates, and a request for such a document
+// can never be answered again.
+func (s *QuestionService) waitingForm(ctx context.Context, pipelineID int, pointer string) *domain.Form {
+	pipeline := strconv.Itoa(pipelineID)
+	for _, formType := range domain.FormTypesWithGates() {
+		versions, err := s.forms.ByPipeline(ctx, pipeline, formType)
+		if err != nil || len(versions) == 0 {
+			continue
+		}
+		if last := versions[len(versions)-1]; last.Status == domain.StatusValid || last.Status == domain.StatusApproved {
+			continue
+		}
+		for i := len(versions) - 1; i >= 0; i-- {
+			if versions[i].Status == domain.StatusWaitingOperator {
+				payload, slot := prepareSlot(versions[i].FormType, versions[i].Payload, pointer)
+				if domain.Patchable(versions[i].FormType, payload, slot) {
+					return versions[i]
+				}
+				break
+			}
+		}
+	}
+	return nil
+}
+
+// CloseStale closes active requests no answer can ever reach, so the dashboard
+// holds only the questions that still wait for the operator. It runs before the
+// gap publication, where a stage run or an answer touches the service anyway.
+func (s *QuestionService) CloseStale(ctx context.Context, pipelineID int) {
+	if s.requests == nil || s.forms == nil {
+		return
+	}
+	all, err := s.requests.FindAll()
+	if err != nil {
+		return
+	}
+	for i := range all {
+		request := all[i]
+		if request.PipelineID != pipelineID || request.Status != "active" {
+			continue
+		}
+		if s.waitingForm(ctx, pipelineID, normalizePointer(request.Pointer)) == nil {
+			log.Printf("question pipeline %d: request %d points nowhere answerable (%s), closed", pipelineID, request.ID, request.Pointer)
+			s.closeRequests(ctx, pipelineID, request.Pointer)
 		}
 	}
 }
