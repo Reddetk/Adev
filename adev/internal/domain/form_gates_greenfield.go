@@ -196,11 +196,19 @@ func ValidateLLD(l LLD) error {
 		if c.ContainerID == "" {
 			errs = append(errs, invalid(fmt.Sprintf("containers[%d].containerId", ci), "is empty"))
 		}
+		// A container without a layer and a layer without a package carry no code:
+		// the layout is a structural hole, not a value the operator can answer.
+		if len(c.Layers) == 0 {
+			errs = append(errs, invalid(fmt.Sprintf("containers[%d].layers", ci), "at least one layer is required"))
+		}
 		for li, layer := range c.Layers {
 			switch layer.Name {
 			case LayerAdapter, LayerDomain, LayerApp, LayerInfra:
 			default:
 				errs = append(errs, invalid(fmt.Sprintf("containers[%d].layers[%d].name", ci, li), fmt.Sprintf("unknown value %q", layer.Name)))
+			}
+			if len(layer.Packages) == 0 {
+				errs = append(errs, invalid(fmt.Sprintf("containers[%d].layers[%d].packages", ci, li), "at least one package is required"))
 			}
 			for pi, pkg := range layer.Packages {
 				for mi, module := range pkg.Modules {
@@ -264,8 +272,11 @@ func ValidateLLD(l LLD) error {
 		}
 	}
 	for i, event := range l.EventMaps {
-		if event.IdempotencyKey == "" || event.Ordering == "" {
-			errs = append(errs, invalid(fmt.Sprintf("eventMaps[%d]", i), "idempotencyKey and ordering must be non-empty"))
+		if event.IdempotencyKey == "" {
+			errs = append(errs, invalid(fmt.Sprintf("eventMaps[%d].idempotencyKey", i), "is empty"))
+		}
+		if event.Ordering == "" {
+			errs = append(errs, invalid(fmt.Sprintf("eventMaps[%d].ordering", i), "is empty"))
 		}
 	}
 	return errors.Join(errs...)

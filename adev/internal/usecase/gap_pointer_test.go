@@ -3,6 +3,8 @@ package usecase
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/Reddetk/Adev/internal/domain"
 )
 
 func TestToJSONPointer(t *testing.T) {
@@ -71,5 +73,54 @@ func TestNormalizeGapPointers(t *testing.T) {
 	}
 	if doc.Gaps[2].Pointer != "/metrics/0/baseline" {
 		t.Errorf("root /payload segment not dropped: %q", doc.Gaps[2].Pointer)
+	}
+}
+
+// TestPurgeKeepsOnlyValueGaps: the operator answers one value. A gap that names a
+// whole list or a layer record is a structural hole for the next run, so the purge
+// leaves only the scalar field. The LLD gaps reader has to see the payload for
+// the purge to work at all.
+func TestPurgeKeepsOnlyValueGaps(t *testing.T) {
+	payload := json.RawMessage(`{
+		"containers": [{"containerId": "C-1", "layers": [{"name": "app"}]}],
+		"contracts": [], "paths": [],
+		"openGaps": [
+			{"id": "G1", "pointer": "/containers/0/layers/0/name", "question": {"text": "Which layer?", "lang": "STE100"}},
+			{"id": "G2", "pointer": "/containers/0/layers", "question": {"text": "Which layers?", "lang": "STE100"}},
+			{"id": "G3", "pointer": "/containers/0/layers/0", "question": {"text": "Describe the layer", "lang": "STE100"}},
+			{"id": "G4", "pointer": "/paths", "question": {"text": "Which paths?", "lang": "STE100"}}
+		]
+	}`)
+
+	purged := purgeUnaskableGaps(domain.TypeLLD, payload)
+
+	var doc struct {
+		Gaps []struct {
+			ID string `json:"id"`
+		} `json:"openGaps"`
+	}
+	if err := json.Unmarshal(purged, &doc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(doc.Gaps) != 1 || doc.Gaps[0].ID != "G1" {
+		t.Fatalf("want only the value gap G1, got %+v", doc.Gaps)
+	}
+}
+
+// TestStructuralGateFailureAsksNothing: a gate finding about a whole list is the
+// next run's job. Only the finding that names one value becomes a question, or the
+// operator receives a card no answer can close.
+func TestStructuralGateFailureAsksNothing(t *testing.T) {
+	payload := json.RawMessage(`{"containers":[{"containerId":"C-1","layers":[{"name":"app"}]}],"contracts":[],"paths":[]}`)
+	failures := []domain.ValidationError{
+		{Field: "containers[0].layers", Problem: "at least one layer is required"},
+		{Field: "containers[0].layers[0].packages", Problem: "at least one package is required"},
+		{Field: "containers[0].layers[0].name", Problem: `unknown value ""`},
+	}
+
+	got := valueFailures(domain.TypeLLD, payload, failures)
+
+	if len(got) != 1 || got[0].Field != "containers[0].layers[0].name" {
+		t.Fatalf("want only the value finding, got %+v", got)
 	}
 }

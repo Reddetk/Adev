@@ -255,6 +255,9 @@ func (s *StageService) runForm(
 	// call per entry, so no single answer has to carry the whole list.
 	if plans, ok := batchPlans[output]; ok {
 		payload = s.detailBatches(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload)
+		// The detail calls ask their own questions: their pointers read like the
+		// payload root and take the same normalization as the skeleton.
+		payload = normalizeGapPointers(payload)
 	}
 	// The model answers the meaning and loses the wrapper: a question arrives
 	// as a plain string instead of the Text record. Repair the wrapping only;
@@ -270,6 +273,7 @@ func (s *StageService) runForm(
 	}
 
 	var mismatch []string
+	var failures []domain.ValidationError
 	if err := s.forms.Submit(ctx, form); err != nil {
 		if !isFormRejection(err) {
 			activity.Finish("failed", err.Error())
@@ -284,6 +288,7 @@ func (s *StageService) runForm(
 			return StageOutcome{}, draftErr
 		}
 		mismatch = []string{err.Error()}
+		failures = collectFailures(err)
 		log.Printf("stage %s: the draft holds a gate mismatch: %v", stage.ID, err)
 	}
 
@@ -308,7 +313,7 @@ func (s *StageService) runForm(
 		} else if blocked {
 			// No gap went out: the gate mismatch itself asks the operator, the
 			// same repair path the answer flow uses.
-			asked, gateErr := s.questions.PublishGate(ctx, form, mismatch, pipelineID)
+			asked, gateErr := s.questions.PublishGate(ctx, form, failures, pipelineID)
 			if gateErr != nil {
 				log.Printf("stage %s pipeline %s: publish gate: %v", stage.ID, request.PipelineID, gateErr)
 			}
@@ -499,21 +504,20 @@ type entryLabel struct {
 // detailBatches asks the model to fill one entry per call and merges the answers
 // back into the skeleton. A failed detail call keeps the skeleton entry: the gates
 // still judge the document, and the operator sees what is missing.
-// shortcut: openGaps written by a detail call are dropped at the merge; merge them
-// when the detail calls start to ask the operator questions of their own.
-// shortcut: a detail call echoes the whole payload, so a long LLD pays for the
-// full document on every level; answer with the entry only when calls get slow.
 func (s *StageService) detailBatches(ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig, stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage, plans []batchPlan, payload json.RawMessage) json.RawMessage {
-	return s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload, nil)
+	var gaps []json.RawMessage
+	filled := s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload, "", nil, &gaps)
+	return mergeDetailGaps(filled, gaps)
 }
 
 // detailLevel fills one level of the document: every entry of every plan names a
 // model call, the answer is merged, and the children of the entry go through the
-// same walk on the updated entry.
+// same walk on the updated entry. basePath is the absolute pointer of the entry
+// the walk stands in, so a gap of a detail answer lands where the entry lives.
 func (s *StageService) detailLevel(
 	ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig,
 	stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage,
-	plans []batchPlan, doc json.RawMessage, parents []entryLabel,
+	plans []batchPlan, doc json.RawMessage, basePath string, parents []entryLabel, gaps *[]json.RawMessage,
 ) json.RawMessage {
 	for _, plan := range plans {
 		entries, err := listOf(doc, plan.kind)
@@ -525,13 +529,15 @@ func (s *StageService) detailLevel(
 			if id == "" {
 				continue
 			}
+			entryPath := basePath + "/" + plan.kind + "/" + strconv.Itoa(index)
 			labels := append(append([]entryLabel{}, parents...), entryLabel{plan: plan, idValue: id})
-			echo := s.detailCall(ctx, request, client, agent, stage, output, shape, stageContext, labels, plan)
+			echo := s.detailCall(ctx, request, client, agent, stage, output, shape, stageContext, labels, entry, plan)
 			updated, ok := entryFromEcho(echo, labels)
 			if !ok {
 				log.Printf("stage %s: detail %s %s: the answer does not carry the entry", stage.ID, plan.kind, id)
 				continue
 			}
+			*gaps = append(*gaps, detailGaps(echo, entryPath)...)
 			if plan.with != "" && len(parents) == 0 {
 				// The companion list lives at the document root: the answer merges
 				// beside the entry, the entry itself is set back below.
@@ -542,7 +548,7 @@ func (s *StageService) detailLevel(
 				}
 			}
 			if len(plan.children) > 0 {
-				updated = s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plan.children, updated, labels)
+				updated = s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plan.children, updated, entryPath, labels, gaps)
 			}
 			entries[index] = updated
 		}
@@ -560,26 +566,30 @@ func (s *StageService) detailLevel(
 func (s *StageService) detailCall(
 	ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig,
 	stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage,
-	labels []entryLabel, plan batchPlan,
+	labels []entryLabel, entry json.RawMessage, plan batchPlan,
 ) json.RawMessage {
 	last := labels[len(labels)-1]
 	instruction := fmt.Sprintf(
-		"You fill the %s form of stage %s. Answer with the payload only. Do not add fields. "+
-			"Detail exactly one entry: the %s entry with %s %q, now %s. Keep every other entry unchanged. "+
+		"You fill the %s form of stage %s. Answer with one JSON object only. Do not add fields. "+
+			"Detail exactly one entry: the %s entry with %s %q, now %s. "+
+			"The entry now holds: %s. "+
+			"Put the filled entry under the key \"entry\". "+
 			"If the context does not give a concrete value or you are not sure, do not invent it: "+
-			"put one openGaps entry with the question, the pointer of the field it would fill, "+
-			"and the options when it is a choice.",
-		output, stage.ID, plan.kind, plan.idFieldOf(), last.idValue, lastValue(labels))
+			"put one openGaps entry at the answer root with the question, the field of this entry it would fill "+
+			"(relative to the entry, for example modules[0].path), and the options when it is a choice.",
+		output, stage.ID, plan.kind, plan.idFieldOf(), last.idValue, lastValue(labels), entry)
 	if plan.with != "" {
-		instruction += fmt.Sprintf(" Also write the %s entries whose %s is %q.", plan.with, plan.ref, last.idValue)
+		instruction += fmt.Sprintf(" Put the %s entries whose %s is %q under the key %q.",
+			plan.with, plan.ref, last.idValue, plan.with)
 	}
 	for index := len(labels) - 2; index >= 0; index-- {
 		parent := labels[index]
 		instruction += fmt.Sprintf(" The %s entry belongs to the %s entry with %s %q.",
 			plan.kind, parent.plan.kind, parent.plan.idFieldOf(), parent.idValue)
 	}
-	system, user := promptMessages(instruction, shape, stageContext, nil)
-	complete := LLMRequest{Role: agent.Role, System: system, User: user, Files: registryFiles(output)}
+	context := focusContext(output, stageContext, labels, entry)
+	system, user := promptMessages(instruction, shape, context, nil)
+	complete := LLMRequest{Role: agent.Role, System: system, User: user, Files: registryFileFor(output, plan.kind)}
 	call := s.startModelCall(request, agent, complete)
 	response, err := client.Complete(ctx, complete)
 	if err != nil {
@@ -607,6 +617,14 @@ func lastValue(labels []entryLabel) string {
 func entryFromEcho(echo json.RawMessage, labels []entryLabel) (json.RawMessage, bool) {
 	if len(echo) == 0 {
 		return nil, false
+	}
+	// A detail call answers the entry alone under the key "entry"; the walk below
+	// stays for an answer that echoes the whole payload.
+	var answer map[string]json.RawMessage
+	if err := json.Unmarshal(echo, &answer); err == nil {
+		if entry, ok := answer["entry"]; ok {
+			return entry, true
+		}
 	}
 	doc := echo
 	for index, label := range labels {
@@ -710,6 +728,84 @@ func replaceOwned(payload, detail json.RawMessage, plan batchPlan, id string) (j
 		}
 	}
 	return setList(payload, plan.with, kept)
+}
+
+// detailGaps returns the questions one detail call asked, each with the absolute
+// pointer of the entry it belongs to. The model names a field of its own entry;
+// only the walk knows where that entry sits in the payload.
+func detailGaps(echo json.RawMessage, entryPath string) []json.RawMessage {
+	var answer map[string]json.RawMessage
+	if err := json.Unmarshal(echo, &answer); err != nil {
+		return nil
+	}
+	var gaps []map[string]any
+	if err := json.Unmarshal(answer["openGaps"], &gaps); err != nil || len(gaps) == 0 {
+		return nil
+	}
+	kept := make([]json.RawMessage, 0, len(gaps))
+	for _, gap := range gaps {
+		field, _ := gap["field"].(string)
+		if field == "" {
+			field, _ = gap["pointer"].(string)
+		}
+		pointer := gapPointer(entryPath, field)
+		if pointer == "" {
+			log.Printf("detail gap of %s without a field, dropped", entryPath)
+			continue
+		}
+		gap["pointer"] = pointer
+		delete(gap, "field")
+		encoded, err := json.Marshal(gap)
+		if err != nil {
+			continue
+		}
+		kept = append(kept, encoded)
+	}
+	return kept
+}
+
+// mergeDetailGaps puts the questions of every detail call beside the skeleton
+// gaps: one openGaps list at the document root is what the gates and the
+// operator read.
+func mergeDetailGaps(doc json.RawMessage, gaps []json.RawMessage) json.RawMessage {
+	if len(gaps) == 0 {
+		return doc
+	}
+	existing, _ := listOf(doc, "openGaps")
+	merged, err := setList(doc, "openGaps", append(existing, gaps...))
+	if err != nil {
+		return doc
+	}
+	return merged
+}
+
+// gapPointer turns the field a detail answer names into an absolute JSON Pointer.
+// A field relative to the entry gets the entry path; a path the model wrote from
+// the payload root keeps it. An empty field names no slot and is dropped.
+func gapPointer(entryPath, field string) string {
+	field = strings.TrimSpace(field)
+	for _, prefix := range []string{"entry.", "/entry/", "$.", "payload.", "/payload/"} {
+		field = strings.TrimPrefix(field, prefix)
+	}
+	pointer := normalizePointer(field)
+	if !strings.HasPrefix(pointer, "/") {
+		return ""
+	}
+	if entryPath == "" || isPayloadRoot(pointer) {
+		return pointer
+	}
+	return entryPath + pointer
+}
+
+// isPayloadRoot reports whether the pointer already starts at a root list of the
+// payload, so the entry path must not be glued in front of it.
+func isPayloadRoot(pointer string) bool {
+	root, _, _ := strings.Cut(strings.TrimPrefix(pointer, "/"), "/")
+	switch root {
+	case "containers", "contracts", "paths", "eventMaps", "adrRefs", "openGaps":
+		return true
+	}
+	return false
 }
 
 func setList(payload json.RawMessage, kind string, entries []json.RawMessage) (json.RawMessage, error) {

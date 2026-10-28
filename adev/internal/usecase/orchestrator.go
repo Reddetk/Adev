@@ -64,8 +64,13 @@ func (o *Orchestrator) Run(ctx context.Context, request StageRequest) (StageOutc
 		// The cursor already stands on the next stage: an earlier run moved it
 		// before the operator finished answering. The chain continues from there.
 	default:
-		// A stale stage finished behind the cursor; the pipeline is already further.
-		return outcome, nil
+		// The cursor lags behind on a blocked stage while the operator ran a
+		// later one: catch up only when the finished stage really lies ahead.
+		if !domain.IsAhead(request.Route, pipeline.CurrentStage, request.StageID) {
+			return outcome, nil
+		}
+		pipeline.CurrentStage = next.ID
+		_ = o.pipelines.Update(pipeline)
 	}
 	// The next stage of the route runs right away; it ends the chain itself when
 	// it asks the operator questions or the readiness check stops it.
