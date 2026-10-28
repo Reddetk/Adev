@@ -42,7 +42,7 @@ func TestDetailOfOneLayerKeepsTheOtherLayers(t *testing.T) {
 	merged := stages.detailLevel(
 		context.Background(), StageRequest{}, &calledLLM{next: respond}, domain.AgentConfig{},
 		domain.Stage{ID: "05"}, "", "{}", json.RawMessage(`{}`),
-		[]batchPlan{batchPlans[domain.TypeLLD][0]}, payload, nil,
+		[]batchPlan{batchPlans[domain.TypeLLD][0]}, payload, "", nil, new([]json.RawMessage),
 	)
 
 	var doc struct {

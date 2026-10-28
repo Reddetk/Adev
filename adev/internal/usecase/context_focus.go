@@ -7,11 +7,11 @@ import (
 )
 
 // focusContext returns the part of the stage context that one entry needs. The
-// LLD is filled entry by entry: a contract call reads the two bounded contexts
-// of its relation, their containers, the aggregates and the decisions of that
-// branch. Every other stage and the skeleton call keep the whole context.
-func focusContext(output domain.FormType, stageContext json.RawMessage, labels []entryLabel) json.RawMessage {
-	if output != domain.TypeLLD || len(labels) == 0 || len(stageContext) == 0 {
+// HLD is filled container by container and the LLD entry by entry: a call reads
+// the branch of its container or contract, not the whole design. Every other
+// stage and the skeleton call keep the whole context.
+func focusContext(output domain.FormType, stageContext json.RawMessage, labels []entryLabel, entry json.RawMessage) json.RawMessage {
+	if (output != domain.TypeLLD && output != domain.TypeHLD) || len(labels) == 0 || len(stageContext) == 0 {
 		return stageContext
 	}
 	var forms map[string]json.RawMessage
@@ -24,12 +24,40 @@ func focusContext(output domain.FormType, stageContext json.RawMessage, labels [
 		containerID = labels[0].idValue
 	}
 	containers, contexts := map[string]bool{}, map[string]bool{}
-	for _, form := range forms {
-		_, payload, formType := decodeForm(form)
-		if formType != string(domain.TypeHLD) {
-			continue
+	var nfrRefs []string
+	if output == domain.TypeHLD {
+		// The container entry of the skeleton names its bounded context and the
+		// NFRs that drive its technology. A v2 call reads the same values from the
+		// input HLD when the skeleton left them empty.
+		boundedContextID, refs := entryBranch(entry)
+		nfrRefs = refs
+		for _, form := range forms {
+			_, payload, formType := decodeForm(form)
+			if formType != string(domain.TypeHLD) {
+				continue
+			}
+			bounded, refs := containerBranch(payload, containerID)
+			if boundedContextID == "" {
+				boundedContextID = bounded
+			}
+			if len(nfrRefs) == 0 {
+				nfrRefs = refs
+			}
 		}
-		branchOf(payload, kind, id, containerID, containers, contexts)
+		if containerID != "" {
+			containers[containerID] = true
+		}
+		if boundedContextID != "" {
+			contexts[boundedContextID] = true
+		}
+	} else {
+		for _, form := range forms {
+			_, payload, formType := decodeForm(form)
+			if formType != string(domain.TypeHLD) {
+				continue
+			}
+			branchOf(payload, kind, id, containerID, containers, contexts)
+		}
 	}
 	focused := make(map[string]json.RawMessage, len(forms))
 	for key, form := range forms {
@@ -39,6 +67,12 @@ func focusContext(output domain.FormType, stageContext json.RawMessage, labels [
 			payload = focusHLD(payload, contractOf(kind, id), containers, contexts)
 		case string(domain.TypeADR):
 			payload = focusADR(payload, containers)
+		case string(domain.TypeSRS):
+			if output != domain.TypeHLD {
+				focused[key] = form
+				continue
+			}
+			payload = focusSRS(payload, nfrRefs)
 		default:
 			focused[key] = form
 			continue
@@ -109,6 +143,52 @@ func branchOf(payload map[string]json.RawMessage, kind, id, containerID string, 
 	}
 	delete(containers, "")
 	delete(contexts, "")
+}
+
+// entryBranch reads the branch a container entry names: the bounded context it
+// implements and the NFRs that drive its technology.
+func entryBranch(entry json.RawMessage) (string, []string) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(entry, &object); err != nil {
+		return "", nil
+	}
+	return fieldOf(entry, "boundedContextId"), jsonStrings(entry, "nfrRefs")
+}
+
+// containerBranch finds one container in an input HLD and returns its bounded
+// context and NFR refs: a v2 call reads what v1 already decided.
+func containerBranch(payload map[string]json.RawMessage, containerID string) (string, []string) {
+	if containerID == "" {
+		return "", nil
+	}
+	for _, container := range jsonRows(payload, "containers") {
+		if fieldOf(container, "objectId") != containerID {
+			continue
+		}
+		return fieldOf(container, "boundedContextId"), jsonStrings(container, "nfrRefs")
+	}
+	return "", nil
+}
+
+// focusSRS keeps the quality requirements the container names. The functional
+// requirements have no container link, so they all stay: the call needs the
+// behavior the container must carry.
+func focusSRS(payload map[string]json.RawMessage, nfrRefs []string) map[string]json.RawMessage {
+	out := make(map[string]json.RawMessage, len(payload))
+	for key, value := range payload {
+		out[key] = value
+	}
+	if len(nfrRefs) == 0 {
+		return out
+	}
+	keep := make(map[string]bool, len(nfrRefs))
+	for _, ref := range nfrRefs {
+		keep[ref] = true
+	}
+	out["nfr"] = keepRows(payload["nfr"], func(row json.RawMessage) bool {
+		return keep[fieldOf(row, "id")]
+	})
+	return out
 }
 
 // focusHLD keeps the lists of the branch and passes the rest of the document

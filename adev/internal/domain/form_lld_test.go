@@ -29,3 +29,24 @@ func TestLLDPointsTheMissingPathAtTheEndOfTheList(t *testing.T) {
 		t.Fatal("the answer must land past the end of the list")
 	}
 }
+
+// TestLLDRefusesAnEmptyContainerAndAnEmptyLayer: a container without a layer and a
+// layer without a package carry no code, so the document is a structural hole and
+// the next run fills it. The gate must name the hole, or the stage accepts a layout
+// that has nothing in it.
+func TestLLDRefusesAnEmptyContainerAndAnEmptyLayer(t *testing.T) {
+	lld := LLD{Containers: []LLDContainer{
+		{ContainerID: "C-1"},
+		{ContainerID: "C-2", Layers: []Layer{{Name: LayerApp}}},
+	}}
+
+	err := ValidateLLD(lld)
+	if err == nil {
+		t.Fatal("want the empty container and the empty layer to fail the gate")
+	}
+	for _, field := range []string{"containers[0].layers", "containers[1].layers[0].packages"} {
+		if !strings.Contains(err.Error(), field) {
+			t.Errorf("want the finding to name %s, got %v", field, err)
+		}
+	}
+}

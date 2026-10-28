@@ -54,9 +54,12 @@ func registryFiles(formType domain.FormType) []LLMFile {
 // registryParagraphs names the template paragraphs one detail call reads: the
 // paragraphs of its own list and the gates. The other paragraphs describe lists
 // that this call does not touch.
-// shortcut: only the LLD is mapped; map the other batched pages when their
-// detail calls get slow.
+// shortcut: only the HLD and the LLD are mapped; map the other batched pages when
+// their detail calls get slow.
 var registryParagraphs = map[domain.FormType]map[string][]int{
+	domain.TypeHLD: {
+		"containers": {3, 4, 6},
+	},
 	domain.TypeLLD: {
 		"containers": {1, 2},
 		"layers":     {1, 2},
@@ -171,7 +174,7 @@ func skeletonInstruction(stage domain.Stage, output domain.FormType) string {
 			"List every entry with its id and short fields. Leave the detailed lists empty ([]): detailed lists: %s. "+
 			"Fill every field that the given context answers. "+
 			"If the context does not give a concrete value or you are not sure, do not invent it: "+
-			"put one openGaps entry with the question, the pointer of the field it would fill, "+
+			"put one openGaps entry with the question, the field it would fill (one value, never a whole list), "+
 			"and the options when it is a choice.",
 		output, stage.ID, empty)
 }
@@ -224,7 +227,7 @@ func stageInstruction(stage domain.Stage, output domain.FormType) string {
 		"You fill the %s form of stage %s. Answer with the payload only. Do not add fields. "+
 			"Fill every field that the given context answers. "+
 			"If the context does not give a concrete value or you are not sure, do not invent it: "+
-			"put one openGaps entry with the question, the pointer of the field it would fill, "+
+			"put one openGaps entry with the question, the field it would fill (one value, never a whole list), "+
 			"and the options when it is a choice.",
 		output, stage.ID)
 }

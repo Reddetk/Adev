@@ -113,6 +113,20 @@
 
 **Answer:** `payload.adrRefs[]` — `Ref[]`.
 
+### Paragraph 9 — Open gap
+
+**Scope:** One value the context does not give.
+
+**Questions:**
+1. Which field of the layout is missing?
+2. Which question does the operator answer?
+3. Which options apply when the answer is a choice?
+
+**Answer:** `payload.openGaps[]` — `{ id, pointer, question, options, blocking }`.
+
+`pointer` is absolute and names one value of `payload`, for example `/containers/0/layers/0/name`.
+A gap that names a whole list or a whole entry is a defect: the next run of the stage fills the structure, the operator answers one value.
+
 ## Gates
 
 1. Each `containerId` exists in the `HLD` and the object registry.
@@ -123,6 +137,8 @@
 6. Each event map has an `idempotencyKey` and an `ordering` value.
 7. Each `module.objectId` is new or belongs to the current container.
 8. A delta does not delete a contract that a current test uses, unless an `ADR` allows it.
+9. Each container has at least one layer; each layer has at least one package.
+10. Each `openGaps[].pointer` names one value of `payload`, not a whole list or entry.
 
 ## Delta
 

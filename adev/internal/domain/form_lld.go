@@ -96,6 +96,7 @@ type LLD struct {
 	Paths      []Path         `json:"paths"`
 	EventMaps  []EventMap     `json:"eventMaps,omitempty"`
 	AdrRefs    []Ref          `json:"adrRefs,omitempty"`
+	OpenGaps   []Gap          `json:"openGaps,omitempty"`
 }
 
 // Texts returns the free-text values for the language checker.

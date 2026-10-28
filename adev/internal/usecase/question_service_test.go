@@ -749,3 +749,50 @@ func TestAnAnswerAppendsThePathPastTheEndOfTheList(t *testing.T) {
 		t.Fatalf("want the new path to carry the code, got %+v", corrected.Paths[1])
 	}
 }
+
+// TestOneRunAsksABatchOfValueGaps: an LLD with seven answerable gaps asks five,
+// and a re-run while they wait adds none. The rest go out as the answers close
+// the batch, so the operator never receives the whole document as cards.
+func TestOneRunAsksABatchOfValueGaps(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	requests := &fakeQuestionRequests{}
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), requests)
+
+	form := waitingForm(t, domain.TypeLLD, "FRM-16-05", "05", `{
+		"containers": [{"containerId": "C-1", "layers": [{"name": "app"}]}],
+		"contracts": [{"id": "CTR-1", "kind": "http", "inputType": "In", "outputType": "Out"}],
+		"paths": [{"id": "P-1", "contractRef": "CTR-1", "kind": "happy", "given": "a", "when": "b", "then": "c"}],
+		"openGaps": [
+			{"id": "G1", "pointer": "/containers/0/layers/0/name", "question": {"text": "Which layer?", "lang": "STE100"}},
+			{"id": "G2", "pointer": "/contracts/0/kind", "question": {"text": "Which kind?", "lang": "STE100"}},
+			{"id": "G3", "pointer": "/contracts/0/inputType", "question": {"text": "Which input?", "lang": "STE100"}},
+			{"id": "G4", "pointer": "/contracts/0/outputType", "question": {"text": "Which output?", "lang": "STE100"}},
+			{"id": "G5", "pointer": "/paths/0/given", "question": {"text": "Which state?", "lang": "STE100"}},
+			{"id": "G6", "pointer": "/paths/0/when", "question": {"text": "Which call?", "lang": "STE100"}},
+			{"id": "G7", "pointer": "/paths/0/then", "question": {"text": "Which result?", "lang": "STE100"}}
+		]
+	}`)
+	if err := store.Save(ctx, form); err != nil {
+		t.Fatalf("save draft: %v", err)
+	}
+
+	published, blocked, err := service.PublishGaps(ctx, form, 16)
+	if err != nil {
+		t.Fatalf("publish gaps: %v", err)
+	}
+	if !published || !blocked {
+		t.Fatalf("want the batch published and blocking, got published=%v blocked=%v", published, blocked)
+	}
+	if len(requests.saved) != 5 {
+		t.Fatalf("want one batch of five questions, got %d", len(requests.saved))
+	}
+
+	// A re-run while the batch waits must not stack a second batch.
+	if _, _, err := service.PublishGaps(ctx, form, 16); err != nil {
+		t.Fatalf("republish: %v", err)
+	}
+	if len(requests.saved) != 5 {
+		t.Fatalf("the waiting batch must hold the next one, got %d questions", len(requests.saved))
+	}
+}

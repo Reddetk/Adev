@@ -79,6 +79,7 @@ var formSpecs = []formSpecEntry{
 		payload:    func() any { return &LLD{} },
 		validate:   func(payload any, _ Status) error { return ValidateLLD(*payload.(*LLD)) },
 		texts:      func(payload any) []Text { return payload.(*LLD).Texts() },
+		gaps:       func(payload any) []Gap { return payload.(*LLD).OpenGaps },
 		projection: openDesignProjection,
 	}},
 	{TypeTaskPlan, formSpec{

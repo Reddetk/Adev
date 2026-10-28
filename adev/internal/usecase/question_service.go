@@ -39,38 +39,40 @@ func (s *QuestionService) Publish(ctx context.Context, form *domain.Form, failur
 	return s.ask(ctx, form, failures, pipelineID)
 }
 
+// questionsPerRun caps one batch of questions: a document that asks for 78 values
+// at once buries the operator, so the rest wait for the next run.
+const questionsPerRun = 5
+
 // PublishGaps turns the open gaps of a stored draft into operator questions.
-// One run asks every unanswered gap question at once (the operator answers the
-// cards one by one); already-active requests are never asked again. The stage
-// stays blocked while any of its questions waits for an answer, so the value
-// valid arrives only after the last one.
-// shortcut: the registry gate 10 says one question per run; here a run is one
-// batch of questions, reconcile with the registry when the ask-loop moves to
-// model-driven conversation.
+// One run asks at most questionsPerRun gaps; only a gap that names one answerable
+// value goes out, because a structural hole (a whole layer, a package layout) has
+// no single answer and the next run of the stage fills it. Already-active requests
+// are never asked again. The stage stays blocked while any of its questions waits
+// for an answer, so the value valid arrives only after the last one.
+// shortcut: one question per run is the registry rule; here a run is one small
+// batch, reconcile with the registry when the ask-loop moves to model-driven
+// conversation.
 func (s *QuestionService) PublishGaps(ctx context.Context, form *domain.Form, pipelineID int) (published, blocked bool, err error) {
 	if s.requests == nil || form == nil {
 		return false, false, nil
 	}
 	// Questions whose document can no longer take an answer leave the dashboard.
 	s.CloseStale(ctx, pipelineID)
+	// A batch already waits for this document: the answers publish the next batch,
+	// a re-run must not stack a second one on top.
+	if s.hasActiveRequestsForForm(pipelineID, form) {
+		return false, true, nil
+	}
+	asked := 0
 	for _, position := range form.Gaps() {
 		gap := position.Gap
-		if gap.Question.Value == "" {
-			continue
-		}
 		pointer := normalizePointer(gap.Pointer)
-		if pointer == "" || !strings.HasPrefix(pointer, "/") {
-			// Without a valid pointer the answer has no place to land in the payload.
-			log.Printf("question pipeline %d: gap %s of %s has no pointer, not asked", pipelineID, gap.ID, form.FormID)
-			continue
-		}
-		if !domain.Patchable(form.FormType, form.Payload, pointer) || !domain.ShapePointer(form.FormType, pointer) {
-			// The pointer names a field the draft does not have or the shape does
-			// not know (the model invented it or glued a note into the path). An
-			// answer would die with 422 or write into a junk field, so the
-			// question waits for the next run, where the draft may carry it.
-			// runForm purges such gaps before the submit; they never reach here.
-			log.Printf("question pipeline %d: gap %s of %s points outside the draft (%s), not asked", pipelineID, gap.ID, form.FormID, pointer)
+		if !askableGap(form.FormType, form.Payload, gap) {
+			// The pointer is missing, names a list the draft does not have, or
+			// needs a whole structure. An answer would die with 422 or write into
+			// a junk field, so the question waits for the next run, where the
+			// model fills the structure from the answers it already has.
+			log.Printf("question pipeline %d: gap %s of %s is not one answerable value (%s), not asked", pipelineID, gap.ID, form.FormID, pointer)
 			continue
 		}
 		if alreadyAsked(ctx, s.requests, pipelineID, pointer) {
@@ -89,6 +91,10 @@ func (s *QuestionService) PublishGaps(ctx context.Context, form *domain.Form, pi
 			return published, false, err
 		}
 		published = true
+		asked++
+		if asked >= questionsPerRun {
+			break
+		}
 	}
 	if published && s.forms != nil {
 		if err := s.forms.SetStatus(ctx, form.FormID, form.FormVersion, domain.StatusWaitingOperator); err != nil {
@@ -266,11 +272,11 @@ func (s *QuestionService) answerAt(ctx context.Context, form *domain.Form, asked
 // PublishGate turns a run's gate mismatch into one blocking operator question:
 // the run path reaches the operator the same way the answer path does, so a
 // mismatch the model left asks instead of silently blocking the stage.
-func (s *QuestionService) PublishGate(ctx context.Context, form *domain.Form, mismatch []string, pipelineID int) (bool, error) {
-	if s.requests == nil || form == nil || len(mismatch) == 0 {
+func (s *QuestionService) PublishGate(ctx context.Context, form *domain.Form, failures []domain.ValidationError, pipelineID int) (bool, error) {
+	if s.requests == nil || form == nil || len(failures) == 0 {
 		return false, nil
 	}
-	failures := answerable(gapGate(collectFailures(errors.New(strings.Join(mismatch, "\n")))))
+	failures = valueFailures(form.FormType, form.Payload, answerable(gapGate(failures)))
 	if len(failures) == 0 {
 		return false, nil
 	}
@@ -283,6 +289,7 @@ func (s *QuestionService) PublishGate(ctx context.Context, form *domain.Form, mi
 // ask marks the form waiting and writes one operator request for the first failure.
 func (s *QuestionService) ask(ctx context.Context, form *domain.Form, failures []domain.ValidationError, pipelineID int) error {
 	failures = answerable(failures)
+	failures = valueFailures(form.FormType, form.Payload, failures)
 	if (len(failures) == 0 || s.requests == nil) && !s.hasActiveRequestsForForm(pipelineID, form) {
 		// Nothing can be asked and nothing is open: a waiting version would hold the
 		// stage with no question, so it returns to the stage for a re-run.
@@ -625,7 +632,15 @@ func normalizeGapPointers(payload json.RawMessage) json.RawMessage {
 	for _, gap := range doc.OpenGaps {
 		p, _ := gap["pointer"].(string)
 		if p == "" {
-			continue
+			// The model sometimes names the field instead of the pointer; the
+			// gates and the operator read one format only.
+			p, _ = gap["field"].(string)
+			if p == "" {
+				continue
+			}
+			gap["pointer"] = p
+			delete(gap, "field")
+			changed = true
 		}
 		fixed := normalizePointer(p)
 		// The model writes the path from the document root (/payload/metrics/0);
@@ -660,10 +675,12 @@ func normalizeGapPointers(payload json.RawMessage) json.RawMessage {
 	return out
 }
 
-// purgeUnaskableGaps removes the gaps whose pointer has no place in the payload
-// (the model invented it or glued a note into the path). A gap nobody can answer
-// would refuse the draft through the openGaps pointer gate forever; runForm
-// purges before the submit, so the gates judge only answerable questions.
+// purgeUnaskableGaps removes the gaps the operator cannot answer with one value:
+// the pointer has no place in the payload (the model invented it or glued a note
+// into the path), or it names a whole list or record that only the next run can
+// fill. A gap nobody can answer would refuse the draft through the openGaps
+// pointer gate forever; runForm purges before the submit, so the gates judge only
+// answerable questions.
 func purgeUnaskableGaps(formType domain.FormType, payload json.RawMessage) json.RawMessage {
 	probe := &domain.Form{Envelope: domain.Envelope{FormID: "purge", FormType: formType}}
 	if err := probe.SetRawPayload(payload); err != nil {
@@ -671,9 +688,9 @@ func purgeUnaskableGaps(formType domain.FormType, payload json.RawMessage) json.
 	}
 	var drop []int
 	for _, position := range probe.Gaps() {
-		if position.Gap.Question.Value != "" && !domain.Patchable(formType, probe.Payload, position.Gap.Pointer) {
+		if position.Gap.Question.Value != "" && !askableGap(formType, probe.Payload, position.Gap) {
 			drop = append(drop, position.Index)
-			log.Printf("stage gap %s of %s points outside the draft (%s), purged", position.Gap.ID, formType, position.Gap.Pointer)
+			log.Printf("stage gap %s of %s is not one answerable value (%s), purged", position.Gap.ID, formType, position.Gap.Pointer)
 		}
 	}
 	if len(drop) == 0 {
@@ -692,6 +709,57 @@ func purgeUnaskableGaps(formType domain.FormType, payload json.RawMessage) json.
 		return payload
 	}
 	return purged
+}
+
+// askableGap reports whether the operator can answer the gap with one value: the
+// pointer names a field of the draft and the field takes the shape an answer
+// gets. A gap that needs a whole structure (a layer with packages, a package
+// layout) is not a question: the next run of the stage fills it from the answers
+// it already has.
+func askableGap(formType domain.FormType, payload json.RawMessage, gap domain.Gap) bool {
+	if gap.Question.Value == "" {
+		return false
+	}
+	pointer := normalizePointer(gap.Pointer)
+	if pointer == "" || !strings.HasPrefix(pointer, "/") {
+		return false
+	}
+	return valueSlot(formType, payload, pointer)
+}
+
+// valueFailures keeps the gate failures that name one answerable value. A finding
+// about a whole list or a record (no layer, no package layout, no event map
+// fields) has no single answer: the next run of the stage fills the structure,
+// so the run asks the operator nothing about it.
+func valueFailures(formType domain.FormType, payload json.RawMessage, failures []domain.ValidationError) []domain.ValidationError {
+	out := make([]domain.ValidationError, 0, len(failures))
+	for _, failure := range failures {
+		if valueSlot(formType, payload, pointerOf(failure.Field)) {
+			out = append(out, failure)
+		}
+	}
+	return out
+}
+
+// valueSlot reports whether one operator value can land on the pointer: the field
+// exists in the shape and takes the shape an answer gets.
+func valueSlot(formType domain.FormType, payload json.RawMessage, pointer string) bool {
+	if !domain.Patchable(formType, payload, pointer) || !domain.ShapePointer(formType, pointer) {
+		return false
+	}
+	shape := fieldShape(formType, pointer)
+	// A pointer that names a whole list is a structure, not one value: an answer
+	// would have to invent its entries. The next run fills it from the values the
+	// operator already gave.
+	if _, isList := shape.([]any); isList {
+		return false
+	}
+	if _, ok := answerShape(shape, "value"); ok {
+		return true
+	}
+	// A number field takes no sentence: probe the numeric answer too ("1").
+	_, ok := answerShape(shape, "1")
+	return ok
 }
 
 // parentsToCreate lists the missing parents of a pointer, outermost first: the
