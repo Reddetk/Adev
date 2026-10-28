@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Who decides what in one stage run</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #bf4520;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1200px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 960px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · adev</p>
+    <h1>Who decides what in one stage run</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 960 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="stage-run-title stage-run-desc">
+        <title id="stage-run-title">Who decides what in one stage run</title>
+        <desc id="stage-run-desc">Architecture of one adev stage run: the registry fixes the route, the orchestrator and stage runner call the model once per unit, the submit tool stores the form, the gates judge it, and the operator answers open gaps.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- Arrows first, so lines sit behind the node fills. -->
+        <line x1="230" y1="92" x2="270" y2="92" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="460" y1="92" x2="500" y2="92" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="690" y1="92" x2="730" y2="92" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="825" y1="124" x2="825" y2="230" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="730" y1="262" x2="460" y2="262" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="270" y1="262" x2="230" y2="262" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="365" y1="230" x2="365" y2="124" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M135,294 V342 Q135,350 143,350 H817 Q825,350 825,342 V294" fill="none" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+
+        <!-- Arrow labels, masked so no line bleeds through. -->
+        <rect x="833" y="166" width="46" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="856" y="175" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">SUBMIT</text>
+
+        <rect x="573" y="242" width="44" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="595" y="251" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">JUDGE</text>
+
+        <rect x="373" y="165" width="68" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="407" y="174" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">NEXT STAGE</text>
+
+        <rect x="451" y="330" width="52" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="477" y="339" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">ANSWER</text>
+
+        <!-- Route registry -->
+        <g>
+          <rect x="40" y="60" width="190" height="64" rx="6" fill="#f5f5f5"/>
+          <rect x="40" y="60" width="190" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+          <rect x="48" y="66" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+          <text x="62" y="75" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">CODE</text>
+          <text x="135" y="94" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Route registry</text>
+          <text x="135" y="110" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">stage.go · fixed order</text>
+        </g>
+
+        <!-- Orchestrator -->
+        <g>
+          <rect x="270" y="60" width="190" height="64" rx="6" fill="#f5f5f5"/>
+          <rect x="270" y="60" width="190" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+          <rect x="278" y="66" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+          <text x="292" y="75" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">CODE</text>
+          <text x="365" y="94" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Orchestrator</text>
+          <text x="365" y="110" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">usecase.Orchestrator</text>
+        </g>
+
+        <!-- Stage runner -->
+        <g>
+          <rect x="500" y="60" width="190" height="64" rx="6" fill="#f5f5f5"/>
+          <rect x="500" y="60" width="190" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+          <rect x="508" y="66" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+          <text x="522" y="75" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">CODE</text>
+          <text x="595" y="94" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Stage runner</text>
+          <text x="595" y="110" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">StageService.Run</text>
+        </g>
+
+        <!-- Model call (focal) -->
+        <g>
+          <rect x="730" y="60" width="190" height="64" rx="6" fill="#f5f5f5"/>
+          <rect x="730" y="60" width="190" height="64" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1"/>
+          <rect x="738" y="66" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+          <text x="752" y="75" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">MODEL</text>
+          <text x="825" y="94" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Model call</text>
+          <text x="825" y="110" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">one unit per call</text>
+        </g>
+
+        <!-- Operator (focal) -->
+        <g>
+          <rect x="40" y="230" width="190" height="64" rx="6" fill="#f5f5f5"/>
+          <rect x="40" y="230" width="190" height="64" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1"/>
+          <rect x="48" y="236" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+          <text x="62" y="245" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">HUMAN</text>
+          <text x="135" y="264" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Operator</text>
+          <text x="135" y="280" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">answer · pick variant</text>
+        </g>
+
+        <!-- Gates -->
+        <g>
+          <rect x="270" y="230" width="190" height="64" rx="6" fill="#f5f5f5"/>
+          <rect x="270" y="230" width="190" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+          <rect x="278" y="236" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+          <text x="292" y="245" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">GATE</text>
+          <text x="365" y="264" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Gates</text>
+          <text x="365" y="280" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">domain validators</text>
+        </g>
+
+        <!-- Submit tool -->
+        <g>
+          <rect x="730" y="230" width="190" height="64" rx="6" fill="#f5f5f5"/>
+          <rect x="730" y="230" width="190" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+          <rect x="738" y="236" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+          <text x="752" y="245" fill="rgba(45,49,66,0.80)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">STORE</text>
+          <text x="825" y="264" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Submit tool</text>
+          <text x="825" y="280" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">FormService.Submit</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>
