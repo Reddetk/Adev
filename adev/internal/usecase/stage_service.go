@@ -635,9 +635,10 @@ func detailInstruction(output domain.FormType, stage domain.Stage, plan batchPla
 			"Detail exactly one entry: the %s entry with %s %q, now %s. "+
 			"The entry now holds: %s. "+
 			"Put the filled entry under the key \"entry\". "+
-			"If the context does not give a concrete value or you are not sure, do not invent it: "+
+			"If the context does not give a concrete value for one field and you are not sure, do not invent it: "+
 			"put one openGaps entry at the answer root with the question, the field of this entry it would fill "+
-			"(relative to the entry, for example modules[0].path), and the options when it is a choice.",
+			"(relative to the entry, for example modules[0].path), and the options when it is a choice. "+
+			"Do not ask about the layout: fill every required list and path from the context.",
 		output, stage.ID, plan.kind, plan.idFieldOf(), last.idValue, lastValue(labels), entry)
 	if plan.with != "" {
 		instruction += fmt.Sprintf(" Put the %s entries whose %s is %q under the key %q.",
@@ -655,9 +656,14 @@ func detailInstruction(output domain.FormType, stage domain.Stage, plan batchPla
 		instruction += fmt.Sprintf(" Fill the %s list of this entry: at least one entry is required.", child.kind)
 	}
 	if plan.with == "paths" {
-		instruction += " Put one happy path and one negative path for this contract; the negative path carries its expectedErrorCode."
+		instruction += " Put one happy path and one negative path for this contract; the negative path carries its expectedErrorCode. Do not leave the paths list empty."
 	}
-	if plan.kind == "contracts" {
+	switch plan.kind {
+	case "layers":
+		instruction += " Give every package in this layer a path."
+	case "packages":
+		instruction += " Fill the path of this package and the path of every module it holds; a module path extends the package path."
+	case "contracts":
 		instruction += " Fill moduleRef with the reference of the HLD that owns this contract."
 	}
 	return instruction

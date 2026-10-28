@@ -90,6 +90,9 @@ func TestDetailInstructionFillsTheRequiredLayout(t *testing.T) {
 	if strings.Contains(pkg, "Fill the modules list") {
 		t.Fatalf("modules are optional: %s", pkg)
 	}
+	if !strings.Contains(pkg, "Fill the path of this package") {
+		t.Fatalf("a package must get a path: %s", pkg)
+	}
 
 	contract := detailInstruction(domain.TypeLLD, stage, batchPlan{
 		kind: "contracts", with: "paths", ref: "contractRef",
