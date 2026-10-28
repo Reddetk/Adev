@@ -104,6 +104,7 @@ func keepSections(page string, paragraphs []int) (string, bool) {
 		section.Reset()
 	}
 	for _, line := range strings.Split(page, "\n") {
+		line = strings.TrimSuffix(line, "\r")
 		if strings.HasPrefix(line, "### ") || strings.HasPrefix(line, "## ") {
 			flush()
 			key := headingKey(line)

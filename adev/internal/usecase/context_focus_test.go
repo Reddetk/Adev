@@ -390,6 +390,19 @@ func TestRegistrySectionsCutTheRealLLDPage(t *testing.T) {
 
 // TestRegistrySectionsFallBackToTheWholePage: a page without the numbered
 // template ships whole, so a new form type never loses its page.
+// TestKeepSectionsAcceptsCRLF: a Windows checkout hands the page CRLF line
+// endings; the gates must still be found.
+func TestKeepSectionsAcceptsCRLF(t *testing.T) {
+	page := "### Paragraph 1 - Contract\r\nkeep\r\n\r\n## Gates\r\ngates\r\n"
+	focused, ok := keepSections(page, []int{1})
+	if !ok {
+		t.Fatal("the numbered template must be found in a CRLF page")
+	}
+	if !strings.Contains(focused, "## Gates") {
+		t.Fatalf("gates dropped from a CRLF page: %q", focused)
+	}
+}
+
 func TestRegistrySectionsFallBackToTheWholePage(t *testing.T) {
 	page := "# BRD\n\n## Template\n\nSome prose.\n\n## Gates\ngates\n"
 	if _, ok := keepSections(page, []int{1}); ok {
