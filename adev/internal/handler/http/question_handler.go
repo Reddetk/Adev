@@ -1,9 +1,12 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/gorilla/mux"
 
@@ -11,14 +14,22 @@ import (
 	"github.com/Reddetk/Adev/internal/usecase"
 )
 
-// QuestionHandler applies the operator answer to a blocked form.
-type QuestionHandler struct {
-	questions *usecase.QuestionService
+// AnswerService applies one operator answer to the waiting form.
+type AnswerService interface {
+	AnswerOnPipeline(ctx context.Context, pipelineID int, pointer string, value json.RawMessage) (*domain.Form, error)
+	AnswerChoice(ctx context.Context, pipelineID int, asked, chosen string, value json.RawMessage) (*domain.Form, error)
 }
 
-// NewQuestionHandler builds the question handler.
-func NewQuestionHandler(questions *usecase.QuestionService) *QuestionHandler {
-	return &QuestionHandler{questions: questions}
+// QuestionHandler applies the operator answer to a blocked form.
+type QuestionHandler struct {
+	questions AnswerService
+	starter   StageRunStarter
+}
+
+// NewQuestionHandler builds the question handler. A nil starter leaves the stage
+// blocked after the last answer, which is what the tests without a runner need.
+func NewQuestionHandler(questions AnswerService, starter StageRunStarter) *QuestionHandler {
+	return &QuestionHandler{questions: questions, starter: starter}
 }
 
 // SetupQuestionRoutes registers the answer route.
@@ -73,6 +84,19 @@ func (h *QuestionHandler) Answer(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, questionStatus(err), err.Error())
 		return
+	}
+	// The last answer leaves a draft with no question: the stage continues with
+	// a fresh run instead of waiting for the operator to press the button.
+	if h.starter != nil && form.Status == domain.StatusDraft && form.Stage != "" {
+		targetSystemID, _ := strconv.ParseInt(form.TargetSystemID, 10, 64)
+		if _, err := h.starter.Start(r.Context(), usecase.StageRequest{
+			PipelineID:     form.PipelineID,
+			TargetSystemID: targetSystemID,
+			Route:          domain.Route(form.Route),
+			StageID:        form.Stage,
+		}); err != nil {
+			log.Printf("question pipeline %s: continue stage %s: %v", form.PipelineID, form.Stage, err)
+		}
 	}
 	writeJSON(w, http.StatusOK, form)
 }

@@ -2,7 +2,10 @@ package usecase
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
+
+	"github.com/Reddetk/Adev/internal/domain"
 )
 
 // TestDetailOfOneContractKeepsTheOtherPaths: the LLD is filled contract by contract.
@@ -55,6 +58,64 @@ func TestDetailOfOneContractKeepsTheOtherPaths(t *testing.T) {
 	}
 	if _, stale := got["P-1"]; stale {
 		t.Fatal("the old path of C-1 must be replaced")
+	}
+}
+
+// TestDetailInstructionFillsTheRequiredLayout: a container must get a layer and
+// a layer a package; modules stay optional; a contract gets both paths.
+func TestDetailInstructionFillsTheRequiredLayout(t *testing.T) {
+	stage := domain.Stage{ID: "05"}
+	entry := json.RawMessage(`{"name":"app","packages":[]}`)
+
+	container := detailInstruction(domain.TypeLLD, stage, batchPlan{
+		kind: "containers", idField: "containerId",
+		children: []batchPlan{{kind: "layers", idField: "name"}},
+	}, []entryLabel{{plan: batchPlan{kind: "containers", idField: "containerId"}, idValue: "C-1"}}, entry)
+	if !strings.Contains(container, "Fill the layers list") {
+		t.Fatalf("a container must ask for a layer: %s", container)
+	}
+
+	layer := detailInstruction(domain.TypeLLD, stage, batchPlan{
+		kind: "layers", idField: "name",
+		children: []batchPlan{{kind: "packages", idField: "path"}},
+	}, []entryLabel{{plan: batchPlan{kind: "layers", idField: "name"}, idValue: "app"}}, entry)
+	if !strings.Contains(layer, "Fill the packages list") {
+		t.Fatalf("a layer must ask for a package: %s", layer)
+	}
+
+	pkg := detailInstruction(domain.TypeLLD, stage, batchPlan{
+		kind: "packages", idField: "path",
+		children: []batchPlan{{kind: "modules", idField: "objectId"}},
+	}, []entryLabel{{plan: batchPlan{kind: "packages", idField: "path"}, idValue: "internal/app"}}, entry)
+	if strings.Contains(pkg, "Fill the modules list") {
+		t.Fatalf("modules are optional: %s", pkg)
+	}
+
+	contract := detailInstruction(domain.TypeLLD, stage, batchPlan{
+		kind: "contracts", with: "paths", ref: "contractRef",
+	}, []entryLabel{{plan: batchPlan{kind: "contracts"}, idValue: "C-1"}}, entry)
+	if !strings.Contains(contract, "happy path") || !strings.Contains(contract, "moduleRef") {
+		t.Fatalf("a contract must ask for both paths and its moduleRef: %s", contract)
+	}
+}
+
+// TestLLDRetryOnlyForStructuralHoles: the model continues while it can fill the
+// layout, but a question or the attempt cap stops the loop.
+func TestLLDRetryOnlyForStructuralHoles(t *testing.T) {
+	if !lldRetry(domain.TypeLLD, 1, false, false) {
+		t.Fatal("a structural hole must get another model pass")
+	}
+	if lldRetry(domain.TypeLLD, maxLLDFormAttempts, false, false) {
+		t.Fatal("the attempt cap must stop the loop")
+	}
+	if lldRetry(domain.TypeLLD, 1, true, false) {
+		t.Fatal("a gap batch waits for the operator")
+	}
+	if lldRetry(domain.TypeLLD, 1, false, true) {
+		t.Fatal("a gate question waits for the operator")
+	}
+	if lldRetry(domain.TypeBRD, 1, false, false) {
+		t.Fatal("only the LLD layout continues by itself")
 	}
 }
 

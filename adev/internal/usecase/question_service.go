@@ -46,7 +46,7 @@ const questionsPerRun = 5
 // PublishGaps turns the open gaps of a stored draft into operator questions.
 // One run asks at most questionsPerRun gaps; only a gap that names one answerable
 // value goes out, because a structural hole (a whole layer, a package layout) has
-// no single answer and the next run of the stage fills it. Already-active requests
+// no single answer and the next pass of the stage fills it. Already-active requests
 // are never asked again. The stage stays blocked while any of its questions waits
 // for an answer, so the value valid arrives only after the last one.
 // shortcut: one question per run is the registry rule; here a run is one small
@@ -70,7 +70,7 @@ func (s *QuestionService) PublishGaps(ctx context.Context, form *domain.Form, pi
 		if !askableGap(form.FormType, form.Payload, gap) {
 			// The pointer is missing, names a list the draft does not have, or
 			// needs a whole structure. An answer would die with 422 or write into
-			// a junk field, so the question waits for the next run, where the
+			// a junk field, so the question waits for the next pass, where the
 			// model fills the structure from the answers it already has.
 			log.Printf("question pipeline %d: gap %s of %s is not one answerable value (%s), not asked", pipelineID, gap.ID, form.FormID, pointer)
 			continue
@@ -677,7 +677,7 @@ func normalizeGapPointers(payload json.RawMessage) json.RawMessage {
 
 // purgeUnaskableGaps removes the gaps the operator cannot answer with one value:
 // the pointer has no place in the payload (the model invented it or glued a note
-// into the path), or it names a whole list or record that only the next run can
+// into the path), or it names a whole list or record that only the next pass can
 // fill. A gap nobody can answer would refuse the draft through the openGaps
 // pointer gate forever; runForm purges before the submit, so the gates judge only
 // answerable questions.
@@ -714,7 +714,7 @@ func purgeUnaskableGaps(formType domain.FormType, payload json.RawMessage) json.
 // askableGap reports whether the operator can answer the gap with one value: the
 // pointer names a field of the draft and the field takes the shape an answer
 // gets. A gap that needs a whole structure (a layer with packages, a package
-// layout) is not a question: the next run of the stage fills it from the answers
+// layout) is not a question: the next pass of the stage fills it from the answers
 // it already has.
 func askableGap(formType domain.FormType, payload json.RawMessage, gap domain.Gap) bool {
 	if gap.Question.Value == "" {
@@ -729,7 +729,7 @@ func askableGap(formType domain.FormType, payload json.RawMessage, gap domain.Ga
 
 // valueFailures keeps the gate failures that name one answerable value. A finding
 // about a whole list or a record (no layer, no package layout, no event map
-// fields) has no single answer: the next run of the stage fills the structure,
+// fields) has no single answer: the next pass of the stage fills the structure,
 // so the run asks the operator nothing about it.
 func valueFailures(formType domain.FormType, payload json.RawMessage, failures []domain.ValidationError) []domain.ValidationError {
 	out := make([]domain.ValidationError, 0, len(failures))
@@ -749,7 +749,7 @@ func valueSlot(formType domain.FormType, payload json.RawMessage, pointer string
 	}
 	shape := fieldShape(formType, pointer)
 	// A pointer that names a whole list is a structure, not one value: an answer
-	// would have to invent its entries. The next run fills it from the values the
+	// would have to invent its entries. The next pass fills it from the values the
 	// operator already gave.
 	if _, isList := shape.([]any); isList {
 		return false

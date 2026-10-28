@@ -177,12 +177,10 @@ func (s *StageService) Run(ctx context.Context, request StageRequest) (StageOutc
 	return outcome, nil
 }
 
-// runForm fills one output form of a stage with one model call. Any answer is
-// accepted: a gate mismatch rides on the stored draft as an indicator, and the
-// rerun and the answers are the operator's decisions, so no auto-fix loop burns
-// model calls.
-// shortcut: the mismatch of one run does not reach the prompt of the next run;
-// feed the last run row back when the operator's reruns visibly regress.
+// runForm fills one output form of a stage. Any answer is accepted: a gate
+// mismatch rides on the stored draft as an indicator. The LLD retries a
+// structural hole itself, because only the model can add a layer, a package or
+// a path; a question for the operator stops every form and waits for the answer.
 func (s *StageService) runForm(
 	ctx context.Context,
 	request StageRequest,
@@ -196,7 +194,7 @@ func (s *StageService) runForm(
 	version int,
 	previous *domain.Ref,
 ) (StageOutcome, error) {
-	outcome := StageOutcome{Stage: stage.ID, Attempts: 1}
+	outcome := StageOutcome{Stage: stage.ID}
 	shape, err := domain.PayloadShape(output)
 	if err != nil {
 		s.record(ctx, request, stage, "failed", 0, err.Error())
@@ -210,130 +208,174 @@ func (s *StageService) runForm(
 			activity.Finish("failed", "the run stopped before the stage completed")
 		}
 	}()
-	activity.Attempt()
 
-	// The BRD is filled in two phases: the first call collects the operator
-	// questions, and every later run assembles the document from the answers
-	// that already stand in the stored draft. The draft belongs to the same
-	// document: a fresh output of a different type starts without it.
-	resume := json.RawMessage(nil)
-	if previous != nil && previous.FormType == output {
-		if prior, err := s.forms.Get(ctx, previous.FormID, previous.FormVersion); err == nil && len(prior.Payload) > 0 {
-			resume = prior.Payload
+	var problems []string
+	for attempt := 1; ; attempt++ {
+		outcome.Attempts = attempt
+		activity.Attempt()
+
+		// The BRD is filled in two phases: the first call collects the operator
+		// questions, and every later run assembles the document from the answers
+		// that already stand in the stored draft. The draft belongs to the same
+		// document: a fresh output of a different type starts without it.
+		resume := json.RawMessage(nil)
+		if previous != nil && previous.FormType == output {
+			if prior, err := s.forms.Get(ctx, previous.FormID, previous.FormVersion); err == nil && len(prior.Payload) > 0 {
+				resume = prior.Payload
+			}
 		}
-	}
 
-	system, user := stagePrompt(stage, output, shape, stageContext, nil)
-	if output == domain.TypeBRD && previous == nil {
-		system, user = promptMessages(questionsInstruction(stage, output), shape, stageContext, nil)
-	}
-	if len(resume) > 0 {
-		user += fmt.Sprintf("\nThe previousDraft holds the draft of this document and the operator answers: keep the answered values and fill only what the answers or the context cover.\n%s\n", resume)
-	}
-	// Record the attempt before the model answers: the dashboard shows the prompt
-	// and the "running" state at once, instead of waiting for the whole call.
-	complete := LLMRequest{Role: agent.Role, System: system, User: user, Files: registryFiles(output)}
-	call := s.startModelCall(request, agent, complete)
-	response, err := client.Complete(ctx, complete)
-	if err != nil {
-		if ctx.Err() != nil {
-			activity.Finish("stopped", "stopped by the operator")
-			s.record(ctx, request, stage, "failed", 1, ErrStageStopped.Error())
-			return StageOutcome{}, ErrStageStopped
+		system, user := stagePrompt(stage, output, shape, stageContext, problems)
+		if output == domain.TypeBRD && previous == nil {
+			system, user = promptMessages(questionsInstruction(stage, output), shape, stageContext, problems)
 		}
-		activity.Finish("failed", err.Error())
-		s.record(ctx, request, stage, "failed", 1, err.Error())
-		// A call that never answered is on the book, too: the operator sees
-		// the model request that produced the failure.
-		s.finishModelCall(call, LLMResponse{}, nil, []string{err.Error()})
-		return StageOutcome{}, err
-	}
-
-	form := s.buildForm(request, stage, refs, output, formID, version, previous)
-	payload := normalizeGapPointers(response.Payload)
-	// A composite document goes out in batches: the skeleton first, then one
-	// call per entry, so no single answer has to carry the whole list.
-	if plans, ok := batchPlans[output]; ok {
-		payload = s.detailBatches(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload)
-		// The detail calls ask their own questions: their pointers read like the
-		// payload root and take the same normalization as the skeleton.
-		payload = normalizeGapPointers(payload)
-	}
-	// The model answers the meaning and loses the wrapper: a question arrives
-	// as a plain string instead of the Text record. Repair the wrapping only;
-	// the gates still judge the values.
-	payload = coercePayload(output, payload)
-	// Unaskable gaps must leave the payload before the gates see it.
-	payload = purgeUnaskableGaps(output, payload)
-	if err := form.SetRawPayload(payload); err != nil {
-		activity.Finish("failed", err.Error())
-		s.record(ctx, request, stage, "failed", 1, err.Error())
-		s.finishModelCall(call, response, payload, []string{err.Error()})
-		return StageOutcome{}, err
-	}
-
-	var mismatch []string
-	var failures []domain.ValidationError
-	if err := s.forms.Submit(ctx, form); err != nil {
-		if !isFormRejection(err) {
+		if len(resume) > 0 {
+			note := "The previousDraft holds the draft of this document and the operator answers: keep the answered values and fill only what the answers or the context cover."
+			if len(problems) > 0 {
+				note = "The previousDraft holds the last draft: keep every value that passed the gates and fix the gate failures."
+			}
+			user += "\n" + note + "\n" + string(resume) + "\n"
+		}
+		// Record the attempt before the model answers: the dashboard shows the prompt
+		// and the "running" state at once, instead of waiting for the whole call.
+		complete := LLMRequest{Role: agent.Role, System: system, User: user, Files: registryFiles(output)}
+		call := s.startModelCall(request, agent, complete)
+		response, err := client.Complete(ctx, complete)
+		if err != nil {
+			if ctx.Err() != nil {
+				activity.Finish("stopped", "stopped by the operator")
+				s.record(ctx, request, stage, "failed", attempt, ErrStageStopped.Error())
+				return StageOutcome{}, ErrStageStopped
+			}
 			activity.Finish("failed", err.Error())
-			s.record(ctx, request, stage, "failed", 1, err.Error())
+			s.record(ctx, request, stage, "failed", attempt, err.Error())
+			// A call that never answered is on the book, too: the operator sees
+			// the model request that produced the failure.
+			s.finishModelCall(call, LLMResponse{}, nil, []string{err.Error()})
+			return StageOutcome{}, err
+		}
+
+		form := s.buildForm(request, stage, refs, output, formID, version, previous)
+		payload := normalizeGapPointers(response.Payload)
+		// A composite document goes out in batches: the skeleton first, then one
+		// call per entry, so no single answer has to carry the whole list.
+		if plans, ok := batchPlans[output]; ok {
+			payload = s.detailBatches(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload)
+			// The detail calls ask their own questions: their pointers read like the
+			// payload root and take the same normalization as the skeleton.
+			payload = normalizeGapPointers(payload)
+		}
+		// The model answers the meaning and loses the wrapper: a question arrives
+		// as a plain string instead of the Text record. Repair the wrapping only;
+		// the gates still judge the values.
+		payload = coercePayload(output, payload)
+		// Unaskable gaps must leave the payload before the gates see it.
+		payload = purgeUnaskableGaps(output, payload)
+		if err := form.SetRawPayload(payload); err != nil {
+			activity.Finish("failed", err.Error())
+			s.record(ctx, request, stage, "failed", attempt, err.Error())
 			s.finishModelCall(call, response, payload, []string{err.Error()})
 			return StageOutcome{}, err
 		}
-		if draftErr := s.forms.SubmitDraft(ctx, form); draftErr != nil {
-			activity.Finish("failed", draftErr.Error())
-			s.record(ctx, request, stage, "failed", 1, draftErr.Error())
-			s.finishModelCall(call, response, payload, []string{draftErr.Error()})
-			return StageOutcome{}, draftErr
-		}
-		mismatch = []string{err.Error()}
-		failures = collectFailures(err)
-		log.Printf("stage %s: the draft holds a gate mismatch: %v", stage.ID, err)
-	}
 
-	outcome.FormID, outcome.FormVersion = form.FormID, form.FormVersion
-	s.finishModelCall(call, response, payload, mismatch)
-	s.registerObjects(ctx, request, form)
-
-	// The model may have left open gaps: the questions hold the stage until the
-	// operator answers every one of them. They come from the draft even when
-	// its gates failed, so the operator can answer instead of rerunning.
-	reasons := mismatch
-	blocked := len(mismatch) > 0
-	if s.questions != nil && request.PipelineID != "" {
-		pipelineID, _ := strconv.Atoi(request.PipelineID)
-		_, gapBlocked, err := s.questions.PublishGaps(ctx, form, pipelineID)
-		if err != nil {
-			log.Printf("stage %s pipeline %s: publish gap: %v", stage.ID, request.PipelineID, err)
-		}
-		if gapBlocked {
-			blocked = true
-			reasons = append(reasons, "the draft holds open questions for the operator")
-		} else if blocked {
-			// No gap went out: the gate mismatch itself asks the operator, the
-			// same repair path the answer flow uses.
-			asked, gateErr := s.questions.PublishGate(ctx, form, failures, pipelineID)
-			if gateErr != nil {
-				log.Printf("stage %s pipeline %s: publish gate: %v", stage.ID, request.PipelineID, gateErr)
+		var mismatch []string
+		var failures []domain.ValidationError
+		if err := s.forms.Submit(ctx, form); err != nil {
+			if !isFormRejection(err) {
+				activity.Finish("failed", err.Error())
+				s.record(ctx, request, stage, "failed", attempt, err.Error())
+				s.finishModelCall(call, response, payload, []string{err.Error()})
+				return StageOutcome{}, err
 			}
-			if asked {
+			if draftErr := s.forms.SubmitDraft(ctx, form); draftErr != nil {
+				activity.Finish("failed", draftErr.Error())
+				s.record(ctx, request, stage, "failed", attempt, draftErr.Error())
+				s.finishModelCall(call, response, payload, []string{draftErr.Error()})
+				return StageOutcome{}, draftErr
+			}
+			mismatch = []string{err.Error()}
+			failures = collectFailures(err)
+			log.Printf("stage %s: the draft holds a gate mismatch: %v", stage.ID, err)
+		}
+
+		outcome.FormID, outcome.FormVersion = form.FormID, form.FormVersion
+		s.finishModelCall(call, response, payload, mismatch)
+		s.registerObjects(ctx, request, form)
+
+		// The model may have left open gaps: the questions hold the stage until the
+		// operator answers every one of them. They come from the draft even when
+		// its gates failed, so the operator can answer instead of rerunning.
+		reasons := mismatch
+		blocked := len(mismatch) > 0
+		asked := false
+		gapBlocked := false
+		if s.questions != nil && request.PipelineID != "" {
+			pipelineID, _ := strconv.Atoi(request.PipelineID)
+			_, gapBlocked, err = s.questions.PublishGaps(ctx, form, pipelineID)
+			if err != nil {
+				log.Printf("stage %s pipeline %s: publish gap: %v", stage.ID, request.PipelineID, err)
+			}
+			if gapBlocked {
+				blocked = true
 				reasons = append(reasons, "the draft holds open questions for the operator")
+			} else if blocked {
+				// No gap went out: the gate mismatch itself asks the operator, the
+				// same repair path the answer flow uses.
+				asked, err = s.questions.PublishGate(ctx, form, failures, pipelineID)
+				if err != nil {
+					log.Printf("stage %s pipeline %s: publish gate: %v", stage.ID, request.PipelineID, err)
+				}
+				if asked {
+					reasons = append(reasons, "the draft holds open questions for the operator")
+				}
 			}
 		}
-	}
-	if blocked {
-		outcome.Blocked = true
-		outcome.Gaps = reasons
-		s.record(ctx, request, stage, "blocked", 1, strings.Join(reasons, "; "))
-		activity.Finish("blocked", strings.Join(reasons, "; "))
+		if blocked && lldRetry(output, attempt, gapBlocked, asked) {
+			// A structural hole (a layer without a package, a contract without
+			// paths) is the model's job: the next pass sees the gate failures and
+			// the draft it just wrote.
+			problems = failureProblems(failures)
+			if len(problems) == 0 {
+				problems = mismatch
+			}
+			previous = &domain.Ref{FormID: form.FormID, FormType: form.FormType, FormVersion: form.FormVersion}
+			version = form.FormVersion + 1
+			continue
+		}
+		if blocked {
+			outcome.Blocked = true
+			outcome.Gaps = reasons
+			s.record(ctx, request, stage, "blocked", attempt, strings.Join(reasons, "; "))
+			activity.Finish("blocked", strings.Join(reasons, "; "))
+			return outcome, nil
+		}
+		// Nothing waits for the operator and the gates passed: the document is accepted.
+		s.markValid(ctx, form)
+		s.record(ctx, request, stage, "done", attempt, "")
+		activity.Finish("done", "")
 		return outcome, nil
 	}
-	// Nothing waits for the operator and the gates passed: the document is accepted.
-	s.markValid(ctx, form)
-	s.record(ctx, request, stage, "done", 1, "")
-	activity.Finish("done", "")
-	return outcome, nil
+}
+
+// maxLLDFormAttempts caps the structural retries of the LLD. A model that cannot
+// fill the layout in three passes leaves the draft to the operator.
+// shortcut: three passes fit the live runs; raise when a larger system needs more.
+const maxLLDFormAttempts = 3
+
+// lldRetry reports whether the next model pass can fill a structural hole. A
+// question for the operator stops the loop: only the model can add a layer,
+// a package or a path, and only when nothing waits for an answer.
+func lldRetry(output domain.FormType, attempt int, gapBlocked, asked bool) bool {
+	return output == domain.TypeLLD && !gapBlocked && !asked && attempt < maxLLDFormAttempts
+}
+
+// failureProblems names each gate failure for the retry prompt.
+func failureProblems(failures []domain.ValidationError) []string {
+	out := make([]string, 0, len(failures))
+	for _, failure := range failures {
+		out = append(out, failure.Field+": "+failure.Problem)
+	}
+	return out
 }
 
 // latestVersion reads the highest stored version of a form, or zero when absent.
@@ -568,6 +610,25 @@ func (s *StageService) detailCall(
 	stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage,
 	labels []entryLabel, entry json.RawMessage, plan batchPlan,
 ) json.RawMessage {
+	instruction := detailInstruction(output, stage, plan, labels, entry)
+	context := focusContext(output, stageContext, labels, entry)
+	system, user := promptMessages(instruction, shape, context, nil)
+	complete := LLMRequest{Role: agent.Role, System: system, User: user, Files: registryFileFor(output, plan.kind)}
+	call := s.startModelCall(request, agent, complete)
+	response, err := client.Complete(ctx, complete)
+	if err != nil {
+		s.finishModelCall(call, LLMResponse{}, nil, []string{err.Error()})
+		log.Printf("stage %s: detail %s: %v", stage.ID, plan.kind, err)
+		return nil
+	}
+	s.finishModelCall(call, response, response.Payload, nil)
+	return response.Payload
+}
+
+// detailInstruction asks for one entry and for the layout the gates require
+// below it: a container needs a layer, a layer needs a package. Modules stay
+// optional. A contract also needs one happy and one negative path.
+func detailInstruction(output domain.FormType, stage domain.Stage, plan batchPlan, labels []entryLabel, entry json.RawMessage) string {
 	last := labels[len(labels)-1]
 	instruction := fmt.Sprintf(
 		"You fill the %s form of stage %s. Answer with one JSON object only. Do not add fields. "+
@@ -587,18 +648,19 @@ func (s *StageService) detailCall(
 		instruction += fmt.Sprintf(" The %s entry belongs to the %s entry with %s %q.",
 			plan.kind, parent.plan.kind, parent.plan.idFieldOf(), parent.idValue)
 	}
-	context := focusContext(output, stageContext, labels, entry)
-	system, user := promptMessages(instruction, shape, context, nil)
-	complete := LLMRequest{Role: agent.Role, System: system, User: user, Files: registryFileFor(output, plan.kind)}
-	call := s.startModelCall(request, agent, complete)
-	response, err := client.Complete(ctx, complete)
-	if err != nil {
-		s.finishModelCall(call, LLMResponse{}, nil, []string{err.Error()})
-		log.Printf("stage %s: detail %s %s: %v", stage.ID, plan.kind, last.idValue, err)
-		return nil
+	for _, child := range plan.children {
+		if child.kind == "modules" {
+			continue // a package may hold no module
+		}
+		instruction += fmt.Sprintf(" Fill the %s list of this entry: at least one entry is required.", child.kind)
 	}
-	s.finishModelCall(call, response, response.Payload, nil)
-	return response.Payload
+	if plan.with == "paths" {
+		instruction += " Put one happy path and one negative path for this contract; the negative path carries its expectedErrorCode."
+	}
+	if plan.kind == "contracts" {
+		instruction += " Fill moduleRef with the reference of the HLD that owns this contract."
+	}
+	return instruction
 }
 
 // lastValue is the full value of the entry id: the root entry uses its id, a

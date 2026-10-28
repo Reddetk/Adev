@@ -83,7 +83,7 @@ func (c *Container) setupAdEvServices() {
 	// keeps going in the process, and a restart resumes the runs it lost.
 	c.stageRuns = usecase.NewStageRunService(c.stageOrchestrator(), c.runRepo, c.pipelineRepo)
 	c.stageHandler = http.NewStageHandler(c.stageRuns)
-	c.questionHandler = http.NewQuestionHandler(questions)
+	c.questionHandler = http.NewQuestionHandler(questions, c.stageRuns)
 	c.modelCheck = usecase.NewModelCheck(c.settingsService, factory)
 }
 
