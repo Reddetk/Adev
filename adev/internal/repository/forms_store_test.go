@@ -96,6 +96,41 @@ func runStoreSuite(t *testing.T, store usecase.FormStore) {
 		}
 	})
 
+	t.Run("a valid version supersedes the older ones", func(t *testing.T) {
+		first := buildForm(t, "FRM-SUPERSEDE", 1, "PIPE-SUPERSEDE", nil)
+		first.Status = domain.StatusWaitingOperator
+		if err := store.Save(ctx, first); err != nil {
+			t.Fatalf("save v1: %v", err)
+		}
+		second := buildForm(t, "FRM-SUPERSEDE", 2, "PIPE-SUPERSEDE",
+			&domain.Ref{FormID: "FRM-SUPERSEDE", FormType: domain.TypeBRD, FormVersion: 1})
+		second.Status = domain.StatusValid
+		if err := store.Save(ctx, second); err != nil {
+			t.Fatalf("save v2: %v", err)
+		}
+
+		old, err := store.Get(ctx, "FRM-SUPERSEDE", 1)
+		if err != nil {
+			t.Fatalf("get v1: %v", err)
+		}
+		if old.Status != domain.StatusSuperseded {
+			t.Fatalf("want superseded v1, got %s", old.Status)
+		}
+
+		third := buildForm(t, "FRM-SUPERSEDE", 3, "PIPE-SUPERSEDE",
+			&domain.Ref{FormID: "FRM-SUPERSEDE", FormType: domain.TypeBRD, FormVersion: 2})
+		if err := store.Save(ctx, third); err != nil {
+			t.Fatalf("save v3: %v", err)
+		}
+		current, err := store.Get(ctx, "FRM-SUPERSEDE", 2)
+		if err != nil {
+			t.Fatalf("get v2: %v", err)
+		}
+		if current.Status != domain.StatusValid {
+			t.Fatalf("a draft must not supersede the valid version, got %s", current.Status)
+		}
+	})
+
 	t.Run("latest of an unknown form", func(t *testing.T) {
 		if _, err := store.Latest(ctx, "FRM-MISSING"); !errors.Is(err, domain.ErrFormNotFound) {
 			t.Fatalf("want ErrFormNotFound, got %v", err)

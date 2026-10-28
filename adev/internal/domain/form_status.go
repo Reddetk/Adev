@@ -1,9 +1,9 @@
 package domain
 
 var allowedStatusChanges = map[Status]map[Status]bool{
-	StatusDraft:           {StatusValid: true, StatusRejected: true, StatusWaitingOperator: true},
+	StatusDraft:           {StatusValid: true, StatusRejected: true, StatusWaitingOperator: true, StatusSuperseded: true},
 	StatusValid:           {StatusWaitingOperator: true, StatusApproved: true, StatusRejected: true, StatusSuperseded: true},
-	StatusWaitingOperator: {StatusDraft: true, StatusValid: true, StatusApproved: true, StatusRejected: true},
+	StatusWaitingOperator: {StatusDraft: true, StatusValid: true, StatusApproved: true, StatusRejected: true, StatusSuperseded: true},
 	StatusApproved:        {StatusSuperseded: true},
 	StatusRejected:        {},
 	StatusSuperseded:      {},

@@ -59,7 +59,26 @@ func (m *MemoryFormsStore) Save(ctx context.Context, form *domain.Form) error {
 	}
 	versions[form.FormVersion] = cloneForm(form)
 	m.created[formKey(form.FormID, form.FormVersion)] = true
+	// A valid document replaces its history: an older draft or a waiting
+	// version is not the current document any more.
+	if form.Status == domain.StatusValid || form.Status == domain.StatusApproved {
+		for version, old := range versions {
+			if version < form.FormVersion && supersedable(old.Status) {
+				old.Status = domain.StatusSuperseded
+			}
+		}
+	}
 	return nil
+}
+
+// supersedable reports a version that a newer valid document replaces. A
+// rejected version keeps its verdict, and a superseded one is already history.
+func supersedable(status domain.Status) bool {
+	switch status {
+	case domain.StatusDraft, domain.StatusWaitingOperator, domain.StatusValid, domain.StatusApproved:
+		return true
+	}
+	return false
 }
 
 // Get reads one form version.

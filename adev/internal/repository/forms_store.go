@@ -87,7 +87,13 @@ func (s *FormsStore) Save(ctx context.Context, form *domain.Form) error {
 		return fmt.Errorf("save: encode inputs: %w", err)
 	}
 
-	_, err = s.pool.Exec(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("save form: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	_, err = tx.Exec(ctx, `
 		INSERT INTO forms (
 			form_id, form_version, form_type, schema_version, previous_form, status,
 			route, stage, mode, base, ops, pipeline_id, target_system_id, produced_by,
@@ -104,7 +110,19 @@ func (s *FormsStore) Save(ctx context.Context, form *domain.Form) error {
 		}
 		return fmt.Errorf("save form: %w", err)
 	}
-	return nil
+	// A valid document replaces its history: an older draft or a waiting
+	// version is not the current document any more, and the dashboard must
+	// not offer it as a question.
+	if form.Status == domain.StatusValid || form.Status == domain.StatusApproved {
+		if _, err := tx.Exec(ctx,
+			`UPDATE forms SET status = 'superseded'
+			 WHERE form_id = $1 AND form_version < $2
+			   AND status IN ('draft', 'waiting_operator', 'valid', 'approved')`,
+			form.FormID, form.FormVersion); err != nil {
+			return fmt.Errorf("save form: supersede older versions: %w", err)
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // Get reads one form version.
