@@ -211,6 +211,9 @@ func ValidateLLD(l LLD) error {
 				errs = append(errs, invalid(fmt.Sprintf("containers[%d].layers[%d].packages", ci, li), "at least one package is required"))
 			}
 			for pi, pkg := range layer.Packages {
+				if pkg.Path == "" {
+					errs = append(errs, invalid(fmt.Sprintf("containers[%d].layers[%d].packages[%d].path", ci, li, pi), "is empty"))
+				}
 				for mi, module := range pkg.Modules {
 					if module.ObjectID == "" || module.Path == "" {
 						errs = append(errs, invalid(fmt.Sprintf("containers[%d].layers[%d].packages[%d].modules[%d]", ci, li, pi, mi), "objectId and path must be non-empty"))

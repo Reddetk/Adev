@@ -153,16 +153,19 @@ func (s *StageService) Run(ctx context.Context, request StageRequest) (StageOutc
 		if input, ok := refOfType(refs, output); ok {
 			formID, finished, version, previous = input.FormID, nil, input.FormVersion+1, &input
 		}
+		if finished != nil && finished.Status == domain.StatusWaitingOperator {
+			// The operator asked for a new pass: the questions about this draft are
+			// obsolete, and the model regenerates from the answers already given.
+			if s.questions != nil {
+				pipelineID, _ := strconv.Atoi(request.PipelineID)
+				s.questions.CloseForForm(ctx, pipelineID, finished)
+			}
+			previous = &domain.Ref{FormID: finished.FormID, FormType: finished.FormType, FormVersion: finished.FormVersion}
+			version = finished.FormVersion + 1
+			finished = nil
+		}
 		if finished != nil {
 			outcome.FormID, outcome.FormVersion = finished.FormID, finished.FormVersion
-			if finished.Status == domain.StatusWaitingOperator {
-				// The questions from the earlier attempt still wait: the run pauses
-				// again instead of calling the model.
-				outcome.Blocked = true
-				outcome.Gaps = []string{"the draft waits for operator answers"}
-				s.record(ctx, request, stage, "blocked", 0, outcome.Gaps[0])
-				continue
-			}
 			// The operator answer already made this version valid: the run just confirms it.
 			s.record(ctx, request, stage, "done", 0, "")
 			continue
@@ -269,6 +272,7 @@ func (s *StageService) runForm(
 		// as a plain string instead of the Text record. Repair the wrapping only;
 		// the gates still judge the values.
 		payload = coercePayload(output, payload)
+		payload = normalizeLLDLayout(output, payload)
 		// Unaskable gaps must leave the payload before the gates see it.
 		payload = purgeUnaskableGaps(output, payload)
 		if err := form.SetRawPayload(payload); err != nil {
@@ -307,6 +311,22 @@ func (s *StageService) runForm(
 		// its gates failed, so the operator can answer instead of rerunning.
 		reasons := mismatch
 		blocked := len(mismatch) > 0
+		// A structural hole (a layer without a package, a contract without
+		// paths) is the model's job: the next pass sees the gate failures and
+		// the draft it just wrote, before any question goes out.
+		if blocked && lldRetry(output, attempt) {
+			if s.questions != nil && request.PipelineID != "" {
+				pipelineID, _ := strconv.Atoi(request.PipelineID)
+				s.questions.CloseForForm(ctx, pipelineID, form)
+			}
+			problems = failureProblems(failures)
+			if len(problems) == 0 {
+				problems = mismatch
+			}
+			previous = &domain.Ref{FormID: form.FormID, FormType: form.FormType, FormVersion: form.FormVersion}
+			version = form.FormVersion + 1
+			continue
+		}
 		asked := false
 		gapBlocked := false
 		if s.questions != nil && request.PipelineID != "" {
@@ -330,18 +350,6 @@ func (s *StageService) runForm(
 				}
 			}
 		}
-		if blocked && lldRetry(output, attempt, gapBlocked, asked) {
-			// A structural hole (a layer without a package, a contract without
-			// paths) is the model's job: the next pass sees the gate failures and
-			// the draft it just wrote.
-			problems = failureProblems(failures)
-			if len(problems) == 0 {
-				problems = mismatch
-			}
-			previous = &domain.Ref{FormID: form.FormID, FormType: form.FormType, FormVersion: form.FormVersion}
-			version = form.FormVersion + 1
-			continue
-		}
 		if blocked {
 			outcome.Blocked = true
 			outcome.Gaps = reasons
@@ -362,11 +370,11 @@ func (s *StageService) runForm(
 // shortcut: three passes fit the live runs; raise when a larger system needs more.
 const maxLLDFormAttempts = 3
 
-// lldRetry reports whether the next model pass can fill a structural hole. A
-// question for the operator stops the loop: only the model can add a layer,
-// a package or a path, and only when nothing waits for an answer.
-func lldRetry(output domain.FormType, attempt int, gapBlocked, asked bool) bool {
-	return output == domain.TypeLLD && !gapBlocked && !asked && attempt < maxLLDFormAttempts
+// lldRetry reports whether the next model pass can fill a structural hole. The
+// retry runs before a question is published, so a layout hole never waits for
+// the operator; the attempt cap stops a model that cannot fill it.
+func lldRetry(output domain.FormType, attempt int) bool {
+	return output == domain.TypeLLD && attempt < maxLLDFormAttempts
 }
 
 // failureProblems names each gate failure for the retry prompt.
@@ -638,7 +646,9 @@ func detailInstruction(output domain.FormType, stage domain.Stage, plan batchPla
 			"If the context does not give a concrete value for one field and you are not sure, do not invent it: "+
 			"put one openGaps entry at the answer root with the question, the field of this entry it would fill "+
 			"(relative to the entry, for example modules[0].path), and the options when it is a choice. "+
-			"Do not ask about the layout: fill every required list and path from the context.",
+			"Do not ask about the layout: choose every layer, package path and module path from the HLD container tech, aggregates and relations. "+
+			"A layer holds only name and packages. A package holds only path and modules. "+
+			"Never put a container or a layer inside a layer or a package.",
 		output, stage.ID, plan.kind, plan.idFieldOf(), last.idValue, lastValue(labels), entry)
 	if plan.with != "" {
 		instruction += fmt.Sprintf(" Put the %s entries whose %s is %q under the key %q.",
@@ -660,11 +670,11 @@ func detailInstruction(output domain.FormType, stage domain.Stage, plan batchPla
 	}
 	switch plan.kind {
 	case "layers":
-		instruction += " Give every package in this layer a path."
+		instruction += " Give every package in this layer a path. A Go service has domain, app and adapter layers; put each HLD aggregate moduleRef in the domain layer of its container."
 	case "packages":
 		instruction += " Fill the path of this package and the path of every module it holds; a module path extends the package path."
 	case "contracts":
-		instruction += " Fill moduleRef with the reference of the HLD that owns this contract."
+		instruction += " Fill moduleRef with the reference of the HLD that owns this contract. Name inputType and outputType from the contract and its fields; do not ask the operator for a type name. Set an HTTP status that matches the condition; do not ask for it."
 	}
 	return instruction
 }

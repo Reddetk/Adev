@@ -724,7 +724,16 @@ func askableGap(formType domain.FormType, payload json.RawMessage, gap domain.Ga
 	if pointer == "" || !strings.HasPrefix(pointer, "/") {
 		return false
 	}
+	if layoutPointer(pointer) {
+		return false
+	}
 	return valueSlot(formType, payload, pointer)
+}
+
+// layoutPointer reports whether the pointer names a design decision of the
+// container layout: the model chooses it from the HLD, the operator does not.
+func layoutPointer(pointer string) bool {
+	return strings.HasPrefix(normalizePointer(pointer), "/containers/")
 }
 
 // valueFailures keeps the gate failures that name one answerable value. A finding
@@ -734,7 +743,11 @@ func askableGap(formType domain.FormType, payload json.RawMessage, gap domain.Ga
 func valueFailures(formType domain.FormType, payload json.RawMessage, failures []domain.ValidationError) []domain.ValidationError {
 	out := make([]domain.ValidationError, 0, len(failures))
 	for _, failure := range failures {
-		if valueSlot(formType, payload, pointerOf(failure.Field)) {
+		pointer := pointerOf(failure.Field)
+		if layoutPointer(pointer) {
+			continue
+		}
+		if valueSlot(formType, payload, pointer) {
 			out = append(out, failure)
 		}
 	}
@@ -1190,6 +1203,32 @@ func (s *QuestionService) waitingForm(ctx context.Context, pipelineID int, point
 		}
 	}
 	return nil
+}
+
+// CloseForForm closes the questions about a draft that the next model pass
+// replaces. The new version keeps the answers already given, and the old
+// questions would otherwise hold the new version waiting.
+func (s *QuestionService) CloseForForm(ctx context.Context, pipelineID int, form *domain.Form) {
+	if s.requests == nil || form == nil {
+		return
+	}
+	all, err := s.requests.FindAll()
+	if err != nil {
+		return
+	}
+	for i := range all {
+		request := &all[i]
+		if request.PipelineID != pipelineID || request.Status != "active" {
+			continue
+		}
+		if !domain.Patchable(form.FormType, form.Payload, normalizePointer(request.Pointer)) {
+			continue
+		}
+		request.Status = "completed"
+		if err := s.requests.Update(request); err != nil {
+			log.Printf("question pipeline %d: close request %d: %v", pipelineID, request.ID, err)
+		}
+	}
 }
 
 // CloseStale closes active requests no answer can ever reach, so the dashboard

@@ -38,13 +38,18 @@ func TestLLDRefusesAnEmptyContainerAndAnEmptyLayer(t *testing.T) {
 	lld := LLD{Containers: []LLDContainer{
 		{ContainerID: "C-1"},
 		{ContainerID: "C-2", Layers: []Layer{{Name: LayerApp}}},
+		{ContainerID: "C-3", Layers: []Layer{{Name: LayerApp, Packages: []Package{{}}}}},
 	}}
 
 	err := ValidateLLD(lld)
 	if err == nil {
-		t.Fatal("want the empty container and the empty layer to fail the gate")
+		t.Fatal("want the empty container, the empty layer and the empty package to fail the gate")
 	}
-	for _, field := range []string{"containers[0].layers", "containers[1].layers[0].packages"} {
+	for _, field := range []string{
+		"containers[0].layers",
+		"containers[1].layers[0].packages",
+		"containers[2].layers[0].packages[0].path",
+	} {
 		if !strings.Contains(err.Error(), field) {
 			t.Errorf("want the finding to name %s, got %v", field, err)
 		}

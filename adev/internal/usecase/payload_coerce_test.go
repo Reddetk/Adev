@@ -56,6 +56,29 @@ func TestCoercePayload(t *testing.T) {
 	}
 }
 
+// TestNormalizeLLDLayoutDropsNestedObjects: a detail answer sometimes nests a
+// container in a layer or a layer in a package. The schema must keep the outer
+// entry and drop the junk, so the gates judge the real layout.
+func TestNormalizeLLDLayoutDropsNestedObjects(t *testing.T) {
+	raw := `{"containers":[{"containerId":"C-1","layers":[
+		{"name":"domain","layers":[{"name":"domain","packages":[{"path":"internal/wallet/domain"}]}]},
+		{"name":"infra","packages":[{"containerId":"C-1","layers":[{"name":"infra"}]}]}
+	]}],"contracts":[],"paths":[]}`
+
+	normalized := normalizeLLDLayout(domain.TypeLLD, json.RawMessage(raw))
+	var doc domain.LLD
+	if err := json.Unmarshal(normalized, &doc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	layers := doc.Containers[0].Layers
+	if len(layers[0].Packages) != 0 {
+		t.Fatalf("the nested layer must not become a package: %+v", layers[0])
+	}
+	if len(layers[1].Packages) != 1 || layers[1].Packages[0].Path != "" {
+		t.Fatalf("the nested container must not become a package path: %+v", layers[1])
+	}
+}
+
 // A payload the shape does not name passes through untouched: nothing the gates
 // repair alone must reach the coercion.
 func TestCoercePayloadLeavesUnknownPayload(t *testing.T) {

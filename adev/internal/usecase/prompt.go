@@ -61,11 +61,11 @@ var registryParagraphs = map[domain.FormType]map[string][]int{
 		"containers": {3, 4, 6},
 	},
 	domain.TypeLLD: {
-		"containers": {1, 2},
-		"layers":     {1, 2},
-		"packages":   {1, 2},
-		"modules":    {1, 2},
-		"contracts":  {3, 4, 5, 6},
+		"containers": {1, 2, 9},
+		"layers":     {1, 2, 9},
+		"packages":   {1, 2, 9},
+		"modules":    {1, 2, 9},
+		"contracts":  {3, 4, 5, 6, 9},
 	},
 }
 

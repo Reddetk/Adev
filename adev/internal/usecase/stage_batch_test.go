@@ -103,22 +103,29 @@ func TestDetailInstructionFillsTheRequiredLayout(t *testing.T) {
 }
 
 // TestLLDRetryOnlyForStructuralHoles: the model continues while it can fill the
-// layout, but a question or the attempt cap stops the loop.
+// layout, and the attempt cap stops the loop.
 func TestLLDRetryOnlyForStructuralHoles(t *testing.T) {
-	if !lldRetry(domain.TypeLLD, 1, false, false) {
+	if !lldRetry(domain.TypeLLD, 1) {
 		t.Fatal("a structural hole must get another model pass")
 	}
-	if lldRetry(domain.TypeLLD, maxLLDFormAttempts, false, false) {
+	if lldRetry(domain.TypeLLD, maxLLDFormAttempts) {
 		t.Fatal("the attempt cap must stop the loop")
 	}
-	if lldRetry(domain.TypeLLD, 1, true, false) {
-		t.Fatal("a gap batch waits for the operator")
-	}
-	if lldRetry(domain.TypeLLD, 1, false, true) {
-		t.Fatal("a gate question waits for the operator")
-	}
-	if lldRetry(domain.TypeBRD, 1, false, false) {
+	if lldRetry(domain.TypeBRD, 1) {
 		t.Fatal("only the LLD layout continues by itself")
+	}
+}
+
+// TestSkeletonInstructionKeepsTheChildListsEmpty: the first LLD pass is the tree
+// outline only. Every child list waits for its own pass, so one answer never
+// carries the whole document.
+func TestSkeletonInstructionKeepsTheChildListsEmpty(t *testing.T) {
+	got := skeletonInstruction(domain.Stage{ID: "05"}, domain.TypeLLD)
+
+	for _, want := range []string{"Leave the detailed lists empty", "layers", "packages", "modules"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("the skeleton must ask for the outline only, missing %q: %s", want, got)
+		}
 	}
 }
 

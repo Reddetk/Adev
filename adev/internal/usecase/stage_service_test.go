@@ -260,6 +260,32 @@ func TestH3ARerunOfAValidFormKeepsTheVersion(t *testing.T) {
 	assert.Equal(t, 1, stored.FormVersion)
 }
 
+// TestH4ARerunOfAWaitingFormRegenerates: an explicit run replaces the questions
+// about the waiting draft, so the model can fill the layout instead of pausing
+// on a batch the operator cannot answer.
+func TestH4ARerunOfAWaitingFormRegenerates(t *testing.T) {
+	fixture := newM2Fixture(t, validBRD())
+	fixture.configure(t)
+	input := fixture.submitUserInput(t, 1)
+
+	waiting := &domain.Form{Envelope: domain.Envelope{
+		FormID: stageOutput, FormType: domain.TypeBRD, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusWaitingOperator, Route: domain.RouteGreenfield, Stage: "00", Mode: domain.ModeFull,
+		PipelineID: m2Pipeline, TargetSystemID: "1", ProducedBy: domain.RoleAnalyst,
+		Inputs: []domain.Ref{{FormID: input.FormID, FormType: input.FormType, FormVersion: input.FormVersion, Hash: input.PayloadHash}},
+	}}
+	require.NoError(t, waiting.SetRawPayload(validBRD()))
+	require.NoError(t, fixture.store.Save(context.Background(), waiting))
+
+	outcome, err := fixture.runStage00(t)
+	require.NoError(t, err)
+	assert.Equal(t, 2, outcome.FormVersion, "an explicit run regenerates a waiting draft")
+	assert.Equal(t, 1, outcome.Attempts)
+	stored, err := fixture.forms.Latest(context.Background(), stageOutput)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusValid, stored.Status)
+}
+
 // --- N1 ---------------------------------------------------------------------
 
 func TestN1AMissingInputStopsTheStage(t *testing.T) {

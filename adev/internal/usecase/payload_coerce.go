@@ -35,6 +35,37 @@ func coercePayload(formType domain.FormType, payload json.RawMessage) json.RawMe
 	return out
 }
 
+// normalizeLLDLayout drops the fields the LLD layout does not know: a detail
+// answer sometimes nests a container in a layer or a layer in a package. The
+// gates then see the real layout instead of an object the schema ignores.
+func normalizeLLDLayout(formType domain.FormType, payload json.RawMessage) json.RawMessage {
+	if formType != domain.TypeLLD {
+		return payload
+	}
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		return payload
+	}
+	raw, ok := doc["containers"]
+	if !ok {
+		return payload
+	}
+	var containers []domain.LLDContainer
+	if err := json.Unmarshal(raw, &containers); err != nil {
+		return payload
+	}
+	encoded, err := json.Marshal(containers)
+	if err != nil {
+		return payload
+	}
+	doc["containers"] = encoded
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return payload
+	}
+	return out
+}
+
 // coerceNode walks one level of the payload next to its shape. A node the shape
 // names no wrapper for passes through untouched.
 func coerceNode(shape any, value any) any {

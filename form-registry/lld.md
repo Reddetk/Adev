@@ -22,10 +22,24 @@
 3. Which package path holds the code?
 4. Which module path holds the behavior?
 
-**Answer:** `payload.containers[]` — `{ containerId, layers[] }`.
-**Answer:** `payload.containers[].layers[]` — `{ name, packages[] }`.
-**Answer:** `payload.containers[].layers[].packages[]` — `{ path, modules[] }`.
-**Answer:** `payload.containers[].layers[].packages[].modules[]` — `{ objectId, path }`.
+**Answer:** `payload.containers[]` - `{ containerId, layers[] }`.
+**Answer:** `payload.containers[].layers[]` - `{ name, packages[] }`.
+**Answer:** `payload.containers[].layers[].packages[]` - `{ path, modules[] }`.
+**Answer:** `payload.containers[].layers[].packages[].modules[]` - `{ objectId, path }`.
+
+The model designs the layout. Do not ask the operator for a layer, a package path or a module path.
+
+- A layer holds only `name` and `packages`. A package holds only `path` and `modules`.
+  Never put a container inside a layer or a layer inside a package.
+- Every package has a non-empty `path`. A module `path` extends its package path.
+  Modules are optional; a package may hold no module.
+- Every HLD aggregate belongs to the `domain` layer of its container: put the
+  aggregate `moduleRef` in a package under `domain`.
+- A Go service container has `domain`, `app` and `adapter` layers: `domain` for
+  aggregates and rules, `app` for use cases, `adapter` for HTTP, events and
+  clients. Add `infra` for stores and brokers. A UI container may use only `app`.
+- A package path follows the container tech: `internal/<context>/<layer>` for Go,
+  `lib/<layer>/<feature>` for Flutter.
 
 ### Paragraph 2 — Module dependency
 
@@ -127,6 +141,23 @@
 `pointer` is absolute and names one value of `payload`, for example `/containers/0/layers/0/name`.
 A gap that names a whole list or a whole entry is a defect: the next run of the stage fills the structure, the operator answers one value.
 
+## Generation order
+
+The LLD grows as a tree, one level per pass. The first answer is the outline: the
+top-level list only, with each entry's id and short fields, and every child list
+empty. Then each entry gets its own pass, and that pass returns only its child list.
+
+1. `containers[]` - the top level, one entry per HLD container.
+2. `containers[].layers[]` - one pass per container.
+3. `layers[].packages[]` - one pass per layer.
+4. `packages[].modules[]` - one pass per package.
+5. `modules[].deps[]` - one pass per module.
+6. `contracts[]` is a second top level; `contracts[].paths[]` is one pass per contract.
+
+A pass never fills the child list of its children. An empty child list is a request
+for the next pass, not an open gap. This keeps each answer small and lets the gates
+judge one level at a time.
+
 ## Gates
 
 1. Each `containerId` exists in the `HLD` and the object registry.
@@ -138,7 +169,9 @@ A gap that names a whole list or a whole entry is a defect: the next run of the 
 7. Each `module.objectId` is new or belongs to the current container.
 8. A delta does not delete a contract that a current test uses, unless an `ADR` allows it.
 9. Each container has at least one layer; each layer has at least one package.
-10. Each `openGaps[].pointer` names one value of `payload`, not a whole list or entry.
+10. Each package has a non-empty `path`; a layer holds only `name` and `packages`, a package only `path` and `modules`.
+11. Each HLD aggregate `moduleRef` appears in the `domain` layer of its container.
+12. Each `openGaps[].pointer` names one value of `payload`, not a whole list or entry.
 
 ## Delta
 
@@ -157,4 +190,6 @@ Route A changes only contracts and paths inside an existing container.
 
 ## Specificity note
 
-A layer name outside the enum is a defect. A module without `objectId` or `path` is a defect.
+A layer name outside the enum is a defect. A package without `path` is a defect.
+A module without `objectId` or `path` is a defect. A layer or a package that
+contains a whole container is a defect.

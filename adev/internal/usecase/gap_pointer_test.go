@@ -77,18 +77,19 @@ func TestNormalizeGapPointers(t *testing.T) {
 }
 
 // TestPurgeKeepsOnlyValueGaps: the operator answers one value. A gap that names a
-// whole list or a layer record is a structural hole for the next run, so the purge
-// leaves only the scalar field. The LLD gaps reader has to see the payload for
-// the purge to work at all.
+// whole list, a layer record or a layout field is the next run's job, so the purge
+// leaves only the scalar field outside the layout. The LLD gaps reader has to see
+// the payload for the purge to work at all.
 func TestPurgeKeepsOnlyValueGaps(t *testing.T) {
 	payload := json.RawMessage(`{
 		"containers": [{"containerId": "C-1", "layers": [{"name": "app"}]}],
-		"contracts": [], "paths": [],
+		"contracts": [{"id": "C-1"}], "paths": [],
 		"openGaps": [
 			{"id": "G1", "pointer": "/containers/0/layers/0/name", "question": {"text": "Which layer?", "lang": "STE100"}},
 			{"id": "G2", "pointer": "/containers/0/layers", "question": {"text": "Which layers?", "lang": "STE100"}},
 			{"id": "G3", "pointer": "/containers/0/layers/0", "question": {"text": "Describe the layer", "lang": "STE100"}},
-			{"id": "G4", "pointer": "/paths", "question": {"text": "Which paths?", "lang": "STE100"}}
+			{"id": "G4", "pointer": "/paths", "question": {"text": "Which paths?", "lang": "STE100"}},
+			{"id": "G5", "pointer": "/contracts/0/inputType", "question": {"text": "Which input type?", "lang": "STE100"}}
 		]
 	}`)
 
@@ -102,25 +103,26 @@ func TestPurgeKeepsOnlyValueGaps(t *testing.T) {
 	if err := json.Unmarshal(purged, &doc); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(doc.Gaps) != 1 || doc.Gaps[0].ID != "G1" {
-		t.Fatalf("want only the value gap G1, got %+v", doc.Gaps)
+	if len(doc.Gaps) != 1 || doc.Gaps[0].ID != "G5" {
+		t.Fatalf("want only the contract value gap G5, got %+v", doc.Gaps)
 	}
 }
 
-// TestStructuralGateFailureAsksNothing: a gate finding about a whole list is the
-// next run's job. Only the finding that names one value becomes a question, or the
-// operator receives a card no answer can close.
+// TestStructuralGateFailureAsksNothing: a gate finding about a whole list or the
+// layout is the next run's job. Only the finding that names one value outside the
+// layout becomes a question, or the operator receives a card no answer can close.
 func TestStructuralGateFailureAsksNothing(t *testing.T) {
-	payload := json.RawMessage(`{"containers":[{"containerId":"C-1","layers":[{"name":"app"}]}],"contracts":[],"paths":[]}`)
+	payload := json.RawMessage(`{"containers":[{"containerId":"C-1","layers":[{"name":"app"}]}],"contracts":[{"id":"C-1"}],"paths":[]}`)
 	failures := []domain.ValidationError{
 		{Field: "containers[0].layers", Problem: "at least one layer is required"},
 		{Field: "containers[0].layers[0].packages", Problem: "at least one package is required"},
 		{Field: "containers[0].layers[0].name", Problem: `unknown value ""`},
+		{Field: "contracts[0].inputType", Problem: "is empty"},
 	}
 
 	got := valueFailures(domain.TypeLLD, payload, failures)
 
-	if len(got) != 1 || got[0].Field != "containers[0].layers[0].name" {
-		t.Fatalf("want only the value finding, got %+v", got)
+	if len(got) != 1 || got[0].Field != "contracts[0].inputType" {
+		t.Fatalf("want only the contract value finding, got %+v", got)
 	}
 }
