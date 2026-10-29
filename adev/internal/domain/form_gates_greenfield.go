@@ -187,7 +187,16 @@ func ValidateADR(a ADR) error {
 	return errors.Join(errs...)
 }
 
-var knownLayerNames = map[string]bool{"adapter": true, "domain": true, "app": true, "infra": true}
+// knownLayerNames holds every layer name the gate accepts. The goca names serve
+// a Go container, the atomic names a UI container; the generic adapter, app and
+// infra stay for LLDs approved before them.
+var knownLayerNames = map[LayerName]bool{
+	LayerDomain: true, LayerUsecase: true, LayerRepository: true,
+	LayerHandler: true, LayerDI: true, LayerMiddleware: true,
+	LayerToken: true, LayerAtom: true, LayerMolecule: true,
+	LayerOrganism: true, LayerTemplate: true, LayerPage: true,
+	LayerAdapter: true, LayerApp: true, LayerInfra: true,
+}
 
 // ValidateLLD checks the LLD gates.
 func ValidateLLD(l LLD) error {
@@ -202,9 +211,7 @@ func ValidateLLD(l LLD) error {
 			errs = append(errs, invalid(fmt.Sprintf("containers[%d].layers", ci), "at least one layer is required"))
 		}
 		for li, layer := range c.Layers {
-			switch layer.Name {
-			case LayerAdapter, LayerDomain, LayerApp, LayerInfra:
-			default:
+			if !knownLayerNames[layer.Name] {
 				errs = append(errs, invalid(fmt.Sprintf("containers[%d].layers[%d].name", ci, li), fmt.Sprintf("unknown value %q", layer.Name)))
 			}
 			if len(layer.Packages) == 0 {

@@ -24,8 +24,23 @@ type Package struct {
 type LayerName string
 
 const (
+	LayerDomain     LayerName = "domain"
+	LayerUsecase    LayerName = "usecase"
+	LayerRepository LayerName = "repository"
+	LayerHandler    LayerName = "handler"
+	LayerDI         LayerName = "di"
+	LayerMiddleware LayerName = "middleware"
+
+	LayerToken    LayerName = "token"
+	LayerAtom     LayerName = "atom"
+	LayerMolecule LayerName = "molecule"
+	LayerOrganism LayerName = "organism"
+	LayerTemplate LayerName = "template"
+	LayerPage     LayerName = "page"
+
+	// The generic names stay accepted: an approved LLD is immutable, so a stored
+	// layout must keep passing the gate.
 	LayerAdapter LayerName = "adapter"
-	LayerDomain  LayerName = "domain"
 	LayerApp     LayerName = "app"
 	LayerInfra   LayerName = "infra"
 )

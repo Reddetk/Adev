@@ -170,7 +170,7 @@ func stagePrompt(stage domain.Stage, output domain.FormType, shape string, conte
 // gets its own call afterwards, so no single answer carries the whole document.
 func skeletonInstruction(stage domain.Stage, output domain.FormType) string {
 	empty := strings.Join(collectEmptyLists(batchPlans[output], map[string]bool{}), ", ")
-	return fmt.Sprintf(
+	base := fmt.Sprintf(
 		"You fill the %s form of stage %s. Answer with the payload only. Do not add fields. "+
 			"List every entry with its id and short fields. Leave the detailed lists empty ([]): detailed lists: %s. "+
 			"Fill every field that the given context answers. "+
@@ -178,14 +178,19 @@ func skeletonInstruction(stage domain.Stage, output domain.FormType) string {
 			"put one openGaps entry with the question, the field it would fill (one value, never a whole list), "+
 			"and the options when it is a choice.",
 		output, stage.ID, empty)
+	if output == domain.TypeBRD {
+		base += " For BRD: goals[].metricId and successMetrics[].metricId MUST reference an ID that exists in metrics[]. If metrics[] already has entries and you are unsure, use the first metric ID from metrics[]. Do not invent new metric IDs for goals/successMetrics."
+	}
+	return base
 }
 
 // questionsInstruction asks the first call of the BRD for the operator questions
 // only: the document is assembled later, per answer, and the model never invents
 // a value to fill it.
 func questionsInstruction(stage domain.Stage, output domain.FormType) string {
-	return fmt.Sprintf(
+	base := fmt.Sprintf(
 		"You collect the operator questions for the %s form of stage %s. Answer with the payload only. Do not add fields. "+
+			"Put one openGaps entry at the answer root for each value the context does not give. "+
 			"Produce the openGaps entries only: one per value the context does not give. "+
 			"Every question is about THIS system and its business: name the objects, actors and numbers of the request. "+
 			"A question that fits any other system the same way is wrong: throw it away. "+
@@ -197,6 +202,10 @@ func questionsInstruction(stage domain.Stage, output domain.FormType) string {
 			"Write the lists that the context already answers fully. Leave every other list empty ([]). "+
 			"Do not invent any value.",
 		output, stage.ID)
+	if output == domain.TypeBRD {
+		base += " For BRD: goals[].metricId and successMetrics[].metricId MUST reference an ID that exists in metrics[]. If metrics[] already has entries and you are unsure, use the first metric ID from metrics[]. Do not invent new metric IDs for goals/successMetrics."
+	}
+	return base
 }
 
 // collectEmptyLists gathers the lists that later detail calls fill: the companion
@@ -224,11 +233,15 @@ func collectEmptyLists(plans []batchPlan, seen map[string]bool) []string {
 // options. A design stage differs in what the context gives, not in whether it
 // may ask.
 func stageInstruction(stage domain.Stage, output domain.FormType) string {
-	return fmt.Sprintf(
+	base := fmt.Sprintf(
 		"You fill the %s form of stage %s. Answer with the payload only. Do not add fields. "+
 			"Fill every field that the given context answers. "+
 			"If the context does not give a concrete value or you are not sure, do not invent it: "+
 			"put one openGaps entry with the question, the field it would fill (one value, never a whole list), "+
 			"and the options when it is a choice.",
 		output, stage.ID)
+	if output == domain.TypeBRD {
+		base += " For BRD: goals[].metricId and successMetrics[].metricId MUST reference an ID that exists in metrics[]. If metrics[] already has entries and you are unsure, use the first metric ID from metrics[]. Do not invent new metric IDs for goals/successMetrics."
+	}
+	return base
 }

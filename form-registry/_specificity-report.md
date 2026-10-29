@@ -39,7 +39,7 @@
 | `HLD` | деградация без таймаута | `timeoutMs` |
 | `ADR` | решение без альтернативы | минимум одна `rejectedBecause` |
 | `ADR` | нет связи с объектами | `objectRefs[]` |
-| `LLD` | `Layer.name` — свободный | enum `adapter/domain/app/infra` |
+| `LLD` | `Layer.name` — свободный | goca-слои `domain/usecase/repository/handler/di/middleware`, atomic `token/atom/molecule/organism/template/page`; старые `adapter/app/infra` валидны |
 | `LLD` | контракт без ошибок | `errors[]` обязателен для каждого контракта |
 | `LLD` | путь без кода ошибки | `expectedErrorCode` для negative |
 | `LLD` | событие без идемпотентности | `idempotencyKey + ordering` |

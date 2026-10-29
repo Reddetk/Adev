@@ -8,6 +8,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Reddetk/Adev/internal/domain"
 )
@@ -73,11 +74,38 @@ type StageService struct {
 	questions  *QuestionService
 	activities *ActivityService
 	registry   *RegistryService
+	// detailSem bounds the model calls of the detail walks: a slot (a channel
+	// token) stands for one call in flight, shared by every level and pipeline.
+	detailSem chan struct{}
 }
+
+// stageDetailWorkers caps the detail calls in flight. Four calls share one API
+// key politely: the provider rate-limits per key, not per pipeline.
+const stageDetailWorkers = 4
 
 // NewStageService builds the stage runner.
 func NewStageService(forms *FormService, settings *SettingsService, llm LLMFactory, runs StageRunRecorder) *StageService {
-	return &StageService{forms: forms, settings: settings, llm: llm, runs: runs}
+	return &StageService{forms: forms, settings: settings, llm: llm, runs: runs,
+		detailSem: make(chan struct{}, stageDetailWorkers)}
+}
+
+// acquireDetailSlot blocks until a slot frees or the context ends.
+func (s *StageService) acquireDetailSlot(ctx context.Context) bool {
+	if s == nil || s.detailSem == nil {
+		return ctx.Err() == nil
+	}
+	select {
+	case s.detailSem <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (s *StageService) releaseDetailSlot() {
+	if s != nil && s.detailSem != nil {
+		<-s.detailSem
+	}
 }
 
 // WithQuestions attaches the question publisher. A stage without it blocks and
@@ -225,6 +253,9 @@ func (s *StageService) runForm(
 		if previous != nil && previous.FormType == output {
 			if prior, err := s.forms.Get(ctx, previous.FormID, previous.FormVersion); err == nil && len(prior.Payload) > 0 {
 				resume = prior.Payload
+				if output == domain.TypeBRD {
+					resume = normalizeBRDMetricIDs(resume)
+				}
 			}
 		}
 
@@ -551,6 +582,17 @@ type entryLabel struct {
 	idValue string
 }
 
+// detailResult is one finished unit of a parallel detail walk. The worker sends
+// it over the results channel; the receiver merges it into the document.
+type detailResult struct {
+	index   int
+	labels  []entryLabel
+	echo    json.RawMessage
+	updated json.RawMessage
+	gaps    []json.RawMessage
+	ok      bool
+}
+
 // detailBatches asks the model to fill one entry per call and merges the answers
 // back into the skeleton. A failed detail call keeps the skeleton entry: the gates
 // still judge the document, and the operator sees what is missing.
@@ -560,10 +602,37 @@ func (s *StageService) detailBatches(ctx context.Context, request StageRequest, 
 	return mergeDetailGaps(filled, gaps)
 }
 
-// detailLevel fills one level of the document: every entry of every plan names a
-// model call, the answer is merged, and the children of the entry go through the
-// same walk on the updated entry. basePath is the absolute pointer of the entry
-// the walk stands in, so a gap of a detail answer lands where the entry lives.
+// detailEntry runs one entry of one plan: the model call, the echo walk, the
+// entry gaps, and the child levels of the entry. It is a pure unit of work: all
+// merging into the document happens in the receiver, entries never share state.
+func (s *StageService) detailEntry(
+	ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig,
+	stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage,
+	plan batchPlan, labels []entryLabel, entry json.RawMessage, entryPath string,
+) detailResult {
+	echo := s.detailCall(ctx, request, client, agent, stage, output, shape, stageContext, labels, entry, plan)
+	updated, ok := entryFromEcho(echo, labels)
+	if !ok {
+		id := lastValue(labels)
+		log.Printf("stage %s: detail %s %s: the answer does not carry the entry", stage.ID, plan.kind, id)
+		return detailResult{labels: labels, echo: echo}
+	}
+	var gaps []json.RawMessage
+	gaps = append(gaps, detailGaps(echo, entryPath)...)
+	if len(plan.children) > 0 {
+		// The children walk runs inside this unit: its calls take the same slots,
+		// so the pool bound holds for the whole subtree.
+		updated = s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plan.children, updated, entryPath, labels, &gaps)
+	}
+	return detailResult{labels: labels, echo: echo, updated: updated, gaps: gaps, ok: true}
+}
+
+// detailLevel fills one level of the document in parallel, following the
+// concurrent fork-join pattern: fork — one goroutine per entry, join — the
+// results channel is closed once every fork has joined. The receiver owns the
+// document and merges one result at a time, so no merge ever races another.
+// Children of an entry wait for its answer; siblings run at once. The in-flight
+// bound is the detailSem channel the calls take, not the goroutine count.
 func (s *StageService) detailLevel(
 	ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig,
 	stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage,
@@ -574,6 +643,14 @@ func (s *StageService) detailLevel(
 		if err != nil {
 			continue
 		}
+		type detailJob struct {
+			index     int
+			id        string
+			labels    []entryLabel
+			entry     json.RawMessage
+			entryPath string
+		}
+		var jobs []detailJob
 		for index, entry := range entries {
 			id := fieldOf(entry, plan.idFieldOf())
 			if id == "" {
@@ -581,26 +658,49 @@ func (s *StageService) detailLevel(
 			}
 			entryPath := basePath + "/" + plan.kind + "/" + strconv.Itoa(index)
 			labels := append(append([]entryLabel{}, parents...), entryLabel{plan: plan, idValue: id})
-			echo := s.detailCall(ctx, request, client, agent, stage, output, shape, stageContext, labels, entry, plan)
-			updated, ok := entryFromEcho(echo, labels)
-			if !ok {
-				log.Printf("stage %s: detail %s %s: the answer does not carry the entry", stage.ID, plan.kind, id)
+			jobs = append(jobs, detailJob{index: index, id: id, labels: labels, entry: entry, entryPath: entryPath})
+		}
+		if len(jobs) == 0 {
+			continue
+		}
+
+		// Fork: one goroutine per entry. The buffer is exactly one result per
+		// fork, so a worker never blocks on send and a join closes at once.
+		results := make(chan detailResult, len(jobs))
+		var joins sync.WaitGroup
+		for _, job := range jobs {
+			joins.Add(1)
+			go func(job detailJob) {
+				defer joins.Done()
+				result := s.detailEntry(ctx, request, client, agent, stage, output, shape, stageContext,
+					plan, job.labels, job.entry, job.entryPath)
+				result.index = job.index
+				results <- result
+			}(job)
+		}
+		// Join: the courier closes the channel only after every fork returned.
+		go func() {
+			joins.Wait()
+			close(results)
+		}()
+
+		// The receiver collects while the forks still run.
+		for result := range results {
+			if !result.ok {
 				continue
 			}
-			*gaps = append(*gaps, detailGaps(echo, entryPath)...)
+			id := lastValue(result.labels)
+			*gaps = append(*gaps, result.gaps...)
 			if plan.with != "" && len(parents) == 0 {
 				// The companion list lives at the document root: the answer merges
 				// beside the entry, the entry itself is set back below.
-				if merged, err := replaceOwned(doc, echo, plan, id); err == nil {
+				if merged, err := replaceOwned(doc, result.echo, plan, id); err == nil {
 					doc = merged
 				} else {
 					log.Printf("stage %s: merge %s of %s %s: %v", stage.ID, plan.with, plan.kind, id, err)
 				}
 			}
-			if len(plan.children) > 0 {
-				updated = s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plan.children, updated, entryPath, labels, gaps)
-			}
-			entries[index] = updated
+			entries[result.index] = result.updated
 		}
 		doc, err = setList(doc, plan.kind, entries)
 		if err != nil {
@@ -623,7 +723,15 @@ func (s *StageService) detailCall(
 	system, user := promptMessages(instruction, shape, context, nil)
 	complete := LLMRequest{Role: agent.Role, System: system, User: user, Files: registryFileFor(output, plan.kind)}
 	call := s.startModelCall(request, agent, complete)
+	// The slot is taken around the call only, so a chat-completion running long
+	// does not hold the pool while the answer is parsed. A cancelled context
+	// frees the slot path too: the call never runs on a dead context.
+	if !s.acquireDetailSlot(ctx) {
+		s.finishModelCall(call, LLMResponse{}, nil, []string{"stopped: context cancelled while waiting for a call slot"})
+		return nil
+	}
 	response, err := client.Complete(ctx, complete)
+	s.releaseDetailSlot()
 	if err != nil {
 		s.finishModelCall(call, LLMResponse{}, nil, []string{err.Error()})
 		log.Printf("stage %s: detail %s: %v", stage.ID, plan.kind, err)
@@ -670,7 +778,7 @@ func detailInstruction(output domain.FormType, stage domain.Stage, plan batchPla
 	}
 	switch plan.kind {
 	case "layers":
-		instruction += " Give every package in this layer a path. A Go service has domain, app and adapter layers; put each HLD aggregate moduleRef in the domain layer of its container."
+		instruction += " Give every package in this layer a path. A Go container has the goca layers domain, usecase, repository, handler, di and middleware; a UI container has the atomic layers token, atom, molecule, organism, template and page. Put each HLD aggregate moduleRef in the domain layer of its container."
 	case "packages":
 		instruction += " Fill the path of this package and the path of every module it holds; a module path extends the package path."
 	case "contracts":

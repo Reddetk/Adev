@@ -18,7 +18,7 @@
 
 **Questions:**
 1. Which `objectId` identifies the container?
-2. Which layer name applies?
+2. Which layer of the container tech holds the code?
 3. Which package path holds the code?
 4. Which module path holds the behavior?
 
@@ -35,11 +35,16 @@ The model designs the layout. Do not ask the operator for a layer, a package pat
   Modules are optional; a package may hold no module.
 - Every HLD aggregate belongs to the `domain` layer of its container: put the
   aggregate `moduleRef` in a package under `domain`.
-- A Go service container has `domain`, `app` and `adapter` layers: `domain` for
-  aggregates and rules, `app` for use cases, `adapter` for HTTP, events and
-  clients. Add `infra` for stores and brokers. A UI container may use only `app`.
-- A package path follows the container tech: `internal/<context>/<layer>` for Go,
-  `lib/<layer>/<feature>` for Flutter.
+- A Go container uses the goca layers: `domain` for aggregates and rules,
+  `usecase` for services and DTO, `repository` for store adapters, `handler` for
+  HTTP, CLI and worker adapters, `di` for the composition root, `middleware` for
+  transport middleware. Omit a layer the container does not need.
+- A UI container uses the atomic layers in one direction: `token` defines style,
+  `atom` is one control, `molecule` groups atoms, `organism` groups molecules,
+  `template` lays out organisms, `page` binds a template to a route. A lower
+  layer never imports a higher one.
+- A package path follows the container tech: `internal/<layer>/<package>` for Go,
+  `src/<layer>/<feature>` for a web UI, `lib/<layer>/<feature>` for Flutter.
 
 ### Paragraph 2 — Module dependency
 
@@ -182,7 +187,7 @@ Route A changes only contracts and paths inside an existing container.
 
 | object kind | relation | rule |
 | --- | --- | --- |
-| `layer` | create / change | `name` is one of `adapter`, `domain`, `app`, `infra`. |
+| `layer` | create / change | `name` is a goca layer of a Go container or an atomic layer of a UI container. `adapter`, `app` and `infra` pass only on an `LLD` approved before them. |
 | `package` | create / change | Register the package with `status: planned`. |
 | `module` | create / change | Register the module with `status: planned`. |
 | `broker` | create / change | Register the topic or queue with `status: planned`. |
@@ -190,6 +195,6 @@ Route A changes only contracts and paths inside an existing container.
 
 ## Specificity note
 
-A layer name outside the enum is a defect. A package without `path` is a defect.
+A layer name outside the goca and atomic sets is a defect. A package without `path` is a defect.
 A module without `objectId` or `path` is a defect. A layer or a package that
 contains a whole container is a defect.

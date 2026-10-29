@@ -201,8 +201,12 @@ func main() {
 
 	// The runs of previous processes still say running: their chains died with
 	// the process. Resume them from the stage they were on.
-	if resumed := container.StageRunService().Resume(context.Background()); resumed > 0 {
-		log.Printf("stage runs: resumed %d run(s) of previous process(es)", resumed)
+	if pool != nil {
+		if resumed := container.StageRunService().Resume(context.Background()); resumed > 0 {
+			log.Printf("stage runs: resumed %d run(s) of previous process(es)", resumed)
+		}
+	} else {
+		log.Printf("stage runs: resume skipped (no database connection)")
 	}
 
 	// Wait for interrupt signal to gracefully shutdown

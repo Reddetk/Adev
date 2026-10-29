@@ -166,15 +166,22 @@ func (f *fakeRunStore) Save(run *domain.Run) error {
 	defer f.mu.Unlock()
 	run.ID = f.next
 	f.next++
-	f.rows[run.ID] = run
+	f.rows[run.ID] = f.snapshot(run)
 	return nil
 }
 
 func (f *fakeRunStore) Update(run *domain.Run) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.rows[run.ID] = run
+	f.rows[run.ID] = f.snapshot(run)
 	return nil
+}
+
+// snapshot copies the row: a store keeps values, never the caller's live
+// pointer, exactly what PostgreSQL does on UPDATE.
+func (f *fakeRunStore) snapshot(run *domain.Run) *domain.Run {
+	row := *run
+	return &row
 }
 
 func (f *fakeRunStore) byID(id uint) *domain.Run {

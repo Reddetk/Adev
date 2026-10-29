@@ -25,7 +25,7 @@ var shapeChoices = map[string]string{
 	"Verdict":             `"go|no_go|revise"`,
 	"DecisionStatus":      `"proposed|accepted|superseded"`,
 	"ContextRelationType": `"sync|async"`,
-	"LayerName":           `"adapter|domain|app|infra"`,
+	"LayerName":           `"domain|usecase|repository|handler|di|middleware|token|atom|molecule|organism|template|page"`,
 	"PathKind":            `"happy|negative"`,
 	// The operator picks the whole document: the choices are values to show a
 	// human, not a schema. The model needs one scalar, or it copies the array.

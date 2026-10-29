@@ -106,17 +106,20 @@ func (s *StageRunService) Resume(ctx context.Context) int {
 // the activity book, which holds the cancel of the stage context.
 func (s *StageRunService) execute(parent context.Context, request StageRequest, run *domain.Run) {
 	go func() {
+		// The row handed out (Start returns it, the handler serializes it) stays
+		// untouched: this goroutine mutates only its own copy and persists it.
+		row := *run
 		// LIFO: the recover runs first, so a panic still closes the run row.
 		defer func() {
-			if err := s.runs.Update(run); err != nil {
-				log.Printf("run %d stage %s: update status %s: %v", run.ID, run.Stage, run.Status, err)
+			if err := s.runs.Update(&row); err != nil {
+				log.Printf("run %d stage %s: update status %s: %v", row.ID, row.Stage, row.Status, err)
 			}
-			s.release(run.ID)
+			s.release(row.ID)
 		}()
 		defer func() {
 			if rec := recover(); rec != nil {
-				run.Status, run.LastError = "failed", fmt.Sprintf("panic: %v", rec)
-				log.Printf("run %d stage %s: panic: %v", run.ID, run.Stage, rec)
+				row.Status, row.LastError = "failed", fmt.Sprintf("panic: %v", rec)
+				log.Printf("run %d stage %s: panic: %v", row.ID, row.Stage, rec)
 			}
 		}()
 
@@ -124,16 +127,16 @@ func (s *StageRunService) execute(parent context.Context, request StageRequest, 
 		switch {
 		case errors.Is(err, ErrStageStopped):
 			// The operator stopped the run: a normal terminal state.
-			run.Status = "stopped"
+			row.Status = "stopped"
 		case err != nil:
-			run.Status, run.LastError = "failed", err.Error()
+			row.Status, row.LastError = "failed", err.Error()
 		case outcome.Blocked:
 			// Blocked is a normal pause: the questions wait in the dashboard.
-			run.Status = "blocked"
+			row.Status = "blocked"
 		default:
-			run.Status = "done"
+			row.Status = "done"
 		}
-		run.Attempts = outcome.Attempts
+		row.Attempts = outcome.Attempts
 	}()
 }
 

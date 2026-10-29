@@ -5,6 +5,29 @@ import (
 	"testing"
 )
 
+// TestLLDAcceptsTheGocaAndAtomicLayerNames: a Go container names goca layers, a UI
+// container names atomic layers, and a stored LLD keeps its generic layer names.
+// A name outside all three sets is still a defect.
+func TestLLDAcceptsTheGocaAndAtomicLayerNames(t *testing.T) {
+	for _, name := range []LayerName{
+		LayerDomain, LayerUsecase, LayerRepository, LayerHandler, LayerDI, LayerMiddleware,
+		LayerToken, LayerAtom, LayerMolecule, LayerOrganism, LayerTemplate, LayerPage,
+		LayerAdapter, LayerApp, LayerInfra,
+	} {
+		lld := LLD{Containers: []LLDContainer{{ContainerID: "C-1",
+			Layers: []Layer{{Name: name, Packages: []Package{{Path: "p"}}}}}}}
+		if err := ValidateLLD(lld); err != nil {
+			t.Errorf("layer %q must pass the gate, got %v", name, err)
+		}
+	}
+
+	lld := LLD{Containers: []LLDContainer{{ContainerID: "C-1",
+		Layers: []Layer{{Name: "service", Packages: []Package{{Path: "p"}}}}}}}
+	if err := ValidateLLD(lld); err == nil || !strings.Contains(err.Error(), `unknown value "service"`) {
+		t.Fatalf("want an unknown layer name to fail, got %v", err)
+	}
+}
+
 // TestLLDPointsTheMissingPathAtTheEndOfTheList: an error code without a negative
 // path is a question for the operator, and the finding must name the slot the
 // answer lands in. A finding against the contract entry left the operator nowhere

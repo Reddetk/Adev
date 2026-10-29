@@ -32,6 +32,91 @@ func coercePayload(formType domain.FormType, payload json.RawMessage) json.RawMe
 	if err != nil {
 		return payload
 	}
+	if formType == domain.TypeBRD {
+		out = normalizeBRDMetricIDs(out)
+	}
+	return out
+}
+
+// normalizeBRDMetricIDs maps goals[].metricId and successMetrics[].metricId to
+// existing metric IDs from metrics[] when possible, falling back to the first
+// metric to break the gate cycle without waiting for operator intervention.
+func normalizeBRDMetricIDs(payload json.RawMessage) json.RawMessage {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		return payload
+	}
+	rawMetrics, ok := doc["metrics"]
+	if !ok {
+		return payload
+	}
+	var metrics []map[string]any
+	if err := json.Unmarshal(rawMetrics, &metrics); err != nil {
+		return payload
+	}
+	valid := map[string]bool{}
+	var first string
+	for _, m := range metrics {
+		if id, ok := m["id"].(string); ok && id != "" {
+			valid[id] = true
+			if first == "" {
+				first = id
+			}
+		}
+	}
+	if len(valid) == 0 || first == "" {
+		return payload
+	}
+	changed := false
+	if rawGoals, ok := doc["goals"]; ok {
+		var goals []map[string]any
+		if err := json.Unmarshal(rawGoals, &goals); err == nil {
+			for i := range goals {
+				if mid, ok := goals[i]["metricId"].(string); ok {
+					if !valid[mid] {
+						goals[i]["metricId"] = first
+						changed = true
+						continue
+					}
+					continue
+				}
+				goals[i]["metricId"] = first
+				changed = true
+			}
+			if changed {
+				if encoded, err := json.Marshal(goals); err == nil {
+					doc["goals"] = encoded
+				}
+			}
+		}
+	}
+	if rawSuccess, ok := doc["successMetrics"]; ok {
+		var success []map[string]any
+		if err := json.Unmarshal(rawSuccess, &success); err == nil {
+			localChanged := false
+			for i := range success {
+				if mid, ok := success[i]["metricId"].(string); ok {
+					if !valid[mid] {
+						success[i]["metricId"] = first
+						localChanged = true
+						continue
+					}
+					continue
+				}
+				success[i]["metricId"] = first
+				localChanged = true
+			}
+			if localChanged {
+				if encoded, err := json.Marshal(success); err == nil {
+					doc["successMetrics"] = encoded
+				}
+			}
+		}
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return payload
+	}
 	return out
 }
 

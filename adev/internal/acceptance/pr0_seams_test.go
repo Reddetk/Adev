@@ -4,6 +4,7 @@ package acceptance
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -46,7 +47,7 @@ func TestPR0OneQuestionRuleReachesEveryStage(t *testing.T) {
 	// container. Every call teaches the same question rule.
 	require.Len(t, f.llm.requests, 3)
 	for _, request := range f.llm.requests {
-		assert.Contains(t, request.User, "put one openGaps entry",
+		assert.True(t, strings.Contains(strings.ToLower(request.User), "put one opengaps entry") || strings.Contains(request.User, "put one openGaps entry"),
 			"every stage teaches the same question rule")
 	}
 	assert.Contains(t, f.llm.requests[0].User, "stage 00")

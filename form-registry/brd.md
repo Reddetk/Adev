@@ -156,7 +156,7 @@ Each question has a **Purpose** and one **Field**. The analyst asks the operator
 ## Gates
 
 1. `goals` contains at least one entry.
-2. Each `goals[].metricId` exists in `metrics`.
+2. Each `goals[].metricId` exists in `metrics`. `goals[].metricId` and `successMetrics[].metricId` MUST reference an ID that exists in `metrics[]`. If unsure, use the first metric ID from `metrics[]`. Do not invent new metric IDs for goals/successMetrics.
 3. Each `metrics[]` entry has `unit`, `baseline`, and `target`.
 4. No field describes a container, module, or code.
 5. The analyst closes all `blocking` gaps before `status: approved`.

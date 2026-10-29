@@ -1,0 +1,33 @@
+{
+  "stage": "00",
+  "path": "empty",
+  "modelCalls": null,
+  "attachedContext": {
+    "keys": [],
+    "bytes": 0,
+    "dup": null,
+    "missing": null
+  },
+  "controlQueries": [
+    {
+      "query": "Контрольный запрос 1: достаточно ли прикреплённого скелетона и предыдущих форм для заполнения без догадок?",
+      "complete": false,
+      "excess": false,
+      "reason": "мало прикреплённого контекста"
+    },
+    {
+      "query": "Контрольный запрос 2: есть ли избыточный/дублирующий контекст при наличии openGaps?",
+      "complete": true,
+      "excess": false,
+      "reason": "openGaps не выявлены или не приобщены"
+    }
+  ],
+  "operatorAnswers": null,
+  "skeletonCheck": {
+    "ok": true,
+    "missing": [],
+    "extra": null
+  },
+  "gapsResolved": 0,
+  "timeMs": 0
+}
