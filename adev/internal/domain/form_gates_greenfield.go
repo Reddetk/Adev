@@ -118,6 +118,33 @@ func ValidateHLD(h HLD) error {
 		}
 		containerIDs[c.ObjectID] = true
 	}
+	// A greenfield design has no decision history, so its choices live here: each
+	// one names the option taken, at least one rejected option, and the containers
+	// it fixes. A decision that points at no container fixes nothing.
+	if len(h.Decisions) == 0 {
+		errs = append(errs, invalid("decisions", "must contain at least one decision"))
+	}
+	for i, decision := range h.Decisions {
+		if decision.ID == "" {
+			errs = append(errs, invalid(fmt.Sprintf("decisions[%d].id", i), "is empty"))
+		}
+		if decision.Title.Value == "" || decision.Decision.Value == "" {
+			errs = append(errs, invalid(fmt.Sprintf("decisions[%d]", i), "title and decision must be non-empty"))
+		}
+		if len(decision.Alternatives) == 0 {
+			errs = append(errs, invalid(fmt.Sprintf("decisions[%d].alternatives", i), "must contain at least one rejected option"))
+		}
+		for j, alt := range decision.Alternatives {
+			if alt.Option.Value == "" || alt.RejectedBecause.Value == "" {
+				errs = append(errs, invalid(fmt.Sprintf("decisions[%d].alternatives[%d]", i, j), "option and rejectedBecause must be non-empty"))
+			}
+		}
+		for _, ref := range decision.ObjectRefs {
+			if !containerIDs[ref] {
+				errs = append(errs, invalid(fmt.Sprintf("decisions[%d].objectRefs", i), fmt.Sprintf("%q is not a container of this design", ref)))
+			}
+		}
+	}
 	for i, a := range h.Aggregates {
 		if a.ID == "" {
 			errs = append(errs, invalid(fmt.Sprintf("aggregates[%d].id", i), "is empty"))

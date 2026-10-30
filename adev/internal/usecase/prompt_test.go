@@ -115,6 +115,22 @@ func TestSkeletonInstructionAsksForTheRequirements(t *testing.T) {
 	}
 }
 
+// TestSkeletonInstructionAsksForTheDecisions: a greenfield design keeps its
+// choices in the design, so the outline lists them and names what they fix.
+func TestSkeletonInstructionAsksForTheDecisions(t *testing.T) {
+	got := skeletonInstruction(domain.Stage{ID: "03"}, domain.TypeHLD)
+	for _, want := range []string{
+		"List the decisions this design makes",
+		"the storage product",
+		"the message bus",
+		"objectRefs",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("the HLD outline instruction misses %q: %s", want, got)
+		}
+	}
+}
+
 // TestSkeletonInstructionNamesTheInfrastructure: a distributed system needs its
 // gateway, identity provider and message bus as containers, not as a box inside
 // an application.

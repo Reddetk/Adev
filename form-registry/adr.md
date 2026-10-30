@@ -3,12 +3,16 @@
 | field | value |
 | --- | --- |
 | formType | `ADR` |
-| stage | `04` |
+| stage | `04` (change route only) |
 | owner | `architect` |
-| route | `greenfield`, `change` |
+| route | `change` |
 | mode | `full`, `delta` |
 | inputs | `HLD`, `SRS` |
 | next | `LLD` |
+
+> A greenfield system has no decision history to record: its choices live in the
+> `HLD` as `decisions[]`. The ADR is the record of a change to a system that already
+> runs, which is where "why this and not that" is worth a document of its own.
 
 ## Template
 

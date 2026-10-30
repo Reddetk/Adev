@@ -61,13 +61,17 @@ type Degradation struct {
 
 // HLD is the high-level design of the target system.
 type HLD struct {
-	UbiquitousLanguage  []Term            `json:"ubiquitousLanguage,omitempty"`
-	BoundedContexts     []BoundedContext  `json:"boundedContexts"`
-	Containers          []Container       `json:"containers"`
-	Aggregates          []Aggregate       `json:"aggregates"`
-	ContextRelations    []ContextRelation `json:"contextRelations,omitempty"`
-	DegradationStrategy []Degradation     `json:"degradationStrategy,omitempty"`
-	OpenGaps            []Gap             `json:"openGaps,omitempty"`
+	UbiquitousLanguage []Term            `json:"ubiquitousLanguage,omitempty"`
+	BoundedContexts    []BoundedContext  `json:"boundedContexts"`
+	Containers         []Container       `json:"containers"`
+	Aggregates         []Aggregate       `json:"aggregates"`
+	ContextRelations   []ContextRelation `json:"contextRelations,omitempty"`
+	// Decisions are the architecture choices this design makes: which product,
+	// which consistency, which failure handling. A greenfield system has no
+	// decision history to record, so the choices live in the design they shape.
+	Decisions           []Decision    `json:"decisions,omitempty"`
+	DegradationStrategy []Degradation `json:"degradationStrategy,omitempty"`
+	OpenGaps            []Gap         `json:"openGaps,omitempty"`
 }
 
 // Texts returns every free-text value for the language checker.
@@ -89,6 +93,13 @@ func (h HLD) Texts() []Text {
 	}
 	for _, d := range h.DegradationStrategy {
 		out = append(out, Text{Value: d.Failure, Lang: LangSTE100}, Text{Value: d.Degradation, Lang: LangSTE100})
+	}
+	for _, d := range h.Decisions {
+		out = append(out, d.Title, d.Context, d.Decision)
+		out = append(out, d.Consequences...)
+		for _, alt := range d.Alternatives {
+			out = append(out, alt.Option, alt.RejectedBecause)
+		}
 	}
 	return out
 }

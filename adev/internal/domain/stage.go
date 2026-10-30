@@ -35,16 +35,14 @@ var greenfieldStages = []Stage{
 		Inputs: []FormType{TypeBRD, TypeFeasibility}, Outputs: []FormType{TypeSRS}},
 	{ID: "03", Name: "High-Level Design", Owner: RoleArchitect,
 		Inputs: []FormType{TypeSRS}, Outputs: []FormType{TypeHLD}},
-	{ID: "04", Name: "Invariants and ADR", Owner: RoleArchitect,
-		Inputs: []FormType{TypeHLD, TypeSRS}, Outputs: []FormType{TypeHLD, TypeADR}},
 	{ID: "05", Name: "Low-Level Design", Owner: RoleAnalyst,
-		Inputs: []FormType{TypeHLD, TypeADR}, Outputs: []FormType{TypeLLD}},
+		Inputs: []FormType{TypeHLD}, Outputs: []FormType{TypeLLD}},
 	{ID: "06", Name: "Task Plan", Owner: RoleAnalyst,
 		Inputs: []FormType{TypeLLD, TypeSRS}, Outputs: []FormType{TypeTaskPlan}},
 	{ID: "07", Name: "Test Contract", Owner: RoleQA,
 		Inputs: []FormType{TypeLLD, TypeTaskPlan}, Outputs: []FormType{TypeTestContract}},
 	{ID: "08", Name: "Implementation Spec", Owner: RoleDev,
-		Inputs: []FormType{TypeTestContract, TypeLLD, TypeADR}, Outputs: []FormType{TypeImplementationSpec}},
+		Inputs: []FormType{TypeTestContract, TypeLLD}, Outputs: []FormType{TypeImplementationSpec}},
 	{ID: "08.R", Name: "Refactor Spec", Owner: RoleDev, Conditional: true,
 		Inputs: []FormType{TypeVerdict, TypeTestContract}, Outputs: []FormType{TypeRefactorSpec}},
 	{ID: "09", Name: "QA Verdict", Owner: RoleQA,
@@ -61,6 +59,15 @@ var changeStages = []Stage{
 		InputSource: InputSourceSystemBaseline},
 }
 
+// changeOnlyStages are the stages a change route keeps and greenfield does not.
+// A decision record belongs to a system that already runs: it says why the running
+// design changes, which is the history a greenfield system does not have yet. A
+// greenfield design keeps its choices in the HLD.
+var changeOnlyStages = []Stage{
+	{ID: "04", Name: "Invariants and ADR", Owner: RoleArchitect,
+		Inputs: []FormType{TypeHLD, TypeSRS}, Outputs: []FormType{TypeHLD, TypeADR}},
+}
+
 // stagesByRoute is the route registry. A route names its stages, and no agent
 // ever chooses the next one.
 var stagesByRoute = map[Route][]Stage{
@@ -70,11 +77,12 @@ var stagesByRoute = map[Route][]Stage{
 	RouteMajorChange: changeTails("02", "03", "04", "05", "06", "07", "08", "08.R", "09"),
 }
 
-// changeTails builds a change branch from the greenfield stages it reuses.
+// changeTails builds a change branch from the stages it reuses: the greenfield
+// route and the stages only a change route runs.
 func changeTails(ids ...string) []Stage {
 	result := make([]Stage, 0, len(ids))
 	for _, id := range ids {
-		for _, stage := range greenfieldStages {
+		for _, stage := range append(append([]Stage{}, greenfieldStages...), changeOnlyStages...) {
 			if stage.ID == id {
 				result = append(result, stage)
 				break

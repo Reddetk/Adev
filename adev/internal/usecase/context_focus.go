@@ -222,6 +222,20 @@ func focusHLD(payload map[string]json.RawMessage, contract string, containers, c
 		}
 		return contexts[fieldOf(row, "from")] || contexts[fieldOf(row, "to")]
 	})
+	// A decision follows its containers: the storage choice reaches the container
+	// that stores data, and a system-wide decision names no container and stays.
+	out["decisions"] = keepRows(payload["decisions"], func(row json.RawMessage) bool {
+		refs := jsonStrings(row, "objectRefs")
+		if len(refs) == 0 {
+			return true
+		}
+		for _, objectID := range refs {
+			if containers[objectID] {
+				return true
+			}
+		}
+		return false
+	})
 	return out
 }
 

@@ -20,7 +20,7 @@ Setup and commands: `adev/README.md`. Coding rules: `AGENTS.md`. Form templates:
 stage, so the same input walks the same path.
 
 ```
-00 BRD → 01 TEJ → 02 SRS → 03 HLD → 04 invariants + ADR → 05 LLD → 06 plan → 07 tests → 08 impl → 09 verdict
+00 BRD → 01 TEJ → 02 SRS → 03 HLD → 05 LLD → 06 plan → 07 tests → 08 impl → 09 verdict
 ```
 
 ### An interview about the business
@@ -51,12 +51,15 @@ bus (Kafka), the load balancer, the scheduler and the external devices a contain
 Each one carries a bounded context, a degradation rule and a relation: sync for a call that
 waits, async with an `eventRef` for an event on the bus.
 
-### Ten architecture decisions in dependency order
+### Decisions live in the design
 
-The ADR covers style, communication, storage, scaling, consistency (CAP/PACELC, after storage
-and scaling), reliability, build stack, operations and security, design process, success
-metrics. Each decision names the option taken and at least two rejected ones, and cites the SRS
-requirement or NFR that decided it.
+A new system has no decision history to record, so the choices that shape it sit inside the
+HLD: storage product, message bus, consistency, failure handling, edge, identity provider. Each
+decision names the option taken, at least one rejected option and why, and the containers it
+fixes. A decision that points at no container fixes nothing, and the design rejects it.
+
+The ADR form stays for the change route, where "why this and not that" explains a move of a
+system that already runs.
 
 ### Questions about the business only
 
@@ -99,8 +102,8 @@ Diagram source: `docs/diagrams/stage-run.html`.
 - The model proposes, the code assembles. After each answer the system assigns ids, restores the
   references the model dropped, keeps the fields the skeleton already held, and coerces a plain
   string into the `Text` record the shape requires.
-- The accepted version is the floor. Stage 04 rewrites the HLD of stage 03, so every accepted
-  value is inherited unless the new answer replaces it. A model that returns an empty field
+- The accepted version is the floor. A stage that rewrites a design it already published inherits every accepted
+  value unless the new answer replaces it. A model that returns an empty field
   cannot delete a decision.
 - Gates judge the document. A validation failure is a stored draft plus an indicator; the
   operator decides whether to rerun. There is no self-repair loop.
@@ -155,8 +158,8 @@ self-correction for a fixed route and a cost you can estimate.
 - Per-provider worker limit and a token budget per stage, instead of one global slot count.
 - A regenerate pass without inheritance. Today a rewrite keeps the previous accepted design
   alive, which is how a weak HLD survives a better prompt.
-- ADR decisions that link the FR and NFR rows they serve, so a changed requirement marks the
-  decisions to revisit.
+- Decisions inside the HLD link the FR and NFR rows they serve, so a changed requirement marks
+  the choices to revisit.
 - Traffic, storage and growth in their own form between SRS and HLD, where the scaling and CAP
   decisions can cite them.
 - The change route wired back into SRS and HLD; the CR brief and the impact assessment already

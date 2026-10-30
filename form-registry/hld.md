@@ -3,12 +3,12 @@
 | field | value |
 | --- | --- |
 | formType | `HLD` |
-| stage | `03` (v1), `04` (v2) |
+| stage | `03` |
 | owner | `architect` |
 | route | `greenfield`, `change` |
 | mode | `full`, `delta` |
 | inputs | `SRS`, as-is `HLD`, object registry |
-| next | `ADR`, `LLD` |
+| next | `LLD`, `ADR` (change route) |
 
 ## Template
 
@@ -99,7 +99,22 @@ bus deploy and fail on their own, so they are not a box inside an application.
 
 **Answer:** `payload.semanticAnalysis[]` — `{ term, contexts: { boundedContextId, meaning, attributes, lifecycle }[], rationale, result }`.
 
-### Paragraph 7 — Degradation strategy (v2)
+### Paragraph 7 — Decision
+
+**Scope:** One fork the design settles: which product for the storage, the bus, the
+edge, the identity; which consistency; which failure handling. A greenfield system has
+no decision history, so its choices live in the design they shape.
+
+**Questions:**
+1. Which option does the design take?
+2. Which options does it reject, and which SRS requirement, NFR or constraint makes them wrong?
+3. Which containers does the decision fix?
+4. Which quality does the decision improve, and which does it cost?
+
+**Answer:** `payload.decisions[]` — `{ id, title: Text, decision: Text, context: Text?, alternatives: [{option, rejectedBecause}], consequences: Text[], objectRefs: string[] }`.
+**Answer:** `objectRefs` names containers of this design. A decision that names no container fixes nothing.
+
+### Paragraph 8 — Degradation strategy (v2)
 
 **Scope:** One failure and the reduced behavior.
 
@@ -122,7 +137,8 @@ bus deploy and fail on their own, so they are not a box inside an application.
 7. Each container with an external dependency has a degradation strategy.
 8. An aggregate without a root is invalid.
 9. Terms that appear in multiple contexts are recorded in `ubiquitousLanguage` with their context-specific meanings.
-10. A change to `boundedContexts` or `aggregates` requires an `ADR`.
+10. A change to `boundedContexts` or `aggregates` requires an `ADR` on the change route.
+11. Each decision has at least one rejected alternative, and every `objectRefs` value is a container of this design.
 
 ## Delta
 

@@ -617,8 +617,11 @@ var batchPlans = map[domain.FormType][]batchPlan{
 	domain.TypeTaskPlan:     {{kind: "tasks"}},
 	domain.TypeTestContract: {{kind: "tests"}},
 	// The HLD is detailed by one call per container, which writes the aggregates
-	// with their invariants of that container.
-	domain.TypeHLD: {{kind: "containers", idField: "objectId", with: "aggregates", ref: "containerId"}},
+	// with their invariants of that container, and then by one call per decision.
+	domain.TypeHLD: {
+		{kind: "containers", idField: "objectId", with: "aggregates", ref: "containerId"},
+		{kind: "decisions"},
+	},
 	domain.TypeLLD: {
 		{kind: "containers", idField: "containerId", children: []batchPlan{
 			{kind: "layers", idField: "name", children: []batchPlan{
