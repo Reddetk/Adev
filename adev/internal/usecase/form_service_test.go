@@ -4,22 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/Reddetk/Adev/internal/domain"
 )
 
 type fakeFormStore struct {
-	forms map[string]*domain.Form
-	saved int
+	forms   map[string]*domain.Form
+	saved   int
+	updated int
 }
 
 func newFakeFormStore() *fakeFormStore {
 	return &fakeFormStore{forms: map[string]*domain.Form{}}
 }
 
+// Save mimics the database: a version is written once, and the stored row is a
+// copy, not the caller's pointer.
 func (f *fakeFormStore) Save(_ context.Context, form *domain.Form) error {
-	f.forms[form.FormID+":"+itoa(form.FormVersion)] = form
+	key := form.FormID + ":" + itoa(form.FormVersion)
+	if _, ok := f.forms[key]; ok {
+		return fmt.Errorf("%w: %s", domain.ErrVersionExists, key)
+	}
+	stored := *form
+	f.forms[key] = &stored
 	f.saved++
 	return nil
 }
@@ -41,8 +50,21 @@ func (f *fakeFormStore) ByPipeline(context.Context, string, domain.FormType) ([]
 }
 
 func (f *fakeFormStore) SetStatus(context.Context, string, int, domain.Status) error { return nil }
-func (f *fakeFormStore) UpdatePayload(context.Context, *domain.Form) error           { return nil }
-func (f *fakeFormStore) Delete(context.Context, string, int) error                   { return nil }
+
+// UpdatePayload rewrites the stored draft: the checkpoint path of a long walk.
+func (f *fakeFormStore) UpdatePayload(_ context.Context, form *domain.Form) error {
+	key := form.FormID + ":" + itoa(form.FormVersion)
+	stored, ok := f.forms[key]
+	if !ok {
+		return domain.ErrFormNotFound
+	}
+	stored.Payload = form.Payload
+	stored.PayloadHash = form.PayloadHash
+	f.updated++
+	return nil
+}
+
+func (f *fakeFormStore) Delete(context.Context, string, int) error { return nil }
 
 type failingChecker struct{}
 
@@ -87,6 +109,41 @@ func TestSubmitStoresAValidForm(t *testing.T) {
 	}
 	if store.saved != 1 {
 		t.Fatalf("want one saved form, got %d", store.saved)
+	}
+}
+
+// TestSubmitDraftRewritesItsOwnVersion: the detail walk saves progress into the
+// draft of the version it fills, so the next checkpoint rewrites that draft instead
+// of stacking a version per model call. An accepted form still needs its own
+// version: the append-only rule does not move.
+func TestSubmitDraftRewritesItsOwnVersion(t *testing.T) {
+	store := newFakeFormStore()
+	service := NewFormService(store, nil)
+	form := userInputForm(t)
+
+	if err := service.SubmitDraft(context.Background(), form); err != nil {
+		t.Fatalf("save the first checkpoint: %v", err)
+	}
+	partial := *form
+	if err := partial.SetRawPayload(json.RawMessage(`{"rawRequest":{"text":"one more entry answered","lang":"STE100"}}`)); err != nil {
+		t.Fatalf("set the checkpoint payload: %v", err)
+	}
+	if err := service.SubmitDraft(context.Background(), &partial); err != nil {
+		t.Fatalf("the next checkpoint must rewrite the draft: %v", err)
+	}
+	if store.saved != 1 || store.updated != 1 {
+		t.Fatalf("want one insert and one rewrite, got insert %d, rewrite %d", store.saved, store.updated)
+	}
+	stored, err := store.Get(context.Background(), form.FormID, form.FormVersion)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(stored.Payload) != string(partial.Payload) {
+		t.Fatalf("the draft must hold the last checkpoint, got %s", stored.Payload)
+	}
+
+	if err := service.Submit(context.Background(), form); !errors.Is(err, domain.ErrVersionExists) {
+		t.Fatalf("an accepted form must not reuse the draft version, got %v", err)
 	}
 }
 

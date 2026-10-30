@@ -169,7 +169,7 @@ func (m *MemoryFormsStore) SetStatus(ctx context.Context, formID string, version
 	return nil
 }
 
-// UpdatePayload rewrites the payload of a version that waits for the operator.
+// UpdatePayload rewrites the payload of a version that has not passed the gates.
 func (m *MemoryFormsStore) UpdatePayload(ctx context.Context, update *domain.Form) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -181,8 +181,8 @@ func (m *MemoryFormsStore) UpdatePayload(ctx context.Context, update *domain.For
 	if !ok {
 		return fmt.Errorf("%w: %s:%d", domain.ErrFormNotFound, update.FormID, update.FormVersion)
 	}
-	if form.Status != domain.StatusWaitingOperator {
-		return fmt.Errorf("%w: %s:%d is not waiting for the operator", domain.ErrInvalidStatusChange, update.FormID, update.FormVersion)
+	if form.Status != domain.StatusDraft && form.Status != domain.StatusWaitingOperator {
+		return fmt.Errorf("%w: %s:%d is not a draft", domain.ErrInvalidStatusChange, update.FormID, update.FormVersion)
 	}
 	form.Payload = update.Payload
 	form.PayloadHash = update.PayloadHash

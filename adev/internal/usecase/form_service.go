@@ -49,6 +49,17 @@ func (s *FormService) Submit(ctx context.Context, form *domain.Form) error {
 	return s.store.Save(ctx, form)
 }
 
+// saveVersion stores the version, or rewrites the draft a progress checkpoint
+// already stored under it. A detail walk saves after every finished entry, so the
+// accepted form must not fail on its own checkpoint.
+func (s *FormService) saveVersion(ctx context.Context, form *domain.Form) error {
+	err := s.store.Save(ctx, form)
+	if errors.Is(err, domain.ErrVersionExists) {
+		return s.store.UpdatePayload(ctx, form)
+	}
+	return err
+}
+
 // SubmitDraft stores a form that failed its payload gates. The model filled it
 // with proposals, so the operator can correct one field instead of redoing it.
 // The envelope, the references and the hash are still checked; the payload gates
@@ -71,7 +82,7 @@ func (s *FormService) SubmitDraft(ctx context.Context, form *domain.Form) error 
 	if err := json.Unmarshal(form.Payload, &document); err != nil || document == nil {
 		return fmt.Errorf("submit draft: the payload is not a document")
 	}
-	return s.store.Save(ctx, form)
+	return s.saveVersion(ctx, form)
 }
 
 // Materialize applies a JSON Patch to a base form and returns the next full version.

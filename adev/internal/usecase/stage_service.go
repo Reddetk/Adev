@@ -326,7 +326,7 @@ func (s *StageService) runForm(
 		// A composite document goes out in batches: the skeleton first, then one
 		// call per entry, so no single answer has to carry the whole list.
 		if plans, ok := batchPlans[output]; ok {
-			payload = s.detailBatches(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload)
+			payload = s.detailBatches(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload, s.progressSaver(ctx, form))
 			// The detail calls ask their own questions: their pointers read like the
 			// payload root and take the same normalization as the skeleton.
 			payload = normalizeGapPointers(payload)
@@ -349,7 +349,16 @@ func (s *StageService) runForm(
 		var mismatch []string
 		var failures []domain.ValidationError
 		if err := s.forms.Submit(ctx, form); err != nil {
-			if !isFormRejection(err) {
+			if errors.Is(err, domain.ErrVersionExists) {
+				// The detail walk saved this draft after every finished entry: the
+				// accepted payload rewrites that version instead of a new one.
+				if updateErr := s.forms.UpdatePayload(ctx, form); updateErr != nil {
+					activity.Finish("failed", updateErr.Error())
+					s.record(ctx, request, stage, "failed", attempt, updateErr.Error())
+					s.finishModelCall(call, response, payload, []string{updateErr.Error()})
+					return StageOutcome{}, updateErr
+				}
+			} else if !isFormRejection(err) {
 				activity.Finish("failed", err.Error())
 				s.record(ctx, request, stage, "failed", attempt, err.Error())
 				s.finishModelCall(call, response, payload, []string{err.Error()})
@@ -639,13 +648,34 @@ type detailResult struct {
 	ok      bool
 }
 
+// detailCheckpoint saves the document built so far. A detail call can take a
+// minute, so a stage that runs for an hour must not lose the entries that already
+// answered when the process stops or the operator stops it.
+type detailCheckpoint func(document json.RawMessage) error
+
 // detailBatches asks the model to fill one entry per call and merges the answers
 // back into the skeleton. A failed detail call keeps the skeleton entry: the gates
 // still judge the document, and the operator sees what is missing.
-func (s *StageService) detailBatches(ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig, stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage, plans []batchPlan, payload json.RawMessage) json.RawMessage {
+func (s *StageService) detailBatches(ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig, stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage, plans []batchPlan, payload json.RawMessage, checkpoint detailCheckpoint) json.RawMessage {
 	var gaps []json.RawMessage
-	filled := s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload, payload, "", nil, &gaps)
+	filled := s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload, payload, "", nil, &gaps, checkpoint)
 	return mergeDetailGaps(filled, gaps)
+}
+
+// progressSaver writes the document built so far into the draft of this form. The
+// draft keeps its version: every finished entry rewrites it, so a run of an hour
+// leaves the work on disk and the next run reads it back as the previous draft.
+// shortcut: a resumed run still calls the model per entry and keeps the answers,
+// not the calls; skip an entry whose subtree is already filled when the repeat
+// becomes the bottleneck.
+func (s *StageService) progressSaver(ctx context.Context, form *domain.Form) detailCheckpoint {
+	return func(document json.RawMessage) error {
+		partial := *form
+		if err := partial.SetRawPayload(document); err != nil {
+			return err
+		}
+		return s.forms.SubmitDraft(ctx, &partial)
+	}
 }
 
 // detailEntry runs one entry of one plan: the model call, the echo walk, the
@@ -673,8 +703,9 @@ func (s *StageService) detailEntry(
 	gaps = append(gaps, detailGaps(echo, entryPath)...)
 	if len(plan.children) > 0 {
 		// The children walk runs inside this unit: its calls take the same slots,
-		// so the pool bound holds for the whole subtree.
-		updated = s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plan.children, updated, document, entryPath, labels, &gaps)
+		// so the pool bound holds for the whole subtree. It saves no progress: a
+		// child holds a fragment of the document, not the whole one.
+		updated = s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plan.children, updated, document, entryPath, labels, &gaps, nil)
 	}
 	return detailResult{labels: labels, echo: echo, updated: updated, gaps: gaps, ok: true}
 }
@@ -689,6 +720,7 @@ func (s *StageService) detailLevel(
 	ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig,
 	stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage,
 	plans []batchPlan, doc json.RawMessage, document json.RawMessage, basePath string, parents []entryLabel, gaps *[]json.RawMessage,
+	checkpoint detailCheckpoint,
 ) json.RawMessage {
 	for _, plan := range plans {
 		entries, err := listOf(doc, plan.kind)
@@ -757,6 +789,16 @@ func (s *StageService) detailLevel(
 				}
 			}
 			entries[result.index] = result.updated
+			// One finished entry is worth keeping: the next one may take a minute,
+			// and a stop, a crash or a provider timeout would lose every answer the
+			// model has already given.
+			if checkpoint != nil {
+				if snapshot, snapErr := setList(doc, plan.kind, entries); snapErr == nil {
+					if saveErr := checkpoint(snapshot); saveErr != nil {
+						log.Printf("stage %s: save progress of %s: %v", stage.ID, plan.kind, saveErr)
+					}
+				}
+			}
 		}
 		doc, err = setList(doc, plan.kind, entries)
 		if err != nil {
