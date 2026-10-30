@@ -78,4 +78,17 @@ func TestHLDKeepsTheDecisions(t *testing.T) {
 		ObjectRefs:   []string{"c-9"},
 	}}
 	assert.Error(t, ValidateHLD(foreign), "a decision that names no container of this design fixes nothing")
+
+	// A product the design does not carry is the drift the decision gate exists
+	// for: the ADR of a live run named a cache and a search engine that no
+	// container had.
+	ghostProduct := hld
+	ghostProduct.Decisions = []Decision{{
+		ID: "storage", Title: Text{Value: "Storage", Lang: LangSTE100},
+		Decision:     Text{Value: "Redis.", Lang: LangSTE100},
+		Alternatives: []Alternative{{Option: Text{Value: "Memcached", Lang: LangSTE100}, RejectedBecause: Text{Value: "No persistence.", Lang: LangSTE100}}},
+		ObjectRefs:   []string{"c-1"},
+		Techs:        []string{"redis"},
+	}}
+	assert.Error(t, ValidateHLD(ghostProduct), "a product with no container is a component the design does not have")
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/Reddetk/Adev/internal/domain"
@@ -45,11 +46,32 @@ func (f *fakeFormStore) Latest(context.Context, string) (*domain.Form, error) {
 	return nil, domain.ErrFormNotFound
 }
 
-func (f *fakeFormStore) ByPipeline(context.Context, string, domain.FormType) ([]*domain.Form, error) {
-	return nil, nil
+// ByPipeline returns the stored versions of one pipeline, oldest first. A form
+// type that is empty returns every type.
+func (f *fakeFormStore) ByPipeline(_ context.Context, pipelineID string, formType domain.FormType) ([]*domain.Form, error) {
+	out := make([]*domain.Form, 0)
+	for _, form := range f.forms {
+		if form.PipelineID != pipelineID {
+			continue
+		}
+		if formType != "" && form.FormType != formType {
+			continue
+		}
+		out = append(out, form)
+	}
+	slices.SortFunc(out, func(a, b *domain.Form) int { return a.FormVersion - b.FormVersion })
+	return out, nil
 }
 
-func (f *fakeFormStore) SetStatus(context.Context, string, int, domain.Status) error { return nil }
+// SetStatus moves the stored version, as the database does.
+func (f *fakeFormStore) SetStatus(_ context.Context, formID string, version int, status domain.Status) error {
+	stored, ok := f.forms[formID+":"+itoa(version)]
+	if !ok {
+		return domain.ErrFormNotFound
+	}
+	stored.Status = status
+	return nil
+}
 
 // UpdatePayload rewrites the stored draft: the checkpoint path of a long walk.
 func (f *fakeFormStore) UpdatePayload(_ context.Context, form *domain.Form) error {

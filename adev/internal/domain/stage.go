@@ -12,11 +12,14 @@ const InputSourceSystemBaseline InputSource = "system-baseline"
 
 // Stage is one step of a pipeline.
 type Stage struct {
-	ID      string     `json:"id"`
-	Name    string     `json:"name"`
-	Owner   Role       `json:"owner"`
-	Inputs  []FormType `json:"inputs"`
-	Outputs []FormType `json:"outputs"`
+	ID     string     `json:"id"`
+	Name   string     `json:"name"`
+	Owner  Role       `json:"owner"`
+	Inputs []FormType `json:"inputs"`
+	// OptionalInputs join the context when the route produced them. The LLD reads
+	// the ADR of a change and runs without one on a new system.
+	OptionalInputs []FormType `json:"optionalInputs,omitempty"`
+	Outputs        []FormType `json:"outputs"`
 	// InputSource is empty for the normal flow: the stage reads its own pipeline.
 	InputSource InputSource `json:"inputSource,omitempty"`
 	// Conditional stages are detours: the route lists them, but a straight run
@@ -36,7 +39,7 @@ var greenfieldStages = []Stage{
 	{ID: "03", Name: "High-Level Design", Owner: RoleArchitect,
 		Inputs: []FormType{TypeSRS}, Outputs: []FormType{TypeHLD}},
 	{ID: "05", Name: "Low-Level Design", Owner: RoleAnalyst,
-		Inputs: []FormType{TypeHLD}, Outputs: []FormType{TypeLLD}},
+		Inputs: []FormType{TypeHLD}, OptionalInputs: []FormType{TypeADR}, Outputs: []FormType{TypeLLD}},
 	{ID: "06", Name: "Task Plan", Owner: RoleAnalyst,
 		Inputs: []FormType{TypeLLD, TypeSRS}, Outputs: []FormType{TypeTaskPlan}},
 	{ID: "07", Name: "Test Contract", Owner: RoleQA,

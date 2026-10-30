@@ -349,7 +349,8 @@ func (s *StageService) runForm(
 		var mismatch []string
 		var failures []domain.ValidationError
 		if err := s.forms.Submit(ctx, form); err != nil {
-			if errors.Is(err, domain.ErrVersionExists) {
+			switch {
+			case errors.Is(err, domain.ErrVersionExists):
 				// The detail walk saved this draft after every finished entry: the
 				// accepted payload rewrites that version instead of a new one.
 				if updateErr := s.forms.UpdatePayload(ctx, form); updateErr != nil {
@@ -358,21 +359,22 @@ func (s *StageService) runForm(
 					s.finishModelCall(call, response, payload, []string{updateErr.Error()})
 					return StageOutcome{}, updateErr
 				}
-			} else if !isFormRejection(err) {
+			case !isFormRejection(err):
 				activity.Finish("failed", err.Error())
 				s.record(ctx, request, stage, "failed", attempt, err.Error())
 				s.finishModelCall(call, response, payload, []string{err.Error()})
 				return StageOutcome{}, err
+			default:
+				if draftErr := s.forms.SubmitDraft(ctx, form); draftErr != nil {
+					activity.Finish("failed", draftErr.Error())
+					s.record(ctx, request, stage, "failed", attempt, draftErr.Error())
+					s.finishModelCall(call, response, payload, []string{draftErr.Error()})
+					return StageOutcome{}, draftErr
+				}
+				mismatch = []string{err.Error()}
+				failures = collectFailures(err)
+				log.Printf("stage %s: the draft holds a gate mismatch: %v", stage.ID, err)
 			}
-			if draftErr := s.forms.SubmitDraft(ctx, form); draftErr != nil {
-				activity.Finish("failed", draftErr.Error())
-				s.record(ctx, request, stage, "failed", attempt, draftErr.Error())
-				s.finishModelCall(call, response, payload, []string{draftErr.Error()})
-				return StageOutcome{}, draftErr
-			}
-			mismatch = []string{err.Error()}
-			failures = collectFailures(err)
-			log.Printf("stage %s: the draft holds a gate mismatch: %v", stage.ID, err)
 		}
 
 		outcome.FormID, outcome.FormVersion = form.FormID, form.FormVersion
@@ -477,27 +479,33 @@ func (s *StageService) latestVersion(ctx context.Context, formID string) int {
 }
 
 // buildContext collects the projected input forms and the references of the stage.
+// A required input must have a version in the pipeline; an optional one joins the
+// context when the route produced it, so the same LLD reads the ADR of a change and
+// runs without it on a new system.
 func (s *StageService) buildContext(ctx context.Context, request StageRequest, stage domain.Stage) (json.RawMessage, []domain.Ref, error) {
 	collected := map[string]any{}
 	var refs []domain.Ref
 
-	for _, inputType := range stage.Inputs {
+	collect := func(inputType domain.FormType, required bool) error {
 		versions, err := s.forms.ByPipeline(ctx, request.PipelineID, inputType)
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
 		if len(versions) == 0 {
-			return nil, nil, fmt.Errorf("%w: %s", ErrStageInputMissing, inputType)
+			if !required {
+				return nil
+			}
+			return fmt.Errorf("%w: %s", ErrStageInputMissing, inputType)
 		}
 		latest := versions[len(versions)-1]
 
 		fields, err := domain.ProjectionFor(inputType, stage.Owner)
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
 		projected, err := domain.ProjectFields(fields, latest)
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
 
 		// The key is the document, not its type: a stage may read two versions of
@@ -508,6 +516,18 @@ func (s *StageService) buildContext(ctx context.Context, request StageRequest, s
 			FormID: latest.FormID, FormType: latest.FormType,
 			FormVersion: latest.FormVersion, Hash: latest.PayloadHash,
 		})
+		return nil
+	}
+
+	for _, inputType := range stage.Inputs {
+		if err := collect(inputType, true); err != nil {
+			return nil, nil, err
+		}
+	}
+	for _, inputType := range stage.OptionalInputs {
+		if err := collect(inputType, false); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	raw, err := json.Marshal(collected)
@@ -920,7 +940,7 @@ func detailInstruction(output domain.FormType, stage domain.Stage, plan batchPla
 	case "options":
 		instruction += " Fill the summary, the cost {currency, amount}, the scheduleDays and the confidence (low, medium or high). Estimate the cost and the schedule yourself from the scope; do not ask the operator for them."
 	case "decisions":
-		instruction += " Fill the title, the context, the decision, at least two alternatives with their option and rejectedBecause, and the consequences. The context names the SRS requirement, the SRS NFR or the constraint the HLD names that forces this decision; the rejectedBecause names the same evidence, never a BRD rule. Do not repeat the id."
+		instruction += " Fill the title, the context, the decision, at least two alternatives with their option and rejectedBecause, and the consequences. The context names the SRS requirement, the SRS NFR or the constraint the HLD names that forces this decision; the rejectedBecause names the same evidence, never a BRD rule. Put in techs the products this decision chooses, each one the tech of a container of this design; a product without a container is a component the design does not have. Do not repeat the id."
 	case "tests":
 		instruction += " Fill the targetTest {kind, path}, the scenario given, when and then (each a list of Text), and expectedErrorCode on a negative path. Do not repeat the test id."
 	case "fr":

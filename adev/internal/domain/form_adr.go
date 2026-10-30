@@ -17,16 +17,20 @@ const (
 
 // Decision is one architecture decision record.
 type Decision struct {
-	ID           string         `json:"id"`
-	Title        Text           `json:"title"`
-	Status       DecisionStatus `json:"status"`
-	Supersedes   string         `json:"supersedes,omitempty"`
-	Context      Text           `json:"context,omitempty"`
-	ObjectRefs   []string       `json:"objectRefs,omitempty"`
-	Decision     Text           `json:"decision"`
-	Alternatives []Alternative  `json:"alternatives"`
-	Consequences []Text         `json:"consequences,omitempty"`
-	Links        []Ref          `json:"links,omitempty"`
+	ID         string         `json:"id"`
+	Title      Text           `json:"title"`
+	Status     DecisionStatus `json:"status"`
+	Supersedes string         `json:"supersedes,omitempty"`
+	Context    Text           `json:"context,omitempty"`
+	ObjectRefs []string       `json:"objectRefs,omitempty"`
+	// Techs are the products the decision fixes: the database, the bus, the cache,
+	// the proxy. Each one must be the tech of a container of the design, so a
+	// decision cannot name a component the design does not have.
+	Techs        []string      `json:"techs,omitempty"`
+	Decision     Text          `json:"decision"`
+	Alternatives []Alternative `json:"alternatives"`
+	Consequences []Text        `json:"consequences,omitempty"`
+	Links        []Ref         `json:"links,omitempty"`
 }
 
 // ADR is the set of architecture decisions of the design.

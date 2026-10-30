@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ValidateFeasibility checks the FEASIBILITY gates.
@@ -109,6 +110,7 @@ func ValidateHLD(h HLD) error {
 		contextIDs[bc.ID] = true
 	}
 	containerIDs := map[string]bool{}
+	containerTechs := map[string]bool{}
 	for i, c := range h.Containers {
 		if c.ObjectID == "" {
 			errs = append(errs, invalid(fmt.Sprintf("containers[%d].objectId", i), "is empty"))
@@ -117,6 +119,9 @@ func ValidateHLD(h HLD) error {
 			errs = append(errs, invalid(fmt.Sprintf("containers[%d].boundedContextId", i), "does not exist in boundedContexts"))
 		}
 		containerIDs[c.ObjectID] = true
+		if c.Tech != "" {
+			containerTechs[strings.ToLower(c.Tech)] = true
+		}
 	}
 	// A greenfield design has no decision history, so its choices live here: each
 	// one names the option taken, at least one rejected option, and the containers
@@ -142,6 +147,12 @@ func ValidateHLD(h HLD) error {
 		for _, ref := range decision.ObjectRefs {
 			if !containerIDs[ref] {
 				errs = append(errs, invalid(fmt.Sprintf("decisions[%d].objectRefs", i), fmt.Sprintf("%q is not a container of this design", ref)))
+			}
+		}
+		for _, tech := range decision.Techs {
+			if !containerTechs[strings.ToLower(tech)] {
+				errs = append(errs, invalid(fmt.Sprintf("decisions[%d].techs", i),
+					fmt.Sprintf("%q is not the tech of any container; add the container or drop the product", tech)))
 			}
 		}
 	}

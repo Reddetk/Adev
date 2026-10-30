@@ -55,8 +55,9 @@ waits, async with an `eventRef` for an event on the bus.
 
 A new system has no decision history to record, so the choices that shape it sit inside the
 HLD: storage product, message bus, consistency, failure handling, edge, identity provider. Each
-decision names the option taken, at least one rejected option and why, and the containers it
-fixes. A decision that points at no container fixes nothing, and the design rejects it.
+decision names the option taken, at least one rejected option and why, the containers it fixes,
+and the products it chooses. A product must be the tech of a container of the design, so a
+database or a cache the system needs becomes a container of its own.
 
 The ADR form stays for the change route, where "why this and not that" explains a move of a
 system that already runs.

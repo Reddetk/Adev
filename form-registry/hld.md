@@ -111,8 +111,8 @@ no decision history, so its choices live in the design they shape.
 3. Which containers does the decision fix?
 4. Which quality does the decision improve, and which does it cost?
 
-**Answer:** `payload.decisions[]` — `{ id, title: Text, decision: Text, context: Text?, alternatives: [{option, rejectedBecause}], consequences: Text[], objectRefs: string[] }`.
-**Answer:** `objectRefs` names containers of this design. A decision that names no container fixes nothing.
+**Answer:** `payload.decisions[]` — `{ id, title: Text, decision: Text, context: Text?, alternatives: [{option, rejectedBecause}], consequences: Text[], objectRefs: string[], techs: string[] }`.
+**Answer:** `objectRefs` names containers of this design. `techs` names the products the decision chooses, and each product must be the `tech` of a container of this design.
 
 ### Paragraph 8 — Degradation strategy (v2)
 
@@ -139,6 +139,7 @@ no decision history, so its choices live in the design they shape.
 9. Terms that appear in multiple contexts are recorded in `ubiquitousLanguage` with their context-specific meanings.
 10. A change to `boundedContexts` or `aggregates` requires an `ADR` on the change route.
 11. Each decision has at least one rejected alternative, and every `objectRefs` value is a container of this design.
+12. Every `decisions[].techs` value is the `tech` of a container of this design: a database, a cache or a bus the system takes is a container, not a name in a sentence.
 
 ## Delta
 
