@@ -40,7 +40,7 @@ make run           # сервер на :8080 с настройками из .env
 
 - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` — база;
 - `OUPENROUTER_APIKEY` — ключ модели. Имя с опечаткой это исторически
-  (см. `pkg/env/env.go`), менять его означает ломать все существующие `.env`.
+  (см. `pkg/env/env.go`), менять его означает ломать все существующие `.env`. 
 
 Health check: `curl http://localhost:8080/health`.
 

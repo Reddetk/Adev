@@ -39,15 +39,22 @@
 
 ### Paragraph 3 — Container
 
-**Scope:** One deployable unit.
+**Scope:** One deployable unit. The user-facing services, the external systems and
+the infrastructure are all containers: a gateway, an identity provider and a message
+bus deploy and fail on their own, so they are not a box inside an application.
 
 **Questions:**
 1. Which `objectId` identifies the container?
 2. Which bounded context does the container implement?
 3. Which runtime technology does the container use?
 4. Which NFR drives the technology choice?
+5. Which container accepts the request at the edge: a reverse proxy or an API gateway?
+6. Which container proves who the user is, when the BRD has a sign-up or a sign-in?
+7. Which container carries the events, when an operation runs asynchronously?
+8. Which container balances the traffic, when more than one container serves the same client?
 
 **Answer:** `payload.containers[]` — `{ objectId, purpose: Text, boundedContextId, tech, nfrRefs }`.
+**Answer:** an infrastructure container has its own `boundedContextId`, its own `tech` and its own degradation entry.
 
 ### Paragraph 4 — Aggregate
 
@@ -77,6 +84,7 @@
 5. What is the reason for this relationship (published language / conformist / ACL)?
 
 **Answer:** `payload.contextRelations[]` — `{ from, to, type: "sync" | "async", contractId?, eventRef?, relationshipType, reason }`.
+**Answer:** `sync` is a call that waits for the answer; `async` is an event the bus carries after the caller returns.
 
 ### Paragraph 6 — Semantic analysis
 

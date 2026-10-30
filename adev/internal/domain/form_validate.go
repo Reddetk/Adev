@@ -190,10 +190,9 @@ func ValidateBRD(brd BRD, status Status) error {
 	if !waiting && len(brd.Goals) == 0 {
 		errs = append(errs, invalid("goals", "must contain at least one entry"))
 	}
-	if !waiting && len(brd.Metrics) == 0 {
-		errs = append(errs, invalid("metrics", "must contain at least one entry"))
-	}
-
+	// Metrics are optional: a greenfield system has no measured value yet, so a
+	// goal may name no metric. A metric that is given still needs its ID, and every
+	// reference to a metric must resolve; an unknown ID is a mistake, not a gap.
 	metricIDs := map[string]bool{}
 	for i, metric := range brd.Metrics {
 		if metric.ID == "" {
@@ -201,28 +200,19 @@ func ValidateBRD(brd BRD, status Status) error {
 			continue
 		}
 		metricIDs[metric.ID] = true
-		if metric.Unit == "" {
-			errs = append(errs, invalid(fmt.Sprintf("metrics[%d].unit", i), "is empty"))
-		}
-		if metric.Baseline == nil {
-			errs = append(errs, invalid(fmt.Sprintf("metrics[%d].baseline", i), "is absent"))
-		}
-		if metric.Target == nil {
-			errs = append(errs, invalid(fmt.Sprintf("metrics[%d].target", i), "is absent"))
-		}
 	}
 
 	for i, goal := range brd.Goals {
 		if goal.Outcome.Value == "" {
 			errs = append(errs, invalid(fmt.Sprintf("goals[%d].outcome", i), "is empty"))
 		}
-		if !metricIDs[goal.MetricID] {
+		if goal.MetricID != "" && !metricIDs[goal.MetricID] {
 			errs = append(errs, invalid(fmt.Sprintf("goals[%d].metricId", i), "does not exist in metrics"))
 		}
 	}
 
 	for i, success := range brd.SuccessMetrics {
-		if !metricIDs[success.MetricID] {
+		if success.MetricID != "" && !metricIDs[success.MetricID] {
 			errs = append(errs, invalid(fmt.Sprintf("successMetrics[%d].metricId", i), "does not exist in metrics"))
 		}
 	}

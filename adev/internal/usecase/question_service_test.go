@@ -73,7 +73,7 @@ func TestQuestionRoundTrip(t *testing.T) {
 	}}
 	payload := domain.BRD{
 		Goals: []domain.Goal{{
-			ID: "G1", Outcome: domain.Text{Value: "The system shall track books.", Lang: domain.LangSTE100}, MetricID: "M1",
+			ID: "G1", Outcome: domain.Text{}, MetricID: "M1",
 		}},
 		Metrics: []domain.Metric{{ID: "M1", Name: "accuracy", Unit: "", Baseline: &baseline}},
 	}
@@ -106,16 +106,19 @@ func TestQuestionRoundTrip(t *testing.T) {
 	if answer.FormVersion != 1 || answer.PreviousFormVersion != nil {
 		t.Fatalf("the answer must stay on the same version: %+v", answer.Envelope)
 	}
-	// The metric still has no target: the next failure becomes the new question.
-	if len(requests.saved) != 2 || requests.saved[1].Pointer != "/metrics/0/target" {
-		t.Fatalf("want a follow-up question about the target, got %+v", requests.saved)
+	// The goal still has no outcome: the next failure becomes the new question.
+	if len(requests.saved) != 2 || requests.saved[1].Pointer != "/goals/0/outcome" {
+		t.Fatalf("want a follow-up question about the goal outcome, got %+v", requests.saved)
 	}
 	if requests.saved[0].Status != "completed" {
 		t.Fatalf("the answered request must be completed, got %s", requests.saved[0].Status)
 	}
 
-	// The second answer closes the last gap and the form becomes valid.
-	answer, err = service.AnswerOnPipeline(ctx, 15, "/metrics/0/target", json.RawMessage(`95`))
+	// The second answer closes the last gap. The BRD waits as a draft: the answers
+	// are the interview, not the finished document, and the next stage run
+	// assembles it. The metric has no target and no unit of measurement: a new
+	// system has no measured value yet, and the gates accept the unknown.
+	answer, err = service.AnswerOnPipeline(ctx, 15, "/goals/0/outcome", json.RawMessage(`"The system shall track books."`))
 	if err != nil {
 		t.Fatalf("second answer: %v", err)
 	}
@@ -126,15 +129,18 @@ func TestQuestionRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get v1: %v", err)
 	}
-	if stored.Status != domain.StatusValid {
-		t.Fatalf("want status valid, got %s", stored.Status)
+	if stored.Status != domain.StatusDraft {
+		t.Fatalf("want the interview draft, got %s", stored.Status)
 	}
 	var corrected domain.BRD
 	if err := stored.BindPayload(&corrected); err != nil {
 		t.Fatalf("bind payload: %v", err)
 	}
-	if corrected.Metrics[0].Unit != "hour" || corrected.Metrics[0].Target == nil || *corrected.Metrics[0].Target != 95 {
-		t.Fatalf("want the answers in the payload, got %+v", corrected.Metrics[0])
+	if corrected.Metrics[0].Unit != "hour" || corrected.Goals[0].Outcome.Value == "" {
+		t.Fatalf("want the answers in the payload, got %+v", corrected)
+	}
+	if corrected.Metrics[0].Target != nil {
+		t.Fatalf("an unknown target must stay absent, got %v", *corrected.Metrics[0].Target)
 	}
 	if requests.saved[1].Status != "completed" {
 		t.Fatalf("want the request completed, got %s", requests.saved[1].Status)
@@ -232,8 +238,8 @@ func TestOpenGapBecomesAnOperatorQuestion(t *testing.T) {
 	if corrected.Scope.In[0].Value != "manual registration" {
 		t.Fatalf("want the decision in the field, got %+v", corrected.Scope.In[0])
 	}
-	if stored.Status != domain.StatusValid {
-		t.Fatalf("want status valid, got %s", stored.Status)
+	if stored.Status != domain.StatusDraft {
+		t.Fatalf("want the interview draft for the assembly pass, got %s", stored.Status)
 	}
 	if requests.saved[0].Status != "completed" {
 		t.Fatalf("want the request completed, got %s", requests.saved[0].Status)
@@ -277,6 +283,44 @@ func TestAnswerOnAFieldOfTheOnlyListEntryLands(t *testing.T) {
 	}
 	if len(payload.OpenGaps) != 0 {
 		t.Fatalf("the answered gap must leave the draft, got %s", answered.Payload)
+	}
+}
+
+func TestAnswerCreatesTheMissingListOfAGapPointer(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), &fakeQuestionRequests{})
+
+	form := &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-30-00", FormType: domain.TypeBRD, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusWaitingOperator, Route: domain.RouteGreenfield, Stage: "00", Mode: domain.ModeFull,
+		PipelineID: "30", TargetSystemID: "7", ProducedBy: domain.RoleAnalyst,
+	}}
+	if err := form.SetRawPayload(json.RawMessage(`{"actors": [{"name": "Guest"}], "openGaps": [
+		{"id": "GAP-1", "pointer": "/actors/0/tasks/0", "question": {"text": "Which task?", "lang": "STE100"}}]}`)); err != nil {
+		t.Fatalf("set payload: %v", err)
+	}
+	if err := store.Save(ctx, form); err != nil {
+		t.Fatalf("save draft: %v", err)
+	}
+
+	answered, err := service.AnswerOnPipeline(ctx, 30, "/actors/0/tasks/0", json.RawMessage(`"Books a room"`))
+
+	if err != nil {
+		t.Fatalf("a field under a missing list must land: %v", err)
+	}
+	var payload struct {
+		Actors []struct {
+			Tasks []struct {
+				Text string `json:"text"`
+			} `json:"tasks"`
+		} `json:"actors"`
+	}
+	if err := json.Unmarshal(answered.Payload, &payload); err != nil {
+		t.Fatalf("decode answered payload: %v", err)
+	}
+	if len(payload.Actors) != 1 || len(payload.Actors[0].Tasks) != 1 || payload.Actors[0].Tasks[0].Text != "Books a room" {
+		t.Fatalf("the answer must set actors[0].tasks[0], got %s", answered.Payload)
 	}
 }
 
@@ -761,7 +805,7 @@ func TestOneRunAsksABatchOfValueGaps(t *testing.T) {
 
 	form := waitingForm(t, domain.TypeLLD, "FRM-16-05", "05", `{
 		"containers": [{"containerId": "C-1", "layers": [{"name": "app"}]}],
-		"contracts": [{"id": "CTR-1", "kind": "http", "inputType": "In", "outputType": "Out"}],
+		"contracts": [{"id": "CTR-1", "kind": "http", "inputType": "In", "outputType": "Out", "errors": []}],
 		"paths": [{"id": "P-1", "contractRef": "CTR-1", "kind": "happy", "given": "a", "when": "b", "then": "c"}],
 		"openGaps": [
 			{"id": "G1", "pointer": "/containers/0/layers/0/name", "question": {"text": "Which layer?", "lang": "STE100"}},
@@ -770,7 +814,9 @@ func TestOneRunAsksABatchOfValueGaps(t *testing.T) {
 			{"id": "G4", "pointer": "/contracts/0/outputType", "question": {"text": "Which output?", "lang": "STE100"}},
 			{"id": "G5", "pointer": "/paths/0/given", "question": {"text": "Which state?", "lang": "STE100"}},
 			{"id": "G6", "pointer": "/paths/0/when", "question": {"text": "Which call?", "lang": "STE100"}},
-			{"id": "G7", "pointer": "/paths/0/then", "question": {"text": "Which result?", "lang": "STE100"}}
+			{"id": "G7", "pointer": "/paths/0/then", "question": {"text": "Which result?", "lang": "STE100"}},
+			{"id": "G8", "pointer": "/contracts/0/errors/0/condition", "question": {"text": "Which failure?", "lang": "STE100"}},
+			{"id": "G9", "pointer": "/contracts/0/errors/0/code", "question": {"text": "Which code?", "lang": "STE100"}}
 		]
 	}`)
 	if err := store.Save(ctx, form); err != nil {

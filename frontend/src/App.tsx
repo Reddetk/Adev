@@ -427,7 +427,9 @@ export default function App() {
 
   async function createTargetSystem() {
     try {
-      setTargetSystem(await api.createTargetSystem({ name, description }));
+      // The new system starts without a pipeline: keeping the old id would run the
+      // old system's stages under the new one.
+      switchTarget((await api.createTargetSystem({ name, description })).id);
     } catch {
       setTargetSystem(null);
     }
@@ -492,7 +494,10 @@ export default function App() {
   }
 
   // choosePipeline switches the console to one run and drops the view of the old one.
+  // A pipeline belongs to its target system: picking another system's run switches
+  // the workspace and the agents with it, or the stage would run under the wrong ones.
   function choosePipeline(row: PipelineRow) {
+    if (row.targetsystemid !== targetSystemId) switchTarget(row.targetsystemid);
     setPipeline({ id: row.id, stage: row.currentstage, route: row.route, status: row.status });
     setOpened(null);
     setSelectedStage(null);
@@ -895,11 +900,9 @@ export default function App() {
     if (form) setChoice(null);
     await loadQuestions();
     if (pipelineId) await loadPipelineForms(pipelineId);
-    // The answer decided the field: the corrected form already passed the gates,
-    // so re-running the stage is instant and moves the cursor to the next stage.
-    if (form && form.status === 'valid' && targetSystemId) {
-      await runStage(form.stage).catch(() => undefined);
-    }
+    // A valid answer continues the stage on the server: the run confirms the form
+    // and moves the cursor. Running it here too would start a second run on the
+    // pipeline open in the console, which is not necessarily the one that asked.
   }
 
   async function deleteOpenedForm() {
@@ -1014,6 +1017,7 @@ export default function App() {
 
         <QuestionsDashboard
           questions={questions}
+          systemOf={(id) => pipelines.find((row) => row.id === id)?.targetsystemid}
           loading={questionsLoading}
           error={questionsError}
           onRefresh={() => void loadQuestions()}

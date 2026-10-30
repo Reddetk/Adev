@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -118,8 +119,19 @@ func TestOpenAICompatibleCompleteSendsTheStageRequest(t *testing.T) {
 	assert.GreaterOrEqual(t, response.Usage.LatencyMs, 0, "the adapter measures the call")
 }
 
+// fastRetries keeps a retry test from waiting the real backoff.
+func fastRetries(t *testing.T) {
+	t.Helper()
+	previous, previousMax := modelRetryBackoff, modelRetryMaxBackoff
+	modelRetryBackoff, modelRetryMaxBackoff = time.Millisecond, time.Millisecond
+	t.Cleanup(func() { modelRetryBackoff, modelRetryMaxBackoff = previous, previousMax })
+}
+
 func TestOpenAICompatibleCompleteReportsAnHTTPFailure(t *testing.T) {
+	fastRetries(t)
+	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error":{"message":"model is loading"}}`))
 	}))
@@ -135,6 +147,82 @@ func TestOpenAICompatibleCompleteReportsAnHTTPFailure(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
 	assert.Contains(t, err.Error(), "model is loading")
+	assert.Equal(t, maxModelAttempts, calls, "a transient status is retried up to the cap")
+}
+
+// TestOpenAICompatibleRetriesATransientFailure: a firewall or a cold provider
+// refuses the first connections, and the call succeeds once a retry gets through.
+func TestOpenAICompatibleRetriesATransientFailure(t *testing.T) {
+	fastRetries(t)
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls < 3 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"goals\":[]}"}}]}`))
+	}))
+	defer server.Close()
+
+	client, err := NewOpenAICompatibleFactory().For(context.Background(), domain.AgentConfig{
+		Provider: domain.ProviderOllama, BaseURL: server.URL, Model: "m",
+	})
+	require.NoError(t, err)
+
+	response, err := client.Complete(context.Background(), usecase.LLMRequest{System: "x", User: "{}"})
+
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"goals":[]}`, string(response.Payload))
+	assert.Equal(t, 3, calls, "two failures and one success")
+}
+
+// TestOpenAICompatibleDoesNotRetryARejectedRequest: a 400 is the request itself,
+// so another attempt would send the same mistake again.
+func TestOpenAICompatibleDoesNotRetryARejectedRequest(t *testing.T) {
+	fastRetries(t)
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"bad model"}}`))
+	}))
+	defer server.Close()
+
+	client, err := NewOpenAICompatibleFactory().For(context.Background(), domain.AgentConfig{
+		Provider: domain.ProviderOllama, BaseURL: server.URL, Model: "m",
+	})
+	require.NoError(t, err)
+
+	_, err = client.Complete(context.Background(), usecase.LLMRequest{System: "x", User: "{}"})
+
+	require.Error(t, err)
+	assert.Equal(t, 1, calls, "a rejected request is not retried")
+}
+
+// TestOpenAICompatibleStopsRetryingOnACancelledContext: the operator stops the
+// run, and the backoff must not keep the call alive.
+func TestOpenAICompatibleStopsRetryingOnACancelledContext(t *testing.T) {
+	previous := modelRetryBackoff
+	modelRetryBackoff = time.Hour
+	modelRetryMaxBackoff = time.Hour
+	t.Cleanup(func() { modelRetryBackoff, modelRetryMaxBackoff = previous, previous })
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	client, err := NewOpenAICompatibleFactory().For(context.Background(), domain.AgentConfig{
+		Provider: domain.ProviderOllama, BaseURL: server.URL, Model: "m",
+	})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = client.Complete(ctx, usecase.LLMRequest{System: "x", User: "{}"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "context canceled")
 }
 
 func TestOpenAICompatibleCompleteRejectsAnEmptyChoice(t *testing.T) {

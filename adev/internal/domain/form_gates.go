@@ -86,7 +86,7 @@ func Patchable(formType FormType, payload json.RawMessage, pointer string) bool 
 	}
 	segments := strings.Split(pointer[1:], "/")
 	current := doc
-	for i, raw := range segments[:len(segments)-1] {
+	for _, raw := range segments[:len(segments)-1] {
 		segment := strings.ReplaceAll(strings.ReplaceAll(raw, "~1", "/"), "~0", "~")
 		switch node := current.(type) {
 		case map[string]any:
@@ -105,9 +105,11 @@ func Patchable(formType FormType, payload json.RawMessage, pointer string) bool 
 			return false
 		}
 		if current == nil {
-			// The answer adds the missing objects, but only those the schema has: a
-			// section the model invented has nowhere to be answered into.
-			return keysOnly(segments[i+1:]) && inShape(formType, segments)
+			// The answer adds the missing objects and lists, but only those the
+			// schema has: a section the model invented has nowhere to be answered
+			// into. A list the draft left out is created as an empty list, so an
+			// index inside it can land.
+			return inShape(formType, segments)
 		}
 	}
 	switch node := current.(type) {
@@ -124,17 +126,6 @@ func Patchable(formType FormType, payload json.RawMessage, pointer string) bool 
 		return err == nil && index >= 0 && index <= len(node)
 	}
 	return false
-}
-
-// keysOnly reports whether a path names object keys only; a list index or "-"
-// cannot be created by an answer.
-func keysOnly(segments []string) bool {
-	for _, segment := range segments {
-		if _, err := strconv.Atoi(segment); err == nil || segment == "-" {
-			return false
-		}
-	}
-	return true
 }
 
 // inShape reports whether the path names a place of the payload skeleton: every

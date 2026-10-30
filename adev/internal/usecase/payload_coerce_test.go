@@ -79,6 +79,105 @@ func TestNormalizeLLDLayoutDropsNestedObjects(t *testing.T) {
 	}
 }
 
+// TestCoercePayloadMapsTheMoSCoWPriority: the model answers the MoSCoW word
+// "should", and the registry enum keeps must/high/low. The synonym is the same
+// decision, so the coercion maps it instead of asking the operator.
+func TestCoercePayloadMapsTheMoSCoWPriority(t *testing.T) {
+	raw := `{"fr":[{"id":"FR-1","priority":"should","statement":{"text":"x","priority":"should"}}]}`
+	coerced := coercePayload(domain.TypeSRS, json.RawMessage(raw))
+	var doc struct {
+		FR []struct {
+			Priority  string `json:"priority"`
+			Statement struct {
+				Priority string `json:"priority"`
+			} `json:"statement"`
+		} `json:"fr"`
+	}
+	if err := json.Unmarshal(coerced, &doc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if doc.FR[0].Priority != "high" || doc.FR[0].Statement.Priority != "high" {
+		t.Fatalf("want the MoSCoW words mapped to the enum, got %+v", doc.FR[0])
+	}
+}
+
+// TestCoercePayloadNormalizesTheActorFrequency: the operator says "weekly", the
+// registry keeps the enum day/week/month/quarter/event.
+func TestCoercePayloadNormalizesTheActorFrequency(t *testing.T) {
+	raw := `{"actors":[{"id":"A-1","name":"Guest","frequency":"weekly"},{"id":"A-2","name":"Manager","frequency":"hours"}]}`
+	coerced := coercePayload(domain.TypeBRD, json.RawMessage(raw))
+	var doc struct {
+		Actors []struct {
+			Frequency string `json:"frequency"`
+		} `json:"actors"`
+	}
+	if err := json.Unmarshal(coerced, &doc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if doc.Actors[0].Frequency != "week" || doc.Actors[1].Frequency != "hours" {
+		t.Fatalf("want the known words mapped and the unknown one kept, got %+v", doc.Actors)
+	}
+}
+
+// TestDropBRDMetricGapsKeepsTheSubjectQuestions: a new system has no measured
+// value, so the questions about metrics and success values leave the draft, and a
+// question about a role stays.
+func TestDropBRDMetricGapsKeepsTheSubjectQuestions(t *testing.T) {
+	raw := `{"goals":[],"openGaps":[
+		{"id":"G1","pointer":"/metrics/0/name","question":{"text":"Which metric?","lang":"STE100"}},
+		{"id":"G2","pointer":"/successMetrics/0/window","question":{"text":"Which window?","lang":"STE100"}},
+		{"id":"G3","pointer":"/actors/1/name","question":{"text":"Which role?","lang":"STE100"}}]}`
+	got := dropBRDMetricGaps(json.RawMessage(raw))
+	var doc struct {
+		OpenGaps []struct {
+			ID string `json:"id"`
+		} `json:"openGaps"`
+	}
+	if err := json.Unmarshal(got, &doc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(doc.OpenGaps) != 1 || doc.OpenGaps[0].ID != "G3" {
+		t.Fatalf("want only the role question kept, got %+v", doc.OpenGaps)
+	}
+}
+
+// TestDropFilledGapsKeepsTheUnansweredOnes: the model copies old questions into
+// its new answer. A question about a field it just filled must leave, and a
+// question about an empty field must stay.
+func TestDropFilledGapsKeepsTheUnansweredOnes(t *testing.T) {
+	raw := `{"options":[{"id":"o1","cost":{"currency":"RUB","amount":10},"confidence":""}],
+		"openGaps":[
+			{"id":"G1","pointer":"/options/0/cost/currency","question":{"text":"Currency?","lang":"STE100"}},
+			{"id":"G2","pointer":"/options/0/confidence","question":{"text":"Confidence?","lang":"STE100"}}]}`
+	got := dropFilledGaps(json.RawMessage(raw))
+	var doc struct {
+		OpenGaps []struct {
+			ID string `json:"id"`
+		} `json:"openGaps"`
+	}
+	if err := json.Unmarshal(got, &doc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(doc.OpenGaps) != 1 || doc.OpenGaps[0].ID != "G2" {
+		t.Fatalf("want only the unanswered question kept, got %+v", doc.OpenGaps)
+	}
+}
+
+// TestSystemOwnedFieldsAreNotAsked: the operator decides business values, not the
+// ids, references and type names the merge fills. A role name is still a question.
+func TestSystemOwnedFieldsAreNotAsked(t *testing.T) {
+	lld := json.RawMessage(`{"contracts":[{"id":"C-1","inputType":"","paths":[]}]}`)
+	gap := domain.Gap{ID: "GAP-1", Pointer: "/contracts/0/inputType", Question: domain.Text{Value: "Which type?"}}
+	if askableGap(domain.TypeLLD, lld, gap) {
+		t.Fatal("a type name is not an operator question")
+	}
+	brd := json.RawMessage(`{"actors":[{"name":""}]}`)
+	role := domain.Gap{ID: "GAP-2", Pointer: "/actors/0/name", Question: domain.Text{Value: "Which role?"}}
+	if !askableGap(domain.TypeBRD, brd, role) {
+		t.Fatal("a role name is a business question and must stay")
+	}
+}
+
 // A payload the shape does not name passes through untouched: nothing the gates
 // repair alone must reach the coercion.
 func TestCoercePayloadLeavesUnknownPayload(t *testing.T) {

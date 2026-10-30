@@ -83,13 +83,13 @@ func TestNormalizeGapPointers(t *testing.T) {
 func TestPurgeKeepsOnlyValueGaps(t *testing.T) {
 	payload := json.RawMessage(`{
 		"containers": [{"containerId": "C-1", "layers": [{"name": "app"}]}],
-		"contracts": [{"id": "C-1"}], "paths": [],
+		"contracts": [{"id": "C-1", "errors": []}], "paths": [],
 		"openGaps": [
 			{"id": "G1", "pointer": "/containers/0/layers/0/name", "question": {"text": "Which layer?", "lang": "STE100"}},
 			{"id": "G2", "pointer": "/containers/0/layers", "question": {"text": "Which layers?", "lang": "STE100"}},
 			{"id": "G3", "pointer": "/containers/0/layers/0", "question": {"text": "Describe the layer", "lang": "STE100"}},
 			{"id": "G4", "pointer": "/paths", "question": {"text": "Which paths?", "lang": "STE100"}},
-			{"id": "G5", "pointer": "/contracts/0/inputType", "question": {"text": "Which input type?", "lang": "STE100"}}
+			{"id": "G5", "pointer": "/contracts/0/errors/0/condition", "question": {"text": "Which failure?", "lang": "STE100"}}
 		]
 	}`)
 
@@ -112,17 +112,17 @@ func TestPurgeKeepsOnlyValueGaps(t *testing.T) {
 // layout is the next run's job. Only the finding that names one value outside the
 // layout becomes a question, or the operator receives a card no answer can close.
 func TestStructuralGateFailureAsksNothing(t *testing.T) {
-	payload := json.RawMessage(`{"containers":[{"containerId":"C-1","layers":[{"name":"app"}]}],"contracts":[{"id":"C-1"}],"paths":[]}`)
+	payload := json.RawMessage(`{"containers":[{"containerId":"C-1","layers":[{"name":"app"}]}],"contracts":[{"id":"C-1","errors":[]}],"paths":[]}`)
 	failures := []domain.ValidationError{
 		{Field: "containers[0].layers", Problem: "at least one layer is required"},
 		{Field: "containers[0].layers[0].packages", Problem: "at least one package is required"},
 		{Field: "containers[0].layers[0].name", Problem: `unknown value ""`},
-		{Field: "contracts[0].inputType", Problem: "is empty"},
+		{Field: "contracts[0].errors[0].condition", Problem: "is empty"},
 	}
 
 	got := valueFailures(domain.TypeLLD, payload, failures)
 
-	if len(got) != 1 || got[0].Field != "contracts[0].inputType" {
+	if len(got) != 1 || got[0].Field != "contracts[0].errors[0].condition" {
 		t.Fatalf("want only the contract value finding, got %+v", got)
 	}
 }

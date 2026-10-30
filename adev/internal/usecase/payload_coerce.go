@@ -32,92 +32,129 @@ func coercePayload(formType domain.FormType, payload json.RawMessage) json.RawMe
 	if err != nil {
 		return payload
 	}
+	out = normalizePriorities(formType, out)
 	if formType == domain.TypeBRD {
-		out = normalizeBRDMetricIDs(out)
+		out = normalizeBRDFrequency(out)
 	}
 	return out
 }
 
-// normalizeBRDMetricIDs maps goals[].metricId and successMetrics[].metricId to
-// existing metric IDs from metrics[] when possible, falling back to the first
-// metric to break the gate cycle without waiting for operator intervention.
-func normalizeBRDMetricIDs(payload json.RawMessage) json.RawMessage {
+// frequencyWord maps the words an actor answer uses onto the registry enum.
+var frequencyWord = map[string]string{
+	"day": "day", "daily": "day", "days": "day",
+	"week": "week", "weekly": "week", "weeks": "week",
+	"month": "month", "monthly": "month", "months": "month",
+	"quarter": "quarter", "quarterly": "quarter", "quarters": "quarter",
+	"event": "event", "events": "event", "per event": "event",
+}
+
+// normalizeBRDFrequency rewrites the frequency of every actor into the enum the// registry keeps. The operator answers in plain words ("hours", "weekly"), and a
+// value the map does not know stays as it is.
+func normalizeBRDFrequency(payload json.RawMessage) json.RawMessage {
 	var doc map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &doc); err != nil {
 		return payload
 	}
-	rawMetrics, ok := doc["metrics"]
+	raw, ok := doc["actors"]
 	if !ok {
 		return payload
 	}
-	var metrics []map[string]any
-	if err := json.Unmarshal(rawMetrics, &metrics); err != nil {
-		return payload
-	}
-	valid := map[string]bool{}
-	var first string
-	for _, m := range metrics {
-		if id, ok := m["id"].(string); ok && id != "" {
-			valid[id] = true
-			if first == "" {
-				first = id
-			}
-		}
-	}
-	if len(valid) == 0 || first == "" {
+	var actors []map[string]any
+	if err := json.Unmarshal(raw, &actors); err != nil {
 		return payload
 	}
 	changed := false
-	if rawGoals, ok := doc["goals"]; ok {
-		var goals []map[string]any
-		if err := json.Unmarshal(rawGoals, &goals); err == nil {
-			for i := range goals {
-				if mid, ok := goals[i]["metricId"].(string); ok {
-					if !valid[mid] {
-						goals[i]["metricId"] = first
-						changed = true
-						continue
-					}
-					continue
-				}
-				goals[i]["metricId"] = first
-				changed = true
-			}
-			if changed {
-				if encoded, err := json.Marshal(goals); err == nil {
-					doc["goals"] = encoded
-				}
-			}
+	for _, actor := range actors {
+		value, ok := actor["frequency"].(string)
+		if !ok {
+			continue
 		}
-	}
-	if rawSuccess, ok := doc["successMetrics"]; ok {
-		var success []map[string]any
-		if err := json.Unmarshal(rawSuccess, &success); err == nil {
-			localChanged := false
-			for i := range success {
-				if mid, ok := success[i]["metricId"].(string); ok {
-					if !valid[mid] {
-						success[i]["metricId"] = first
-						localChanged = true
-						continue
-					}
-					continue
-				}
-				success[i]["metricId"] = first
-				localChanged = true
-			}
-			if localChanged {
-				if encoded, err := json.Marshal(success); err == nil {
-					doc["successMetrics"] = encoded
-				}
-			}
+		mapped, ok := frequencyWord[strings.ToLower(strings.TrimSpace(value))]
+		if !ok || mapped == value {
+			continue
 		}
+		actor["frequency"] = mapped
+		changed = true
 	}
+	if !changed {
+		return payload
+	}
+	encoded, err := json.Marshal(actors)
+	if err != nil {
+		return payload
+	}
+	doc["actors"] = encoded
 	out, err := json.Marshal(doc)
 	if err != nil {
 		return payload
 	}
 	return out
+}
+
+// moSCoWPriority maps the priority words the model answers with onto the enum the
+// registry keeps. "should" and "could" are MoSCoW levels next to must/high/low:
+// without the map a requirement is rejected over a synonym, and the operator gets
+// a question about a value the model already decided.
+var moSCoWPriority = map[string]string{
+	"must": "must", "must-have": "must",
+	"should": "high", "should-have": "high",
+	"could": "low", "could-have": "low",
+}
+
+// normalizePriorities rewrites the priority of every functional requirement into
+// the registry enum. The SRS, FR and NFR documents carry the same fr list.
+func normalizePriorities(formType domain.FormType, payload json.RawMessage) json.RawMessage {
+	if formType != domain.TypeSRS && formType != domain.TypeFR && formType != domain.TypeNFR {
+		return payload
+	}
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		return payload
+	}
+	raw, ok := doc["fr"]
+	if !ok {
+		return payload
+	}
+	var entries []map[string]any
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return payload
+	}
+	changed := false
+	for _, entry := range entries {
+		if normalizePriorityField(entry) {
+			changed = true
+		}
+		if statement, ok := entry["statement"].(map[string]any); ok && normalizePriorityField(statement) {
+			changed = true
+		}
+	}
+	if !changed {
+		return payload
+	}
+	encoded, err := json.Marshal(entries)
+	if err != nil {
+		return payload
+	}
+	doc["fr"] = encoded
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return payload
+	}
+	return out
+}
+
+// normalizePriorityField rewrites one priority value in place and reports a change.
+func normalizePriorityField(fields map[string]any) bool {
+	value, ok := fields["priority"].(string)
+	if !ok {
+		return false
+	}
+	mapped, ok := moSCoWPriority[strings.ToLower(strings.TrimSpace(value))]
+	if !ok || mapped == value {
+		return false
+	}
+	fields["priority"] = mapped
+	return true
 }
 
 // normalizeLLDLayout drops the fields the LLD layout does not know: a detail
@@ -234,4 +271,139 @@ func coerceScalar(shape any, value any) any {
 		}
 	}
 	return value
+}
+
+// dropEmptyScopeDelta removes the placeholder scopeDelta records a model writes
+// on every FEASIBILITY answer: an entry that adds and removes nothing is not a
+// scope change.
+func dropEmptyScopeDelta(payload json.RawMessage) json.RawMessage {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		return payload
+	}
+	var deltas []map[string]any
+	if err := json.Unmarshal(doc["scopeDelta"], &deltas); err != nil {
+		return payload
+	}
+	kept := make([]map[string]any, 0, len(deltas))
+	for _, delta := range deltas {
+		if isEmptyValue(delta["added"]) && isEmptyValue(delta["removed"]) {
+			continue
+		}
+		kept = append(kept, delta)
+	}
+	if len(kept) == len(deltas) {
+		return payload
+	}
+	encoded, err := json.Marshal(kept)
+	if err != nil {
+		return payload
+	}
+	doc["scopeDelta"] = encoded
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return payload
+	}
+	return out
+}
+
+// dropBRDMetricGaps removes the questions about metrics and success values: a
+// greenfield system has no measured value. An old draft still carries them, and
+// the model copies its openGaps into every new version, so the stage would keep
+// asking a question the operator cannot answer.
+func dropBRDMetricGaps(payload json.RawMessage) json.RawMessage {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		return payload
+	}
+	raw, ok := doc["openGaps"]
+	if !ok {
+		return payload
+	}
+	var gaps []map[string]any
+	if err := json.Unmarshal(raw, &gaps); err != nil {
+		return payload
+	}
+	kept := make([]map[string]any, 0, len(gaps))
+	for _, gap := range gaps {
+		pointer, _ := gap["pointer"].(string)
+		pointer = normalizePointer(pointer)
+		if strings.HasPrefix(pointer, "/metrics/") || pointer == "/metrics" ||
+			strings.HasPrefix(pointer, "/successMetrics/") || pointer == "/successMetrics" {
+			continue
+		}
+		kept = append(kept, gap)
+	}
+	if len(kept) == len(gaps) {
+		return payload
+	}
+	encoded, err := json.Marshal(kept)
+	if err != nil {
+		return payload
+	}
+	doc["openGaps"] = encoded
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return payload
+	}
+	return out
+}
+
+// dropFilledGaps removes the questions the document already answers. The model
+// copies the openGaps of the previous draft into its new answer, and a question
+// about a field it just filled holds the stage for nothing.
+func dropFilledGaps(payload json.RawMessage) json.RawMessage {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		return payload
+	}
+	raw, ok := doc["openGaps"]
+	if !ok {
+		return payload
+	}
+	var gaps []map[string]any
+	if err := json.Unmarshal(raw, &gaps); err != nil {
+		return payload
+	}
+	var root any
+	if err := json.Unmarshal(payload, &root); err != nil {
+		return payload
+	}
+	kept := make([]map[string]any, 0, len(gaps))
+	for _, gap := range gaps {
+		pointer, _ := gap["pointer"].(string)
+		if gapFilled(valueAt(root, normalizePointer(pointer))) {
+			continue
+		}
+		kept = append(kept, gap)
+	}
+	if len(kept) == len(gaps) {
+		return payload
+	}
+	encoded, err := json.Marshal(kept)
+	if err != nil {
+		return payload
+	}
+	doc["openGaps"] = encoded
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return payload
+	}
+	return out
+}
+
+// gapFilled reports whether the field a gap asks about already holds a value.
+func gapFilled(value any) bool {
+	switch node := value.(type) {
+	case nil:
+		return false
+	case string:
+		text := strings.TrimSpace(node)
+		return text != "" && text != "..."
+	case []any:
+		return len(node) > 0
+	case map[string]any:
+		return len(node) > 0
+	}
+	return true
 }

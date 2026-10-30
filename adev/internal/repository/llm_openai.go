@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -126,6 +127,47 @@ func maxTokensOrDefault(value int) int {
 	return value
 }
 
+// A model call retries a transient failure: a firewall refuses the first
+// connections of a run, or a provider answers 429/5xx while it warms up. Ten
+// attempts with a short backoff ride that out; the sum stays under the 10-minute
+// client timeout.
+// shortcut: a retried call may cost a second completion when the provider
+// processed the request before the connection dropped; raise the backoff, not the
+// count, when a provider starts charging for those.
+const maxModelAttempts = 10
+
+var (
+	modelRetryBackoff    = 500 * time.Millisecond
+	modelRetryMaxBackoff = 5 * time.Second
+)
+
+// retryModelCall reports whether the call may be tried again, waits the backoff
+// and logs the failure. It stops on the last attempt and on a cancelled context.
+func retryModelCall(ctx context.Context, attempt int, backoff *time.Duration, err error) bool {
+	if attempt >= maxModelAttempts || ctx.Err() != nil {
+		return false
+	}
+	log.Printf("model call: attempt %d/%d failed: %v: retrying in %s", attempt, maxModelAttempts, err, *backoff)
+	timer := time.NewTimer(*backoff)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+	}
+	*backoff *= 2
+	if *backoff > modelRetryMaxBackoff {
+		*backoff = modelRetryMaxBackoff
+	}
+	return true
+}
+
+// transientHTTPStatus reports a status a retry can change: a provider that is
+// warming up or rate-limiting, not a request the provider rejected.
+func transientHTTPStatus(code int) bool {
+	return code == http.StatusTooManyRequests || code >= http.StatusInternalServerError
+}
+
 // Complete asks the model for one payload. Attached text files travel inside
 // the user message: every OpenAI-compatible provider accepts multiline text,
 // while binary or provider-specific file parts do not.
@@ -144,28 +186,43 @@ func (l *openAICompatibleLLM) Complete(ctx context.Context, request usecase.LLMR
 		return usecase.LLMResponse{}, fmt.Errorf("model call: encode request: %w", err)
 	}
 
-	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, l.baseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return usecase.LLMResponse{}, fmt.Errorf("model call: %w", err)
-	}
-	httpRequest.Header.Set("Content-Type", "application/json")
-	if l.agent.APIKey != "" {
-		httpRequest.Header.Set("Authorization", "Bearer "+l.agent.APIKey)
-	}
-
 	started := time.Now()
-	response, err := l.client.Do(httpRequest)
-	if err != nil {
-		return usecase.LLMResponse{}, fmt.Errorf("model call to %s: %w", l.baseURL, err)
-	}
-	defer response.Body.Close()
+	backoff := modelRetryBackoff
+	var raw []byte
+	for attempt := 1; ; attempt++ {
+		// Every attempt needs its own request: the body reader is consumed by Do.
+		httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, l.baseURL+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			return usecase.LLMResponse{}, fmt.Errorf("model call: %w", err)
+		}
+		httpRequest.Header.Set("Content-Type", "application/json")
+		if l.agent.APIKey != "" {
+			httpRequest.Header.Set("Authorization", "Bearer "+l.agent.APIKey)
+		}
 
-	raw, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
-	if err != nil {
-		return usecase.LLMResponse{}, fmt.Errorf("model call: read response: %w", err)
-	}
-	if response.StatusCode != http.StatusOK {
-		return usecase.LLMResponse{}, fmt.Errorf("model call to %s failed: %s: %s", l.baseURL, response.Status, firstLine(raw))
+		response, err := l.client.Do(httpRequest)
+		if err != nil {
+			if retryModelCall(ctx, attempt, &backoff, err) {
+				continue
+			}
+			return usecase.LLMResponse{}, fmt.Errorf("model call to %s: %w", l.baseURL, err)
+		}
+		raw, err = io.ReadAll(io.LimitReader(response.Body, 4<<20))
+		response.Body.Close()
+		if err != nil {
+			if retryModelCall(ctx, attempt, &backoff, err) {
+				continue
+			}
+			return usecase.LLMResponse{}, fmt.Errorf("model call: read response: %w", err)
+		}
+		if response.StatusCode != http.StatusOK {
+			callErr := fmt.Errorf("model call to %s failed: %s: %s", l.baseURL, response.Status, firstLine(raw))
+			if transientHTTPStatus(response.StatusCode) && retryModelCall(ctx, attempt, &backoff, callErr) {
+				continue
+			}
+			return usecase.LLMResponse{}, callErr
+		}
+		break
 	}
 
 	var parsed completionResponse

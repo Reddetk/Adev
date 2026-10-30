@@ -85,9 +85,12 @@ func (h *QuestionHandler) Answer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, questionStatus(err), err.Error())
 		return
 	}
-	// The last answer leaves a draft with no question: the stage continues with
-	// a fresh run instead of waiting for the operator to press the button.
-	if h.starter != nil && form.Status == domain.StatusDraft && form.Stage != "" {
+	// The last answer leaves a draft with no question or completes the form: the
+	// stage continues with a run either way, instead of waiting for the operator
+	// to press the button. A valid form is confirmed by the run's first check, and
+	// the orchestrator moves the cursor on; without that run the pipeline hangs on
+	// the answered stage.
+	if h.starter != nil && (form.Status == domain.StatusDraft || form.Status == domain.StatusValid) && form.Stage != "" {
 		targetSystemID, _ := strconv.ParseInt(form.TargetSystemID, 10, 64)
 		if _, err := h.starter.Start(r.Context(), usecase.StageRequest{
 			PipelineID:     form.PipelineID,

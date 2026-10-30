@@ -61,6 +61,93 @@ func TestDetailOfOneContractKeepsTheOtherPaths(t *testing.T) {
 	}
 }
 
+// TestAssignIDsFillsTheMissingIdentifier: the outline may arrive without ids. The
+// id is structural, so the system names the entry itself, keeps the ids the model
+// did give, and never collides with one of them. A list keyed by a business name
+// keeps its own keys.
+func TestAssignIDsFillsTheMissingIdentifier(t *testing.T) {
+	entries := []json.RawMessage{
+		json.RawMessage(`{"priority":"should"}`),
+		json.RawMessage(`{"id":"FR-1"}`),
+		json.RawMessage(`{"statement":{"text":"x"}}`),
+	}
+	got := assignIDs(entries, batchPlan{kind: "fr"})
+	ids := []string{fieldOf(got[0], "id"), fieldOf(got[1], "id"), fieldOf(got[2], "id")}
+	want := []string{"FR-1-2", "FR-1", "FR-3"}
+	for i := range want {
+		if ids[i] != want[i] {
+			t.Fatalf("entry %d: id %q, want %q (all: %v)", i, ids[i], want[i], ids)
+		}
+	}
+
+	named := []json.RawMessage{json.RawMessage(`{"packages":[]}`)}
+	if out := assignIDs(named, batchPlan{kind: "layers", idField: "name"}); fieldOf(out[0], "name") != "" {
+		t.Fatal("a layer must keep the model's name, not get a generated one")
+	}
+}
+
+// TestMergeEntryFieldsKeepsWhatTheSystemFilled: the model writes the meaning of
+// the entry; the keys and the fields it omits keep the value of the skeleton, and
+// a paragraph never replaces the entry.
+func TestMergeEntryFieldsKeepsWhatTheSystemFilled(t *testing.T) {
+	existing := json.RawMessage(`{"containerId":"C-1","tech":"go","purpose":{"text":"old"}}`)
+	updated := json.RawMessage(`{"tech":"rust","purpose":{"text":"new"}}`)
+
+	merged := mergeEntryFields(existing, updated)
+	var doc map[string]any
+	if err := json.Unmarshal(merged, &doc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if doc["containerId"] != "C-1" {
+		t.Fatalf("the key of the document must survive, got %v", doc["containerId"])
+	}
+	if doc["tech"] != "rust" {
+		t.Fatalf("the answer must update a field it names, got %v", doc["tech"])
+	}
+
+	prose := mergeEntryFields(existing, json.RawMessage(`"Контракт для получения тарифа"`))
+	if string(prose) != string(existing) {
+		t.Fatalf("a paragraph must not replace the entry, got %s", prose)
+	}
+}
+
+// TestWithEntryKeysFillsWhatTheSystemOwns: the model answers an object without
+// the ids; the merge needs the key and the companion reference to find the entry.
+func TestWithEntryKeysFillsWhatTheSystemOwns(t *testing.T) {
+	echo := json.RawMessage(`{
+		"entry": {"inputType": "CreateTariffRequest", "outputType": "Tariff"},
+		"paths": [
+			{"kind": "happy", "given": "a", "when": "b", "then": "c"},
+			{"kind": "negative", "given": "a", "when": "b", "then": "c", "expectedErrorCode": "E-1"}
+		]}`)
+	plan := batchPlan{kind: "contracts", with: "paths", ref: "contractRef"}
+	labels := []entryLabel{{plan: batchPlan{kind: "contracts"}, idValue: "contract-tariff-create"}}
+
+	got := withEntryKeys(echo, plan, labels)
+
+	var doc struct {
+		Entry struct {
+			ID string `json:"id"`
+		} `json:"entry"`
+		Paths []struct {
+			ID          string `json:"id"`
+			ContractRef string `json:"contractRef"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(got, &doc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if doc.Entry.ID != "contract-tariff-create" {
+		t.Fatalf("the entry must take the key of the walk, got %q", doc.Entry.ID)
+	}
+	if len(doc.Paths) != 2 || doc.Paths[0].ContractRef != "contract-tariff-create" {
+		t.Fatalf("every path must point at the contract, got %+v", doc.Paths)
+	}
+	if doc.Paths[0].ID == "" || doc.Paths[1].ID == "" {
+		t.Fatalf("the paths need system ids, got %+v", doc.Paths)
+	}
+}
+
 // TestDetailInstructionFillsTheRequiredLayout: a container must get a layer and
 // a layer a package; modules stay optional; a contract gets both paths.
 func TestDetailInstructionFillsTheRequiredLayout(t *testing.T) {
@@ -102,17 +189,21 @@ func TestDetailInstructionFillsTheRequiredLayout(t *testing.T) {
 	}
 }
 
-// TestLLDRetryOnlyForStructuralHoles: the model continues while it can fill the
-// layout, and the attempt cap stops the loop.
-func TestLLDRetryOnlyForStructuralHoles(t *testing.T) {
-	if !lldRetry(domain.TypeLLD, 1) {
-		t.Fatal("a structural hole must get another model pass")
+// TestStructuralRetryOnlyForDesignHoles: a design document continues while it can
+// fill the layout, and the attempt cap stops the loop.
+func TestStructuralRetryOnlyForDesignHoles(t *testing.T) {
+	for _, output := range []domain.FormType{domain.TypeLLD, domain.TypeHLD} {
+		if !structuralRetry(output, 1) {
+			t.Fatalf("%s: a structural hole must get another model pass", output)
+		}
+		if structuralRetry(output, maxLLDFormAttempts) {
+			t.Fatalf("%s: the attempt cap must stop the loop", output)
+		}
 	}
-	if lldRetry(domain.TypeLLD, maxLLDFormAttempts) {
-		t.Fatal("the attempt cap must stop the loop")
-	}
-	if lldRetry(domain.TypeBRD, 1) {
-		t.Fatal("only the LLD layout continues by itself")
+	for _, output := range []domain.FormType{domain.TypeBRD, domain.TypeSRS} {
+		if structuralRetry(output, 1) {
+			t.Fatalf("%s: only a design layout continues by itself", output)
+		}
 	}
 }
 

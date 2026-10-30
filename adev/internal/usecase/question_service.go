@@ -32,7 +32,7 @@ func (s *QuestionService) Publish(ctx context.Context, form *domain.Form, failur
 	if form == nil {
 		return fmt.Errorf("publish question: form is nil")
 	}
-	if err := s.forms.SubmitDraft(ctx, form); err != nil {
+	if err := s.forms.SubmitDraft(ctx, form); err != nil && !errors.Is(err, domain.ErrVersionExists) {
 		// The draft may hold non-JSON garbage; the question must still reach the operator.
 		log.Printf("question pipeline %d: keep draft of %s: %v", pipelineID, form.FormType, err)
 	}
@@ -195,7 +195,14 @@ func (s *QuestionService) answerAt(ctx context.Context, form *domain.Form, asked
 		}
 		var ops []patchOp
 		for _, parent := range parentsToCreate(doc, pointer) {
-			ops = append(ops, patchOp{Op: "add", Path: parent, Value: json.RawMessage(`{}`)})
+			// A missing list parent must be a list: an object there makes the next
+			// add to an index fail, and the answer dies with 422. A missing record
+			// parent stays an empty object.
+			empty := json.RawMessage(`{}`)
+			if _, isList := fieldShape(form.FormType, parent).([]any); isList {
+				empty = json.RawMessage(`[]`)
+			}
+			ops = append(ops, patchOp{Op: "add", Path: parent, Value: empty})
 		}
 		ops = append(ops, patchOp{Op: op, Path: pointer, Value: value})
 		// Remove from the end, so the earlier indexes stay valid.
@@ -263,9 +270,18 @@ func (s *QuestionService) answerAt(ctx context.Context, form *domain.Form, asked
 		derived.Status = domain.StatusWaitingOperator
 		return &derived, s.ask(ctx, &derived, remaining, pipelineID)
 	}
-	if err := s.forms.SetStatus(ctx, derived.FormID, derived.FormVersion, domain.StatusValid); err != nil {
+	// The BRD is assembled from the interview answers: a valid status would freeze
+	// the raw answers as the document (roles merged into one name, one capability
+	// per list). The draft lets the stage run one assembly pass, and the gates
+	// judge its result.
+	status := domain.StatusValid
+	if derived.FormType == domain.TypeBRD {
+		status = domain.StatusDraft
+	}
+	if err := s.forms.SetStatus(ctx, derived.FormID, derived.FormVersion, status); err != nil {
 		return nil, err
 	}
+	derived.Status = status
 	return &derived, nil
 }
 
@@ -479,7 +495,9 @@ func answerShape(shape any, answer any) (any, bool) {
 		}
 		return []any{item}, true
 	case map[string]any:
-		if _, hasText := node["text"].(string); hasText {
+		_, hasText := node["text"].(string)
+		_, hasLang := node["lang"].(string)
+		if hasText && hasLang {
 			// A Text value: the words keep the shape and get the document language.
 			if text, ok := answer.(string); ok {
 				return map[string]any{"text": text, "lang": domain.LangSTE100}, true
@@ -493,6 +511,16 @@ func answerShape(shape any, answer any) (any, bool) {
 				sentences := splitSentences(text)
 				return map[string]any{
 					"given": sentences[0], "when": sentences[1], "then": sentences[2],
+				}, true
+			}
+			return nil, false
+		}
+		// A Statement: text, modality and priority. The answer is one sentence; the
+		// modality and the priority take their defaults so the record keeps its shape.
+		if hasText {
+			if text, ok := answer.(string); ok {
+				return map[string]any{
+					"text": text, "modality": "shall", "priority": domain.PriorityMust,
 				}, true
 			}
 			return nil, false
@@ -727,7 +755,36 @@ func askableGap(formType domain.FormType, payload json.RawMessage, gap domain.Ga
 	if layoutPointer(pointer) {
 		return false
 	}
+	if systemOwnedPointer(formType, pointer) {
+		return false
+	}
 	return valueSlot(formType, payload, pointer)
+}
+
+// systemOwnedPointer reports a field the document or the system owns: an id, a
+// reference, a type name or a layout key. The operator decides business values,
+// not the mechanical names the merge needs, so a question about one is dropped.
+func systemOwnedPointer(formType domain.FormType, pointer string) bool {
+	segments := strings.Split(strings.TrimPrefix(normalizePointer(pointer), "/"), "/")
+	if len(segments) == 0 || segments[0] == "" {
+		return false
+	}
+	switch segments[len(segments)-1] {
+	case "id", "objectId", "containerId", "containerRef", "contractRef", "moduleRef",
+		"formRef", "formId", "formType", "formVersion", "inputType", "outputType",
+		"httpStatus", "expectedErrorCode", "traceGoal", "reportType", "verdict",
+		"recommendedOption", "scopeDelta", "scheduleDays", "confidence",
+		"currency", "amount":
+		return true
+	}
+	switch formType {
+	case domain.TypeLLD, domain.TypeHLD:
+		switch segments[len(segments)-1] {
+		case "name", "path", "tech", "kind", "timeoutMs", "failure", "degradation", "detection":
+			return true
+		}
+	}
+	return false
 }
 
 // layoutPointer reports whether the pointer names a design decision of the
@@ -744,7 +801,7 @@ func valueFailures(formType domain.FormType, payload json.RawMessage, failures [
 	out := make([]domain.ValidationError, 0, len(failures))
 	for _, failure := range failures {
 		pointer := pointerOf(failure.Field)
-		if layoutPointer(pointer) {
+		if layoutPointer(pointer) || systemOwnedPointer(formType, pointer) {
 			continue
 		}
 		if valueSlot(formType, payload, pointer) {
@@ -1203,6 +1260,27 @@ func (s *QuestionService) waitingForm(ctx context.Context, pipelineID int, point
 		}
 	}
 	return nil
+}
+
+// HasPending reports whether the form still waits for the operator: an active
+// question that lands in this draft means a run would answer it for him.
+func (s *QuestionService) HasPending(ctx context.Context, pipelineID int, form *domain.Form) bool {
+	if s.requests == nil || form == nil {
+		return false
+	}
+	all, err := s.requests.FindAll()
+	if err != nil {
+		return false
+	}
+	for _, request := range all {
+		if request.PipelineID != pipelineID || request.Status != "active" {
+			continue
+		}
+		if domain.Patchable(form.FormType, form.Payload, normalizePointer(request.Pointer)) {
+			return true
+		}
+	}
+	return false
 }
 
 // CloseForForm closes the questions about a draft that the next model pass

@@ -68,6 +68,13 @@ func TestCoerceAnswerShapesTheAnswerLikeTheField(t *testing.T) {
 			want:     `"several users"`,
 		},
 		{
+			name:     "a regulation answer becomes a Statement, not a bare Text",
+			formType: domain.TypeBRD,
+			pointer:  "/constraints/0",
+			value:    `"hotel guests must show a passport at check-in"`,
+			want:     `{"modality":"shall","priority":"must","text":"hotel guests must show a passport at check-in"}`,
+		},
+		{
 			name:     "the operator may write the list as JSON",
 			formType: domain.TypeBRD,
 			pointer:  "/scope/in",

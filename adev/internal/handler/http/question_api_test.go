@@ -66,6 +66,24 @@ func TestAnswerContinuesTheStage(t *testing.T) {
 	assert.Equal(t, domain.RouteGreenfield, starter.request.Route)
 }
 
+// TestAnswerCompletedTheFormContinuesTheStage: an answer that makes the form valid
+// still starts the run, because only the run moves the pipeline cursor to the next
+// stage. Without it the pipeline stays on the stage the operator just finished.
+func TestAnswerCompletedTheFormContinuesTheStage(t *testing.T) {
+	answers := &fakeAnswers{form: &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-9-03", FormType: domain.TypeHLD, FormVersion: 8,
+		Status: domain.StatusValid, Route: domain.RouteGreenfield, Stage: "03",
+		PipelineID: "9", TargetSystemID: "1",
+	}}}
+	starter := &fakeRunStarter{}
+
+	recorder := answerRequest(t, newQuestionAPI(answers, starter))
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "03", starter.request.StageID)
+	assert.Equal(t, "9", starter.request.PipelineID)
+}
+
 // TestAnswerWaitingKeepsTheStageStopped: while a question waits, the stage must
 // not start another run.
 func TestAnswerWaitingKeepsTheStageStopped(t *testing.T) {

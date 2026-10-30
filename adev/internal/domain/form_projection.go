@@ -180,6 +180,7 @@ var BRDProjection = Projection{
 	RoleArchitect: {
 		"/formId", "/formType", "/formVersion", "/status", "/stage", "/payloadHash",
 		"/payload/goals", "/payload/metrics", "/payload/scope", "/payload/actors",
+		"/payload/glossary", "/payload/assumptions", "/payload/constraints",
 	},
 	RoleQA: {
 		"/formId", "/formType", "/formVersion", "/status", "/payload/metrics",

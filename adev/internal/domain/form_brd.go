@@ -45,10 +45,14 @@ type Actor struct {
 
 // BRD is the Business Requirements Document.
 type BRD struct {
-	Goals          []Goal      `json:"goals"`
-	Metrics        []Metric    `json:"metrics"`
-	Scope          Scope       `json:"scope"`
-	Actors         []Actor     `json:"actors"`
+	Goals   []Goal   `json:"goals"`
+	Metrics []Metric `json:"metrics"`
+	Scope   Scope    `json:"scope"`
+	Actors  []Actor  `json:"actors"`
+	// Glossary holds the words of the business in the operator's own terms:
+	// "Guest — a person who books a room and stays". The design stages read it
+	// before they invent a container, an entity or an integration.
+	Glossary       []Text      `json:"glossary,omitempty"`
 	Constraints    []Statement `json:"constraints,omitempty"`
 	Assumptions    []Text      `json:"assumptions,omitempty"`
 	SuccessMetrics []Success   `json:"successMetrics"`
@@ -78,6 +82,7 @@ func (b BRD) Texts() []Text {
 		out = append(out, Text{Value: constraint.Text, Lang: LangSTE100})
 	}
 	out = append(out, b.Assumptions...)
+	out = append(out, b.Glossary...)
 	for _, gap := range b.OpenGaps {
 		out = append(out, gap.Question)
 	}

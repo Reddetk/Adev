@@ -14,7 +14,9 @@
 
 ### Paragraph 1 — Functional requirement
 
-**Scope:** One observable behavior of the target system.
+**Scope:** One observable behavior of the target system: one step of the real user flow
+of one actor. The sign-up, the sign-in, the cabinet action, the payment and the
+notification are steps of a flow, so each one is a requirement of its own.
 
 **Questions:**
 1. Which actor starts the behavior?
@@ -24,6 +26,7 @@
 5. Which priority does the requirement have?
 
 **Answer:** `payload.fr[]` — `{ id, statement: Statement, actor, trigger, response, stateChange, priority, traceGoal }`.
+**Answer:** `fr[].statement` names the actor as the subject: "The client signs in with a phone code".
 
 ### Paragraph 2 — Acceptance scenario
 
@@ -93,6 +96,9 @@
 4. Each `fr.traceGoal` exists in the BRD.
 5. Each `Statement.text` passes the ACE check.
 6. A delta does not reuse a removed `fr.id`.
+7. The `fr` list covers the flow of every actor of the BRD: a sign-in or sign-up, a
+   cabinet action, and one requirement for each task the BRD names. A role with no
+   requirement is a role the design drops.
 
 ## Delta
 

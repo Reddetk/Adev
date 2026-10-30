@@ -242,10 +242,10 @@ func TestDetailCallShipsTheBranchAndTheEntryAnswer(t *testing.T) {
 	merged := stages.detailLevel(
 		context.Background(), StageRequest{}, &calledLLM{next: respond}, domain.AgentConfig{},
 		domain.Stage{ID: "05"}, domain.TypeLLD, "", json.RawMessage(lldInputs),
-		[]batchPlan{batchPlans[domain.TypeLLD][1]}, payload, "", nil, new([]json.RawMessage),
+		[]batchPlan{batchPlans[domain.TypeLLD][1]}, payload, payload, "", nil, new([]json.RawMessage),
 	)
 
-	if !strings.Contains(seen.User, "Put the filled entry under the key \"entry\"") {
+	if !strings.Contains(seen.User, "Put an object with the fields of this entry under the key \"entry\"") {
 		t.Fatalf("the call must ask for the entry only, got:\n%s", seen.User)
 	}
 	if !strings.Contains(seen.User, "The entry now holds:") {

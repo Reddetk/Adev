@@ -28,9 +28,11 @@
 **Scope:** The facts that force a decision.
 
 **Questions:**
-1. Which requirement or NFR forces the decision?
-2. Which constraint limits the option set?
-3. Which target-system object does the decision affect?
+1. Which SRS requirement, SRS NFR or HLD constraint forces the decision?
+2. Which target-system object does the decision affect?
+
+> The ADR reads the HLD and the SRS. It does not read the BRD: a rejection that cites a BRD
+> goal or a BRD constraint cites a form this stage never sees.
 
 **Answer:** `payload.decisions[].context` — one `Text` value.
 **Answer:** `payload.decisions[].objectRefs[]` — `objectId` values.
@@ -52,8 +54,10 @@
 **Questions:**
 1. Which alternative did the architect reject?
 2. Which fact makes the alternative wrong?
+3. Which BRD goal, BRD constraint or SRS NFR is that fact?
 
 **Answer:** `payload.decisions[].alternatives[]` — `{ option: Text, rejectedBecause: Text }`.
+**Answer:** at least two rejected options per decision. A rejection cites evidence the input forms hold, never a rule the BRD does not state.
 
 ### Paragraph 5 — Consequences
 
@@ -75,6 +79,25 @@
 2. Which `LLD` contract does the decision constrain?
 
 **Answer:** `payload.decisions[].links[]` — `Ref[]`.
+
+## Decision areas
+
+One decision per area, in this order. A later decision rests on an earlier one, so the
+set reads as a chain: the style decides the communication, the communication and the
+storage decide the scaling, and the storage and the scaling decide CAP/PACELC.
+
+| # | area | options to weigh |
+| --- | --- | --- |
+| 1 | architecture style | layered, modular monolith, hexagonal, microservices, event-driven, serverless, cell-based |
+| 2 | communication | REST, gRPC, GraphQL, message queue, pub/sub topic, event stream, webhook, WebSocket, server-sent event, long polling |
+| 3 | data storage | relational, key-value, document, wide-column, graph, object storage |
+| 4 | scaling | load balancing, caching layer, replication, sharding, autoscaling |
+| 5 | consistency | CAP/PACELC trade-off, strong versus eventual |
+| 6 | reliability | rate limit, circuit breaker, retry with idempotency |
+| 7 | build stack | database, cache, message bus, gateway, search, runtime |
+| 8 | operations and security | observability, load and chaos test, delivery, OAuth 2.0/OIDC, TLS, WAF, secrets vault |
+| 9 | design process | the requirement and the NFR the choice serves, the traffic and storage estimate |
+| 10 | success metrics | p99 latency, availability, throughput, error rate |
 
 ## Gates
 

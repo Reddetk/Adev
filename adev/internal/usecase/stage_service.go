@@ -182,10 +182,21 @@ func (s *StageService) Run(ctx context.Context, request StageRequest) (StageOutc
 			formID, finished, version, previous = input.FormID, nil, input.FormVersion+1, &input
 		}
 		if finished != nil && finished.Status == domain.StatusWaitingOperator {
+			// A run on a draft that still waits for the operator must not answer for
+			// him: the model invented every glossary term and actor of a hotel BRD
+			// that no operator had described. The questions stay and the stage
+			// reports blocked until the operator answers them.
+			pipelineID, _ := strconv.Atoi(request.PipelineID)
+			if s.questions != nil && s.questions.HasPending(ctx, pipelineID, finished) {
+				outcome.FormID, outcome.FormVersion = finished.FormID, finished.FormVersion
+				outcome.Blocked = true
+				outcome.Gaps = []string{"the draft holds open questions for the operator"}
+				s.record(ctx, request, stage, "blocked", 0, "the draft holds open questions for the operator")
+				return outcome, nil
+			}
 			// The operator asked for a new pass: the questions about this draft are
 			// obsolete, and the model regenerates from the answers already given.
 			if s.questions != nil {
-				pipelineID, _ := strconv.Atoi(request.PipelineID)
 				s.questions.CloseForForm(ctx, pipelineID, finished)
 			}
 			previous = &domain.Ref{FormID: finished.FormID, FormType: finished.FormType, FormVersion: finished.FormVersion}
@@ -241,6 +252,18 @@ func (s *StageService) runForm(
 	}()
 
 	var problems []string
+	// A stage may rewrite a document that already passed the gates: stage 04
+	// rewrites the HLD of stage 03. The newest accepted version is the floor of
+	// the rewrite, so a model that returns an accepted field empty cannot lose it.
+	var accepted json.RawMessage
+	if versions, err := s.forms.ByPipeline(ctx, request.PipelineID, output); err == nil {
+		for i := len(versions) - 1; i >= 0; i-- {
+			if versions[i].Status == domain.StatusValid || versions[i].Status == domain.StatusApproved {
+				accepted = versions[i].Payload
+				break
+			}
+		}
+	}
 	for attempt := 1; ; attempt++ {
 		outcome.Attempts = attempt
 		activity.Attempt()
@@ -254,14 +277,16 @@ func (s *StageService) runForm(
 			if prior, err := s.forms.Get(ctx, previous.FormID, previous.FormVersion); err == nil && len(prior.Payload) > 0 {
 				resume = prior.Payload
 				if output == domain.TypeBRD {
-					resume = normalizeBRDMetricIDs(resume)
+					// The previous draft may still hold the metric questions of an
+					// older run: a new system has no measured value, so they are gone.
+					resume = dropBRDMetricGaps(resume)
 				}
 			}
 		}
 
 		system, user := stagePrompt(stage, output, shape, stageContext, problems)
 		if output == domain.TypeBRD && previous == nil {
-			system, user = promptMessages(questionsInstruction(stage, output), shape, stageContext, problems)
+			system, user = questionsMessages(questionsInstruction(stage, output), stageContext)
 		}
 		if len(resume) > 0 {
 			note := "The previousDraft holds the draft of this document and the operator answers: keep the answered values and fill only what the answers or the context cover."
@@ -291,6 +316,13 @@ func (s *StageService) runForm(
 
 		form := s.buildForm(request, stage, refs, output, formID, version, previous)
 		payload := normalizeGapPointers(response.Payload)
+		if output == domain.TypeBRD {
+			payload = dropBRDMetricGaps(payload)
+		}
+		payload = dropFilledGaps(payload)
+		if output == domain.TypeFeasibility {
+			payload = dropEmptyScopeDelta(payload)
+		}
 		// A composite document goes out in batches: the skeleton first, then one
 		// call per entry, so no single answer has to carry the whole list.
 		if plans, ok := batchPlans[output]; ok {
@@ -304,6 +336,7 @@ func (s *StageService) runForm(
 		// the gates still judge the values.
 		payload = coercePayload(output, payload)
 		payload = normalizeLLDLayout(output, payload)
+		payload = inheritAccepted(accepted, payload)
 		// Unaskable gaps must leave the payload before the gates see it.
 		payload = purgeUnaskableGaps(output, payload)
 		if err := form.SetRawPayload(payload); err != nil {
@@ -345,7 +378,7 @@ func (s *StageService) runForm(
 		// A structural hole (a layer without a package, a contract without
 		// paths) is the model's job: the next pass sees the gate failures and
 		// the draft it just wrote, before any question goes out.
-		if blocked && lldRetry(output, attempt) {
+		if blocked && structuralRetry(output, attempt) {
 			if s.questions != nil && request.PipelineID != "" {
 				pipelineID, _ := strconv.Atoi(request.PipelineID)
 				s.questions.CloseForForm(ctx, pipelineID, form)
@@ -390,22 +423,30 @@ func (s *StageService) runForm(
 		}
 		// Nothing waits for the operator and the gates passed: the document is accepted.
 		s.markValid(ctx, form)
+		// A retry may have filled the field a gate question asked about: the
+		// accepted version makes that question moot, and the dashboard would keep
+		// it blocking otherwise.
+		if s.questions != nil && request.PipelineID != "" {
+			pipelineID, _ := strconv.Atoi(request.PipelineID)
+			s.questions.CloseStale(ctx, pipelineID)
+		}
 		s.record(ctx, request, stage, "done", attempt, "")
 		activity.Finish("done", "")
 		return outcome, nil
 	}
 }
 
-// maxLLDFormAttempts caps the structural retries of the LLD. A model that cannot
-// fill the layout in three passes leaves the draft to the operator.
+// maxLLDFormAttempts caps the structural retries of a design document. A model
+// that cannot fill the layout in three passes leaves the draft to the operator.
 // shortcut: three passes fit the live runs; raise when a larger system needs more.
 const maxLLDFormAttempts = 3
 
-// lldRetry reports whether the next model pass can fill a structural hole. The
-// retry runs before a question is published, so a layout hole never waits for
-// the operator; the attempt cap stops a model that cannot fill it.
-func lldRetry(output domain.FormType, attempt int) bool {
-	return output == domain.TypeLLD && attempt < maxLLDFormAttempts
+// structuralRetry reports whether the next model pass can fill a structural hole.
+// A layout the operator cannot answer (an empty container list, a missing
+// degradation rule) is the model's job: the retry runs before a question is
+// published, and the attempt cap stops a model that cannot fill it.
+func structuralRetry(output domain.FormType, attempt int) bool {
+	return (output == domain.TypeLLD || output == domain.TypeHLD) && attempt < maxLLDFormAttempts
 }
 
 // failureProblems names each gate failure for the retry prompt.
@@ -557,10 +598,15 @@ func (p batchPlan) idFieldOf() string {
 }
 
 // batchPlans marks the documents that are filled entry by entry. The skeleton
-// call returns the outline; every later call details one entry of one level.
+// call returns the outline; every later call details one entry of one level. A
+// document that names its entries in the first answer gets the same treatment at
+// every stage: the model lists the entries, then answers each one alone.
 var batchPlans = map[domain.FormType][]batchPlan{
-	domain.TypeSRS:      {{kind: "fr"}, {kind: "nfr"}},
-	domain.TypeTaskPlan: {{kind: "tasks"}},
+	domain.TypeSRS:          {{kind: "fr"}, {kind: "nfr"}},
+	domain.TypeFeasibility:  {{kind: "options"}},
+	domain.TypeADR:          {{kind: "decisions"}},
+	domain.TypeTaskPlan:     {{kind: "tasks"}},
+	domain.TypeTestContract: {{kind: "tests"}},
 	// The HLD is detailed by one call per container, which writes the aggregates
 	// with their invariants of that container.
 	domain.TypeHLD: {{kind: "containers", idField: "objectId", with: "aggregates", ref: "containerId"}},
@@ -598,7 +644,7 @@ type detailResult struct {
 // still judge the document, and the operator sees what is missing.
 func (s *StageService) detailBatches(ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig, stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage, plans []batchPlan, payload json.RawMessage) json.RawMessage {
 	var gaps []json.RawMessage
-	filled := s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload, "", nil, &gaps)
+	filled := s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload, payload, "", nil, &gaps)
 	return mergeDetailGaps(filled, gaps)
 }
 
@@ -608,21 +654,27 @@ func (s *StageService) detailBatches(ctx context.Context, request StageRequest, 
 func (s *StageService) detailEntry(
 	ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig,
 	stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage,
-	plan batchPlan, labels []entryLabel, entry json.RawMessage, entryPath string,
+	plan batchPlan, labels []entryLabel, entry json.RawMessage, entryPath string, document json.RawMessage,
 ) detailResult {
-	echo := s.detailCall(ctx, request, client, agent, stage, output, shape, stageContext, labels, entry, plan)
+	echo := s.detailCall(ctx, request, client, agent, stage, output, shape, stageContext, labels, entry, plan, document)
+	// The system owns the identifiers and the companion reference: the model
+	// answers the meaning only, and the merge needs the keys it did not send.
+	echo = withEntryKeys(echo, plan, labels)
 	updated, ok := entryFromEcho(echo, labels)
 	if !ok {
 		id := lastValue(labels)
 		log.Printf("stage %s: detail %s %s: the answer does not carry the entry", stage.ID, plan.kind, id)
 		return detailResult{labels: labels, echo: echo}
 	}
+	// The model writes the meaning, the system writes the document: a field the
+	// answer leaves out keeps the value the skeleton already holds.
+	updated = mergeEntryFields(entry, updated)
 	var gaps []json.RawMessage
 	gaps = append(gaps, detailGaps(echo, entryPath)...)
 	if len(plan.children) > 0 {
 		// The children walk runs inside this unit: its calls take the same slots,
 		// so the pool bound holds for the whole subtree.
-		updated = s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plan.children, updated, entryPath, labels, &gaps)
+		updated = s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plan.children, updated, document, entryPath, labels, &gaps)
 	}
 	return detailResult{labels: labels, echo: echo, updated: updated, gaps: gaps, ok: true}
 }
@@ -636,13 +688,17 @@ func (s *StageService) detailEntry(
 func (s *StageService) detailLevel(
 	ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig,
 	stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage,
-	plans []batchPlan, doc json.RawMessage, basePath string, parents []entryLabel, gaps *[]json.RawMessage,
+	plans []batchPlan, doc json.RawMessage, document json.RawMessage, basePath string, parents []entryLabel, gaps *[]json.RawMessage,
 ) json.RawMessage {
 	for _, plan := range plans {
 		entries, err := listOf(doc, plan.kind)
 		if err != nil {
 			continue
 		}
+		// The model sometimes leaves the identifier out of the outline. The id is
+		// structural: without it the detail walk skips the entry, and the gates ask
+		// the operator for an internal name the operator cannot know.
+		entries = assignIDs(entries, plan)
 		type detailJob struct {
 			index     int
 			id        string
@@ -673,7 +729,7 @@ func (s *StageService) detailLevel(
 			go func(job detailJob) {
 				defer joins.Done()
 				result := s.detailEntry(ctx, request, client, agent, stage, output, shape, stageContext,
-					plan, job.labels, job.entry, job.entryPath)
+					plan, job.labels, job.entry, job.entryPath, document)
 				result.index = job.index
 				results <- result
 			}(job)
@@ -716,11 +772,11 @@ func (s *StageService) detailLevel(
 func (s *StageService) detailCall(
 	ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig,
 	stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage,
-	labels []entryLabel, entry json.RawMessage, plan batchPlan,
+	labels []entryLabel, entry json.RawMessage, plan batchPlan, document json.RawMessage,
 ) json.RawMessage {
 	instruction := detailInstruction(output, stage, plan, labels, entry)
 	context := focusContext(output, stageContext, labels, entry)
-	system, user := promptMessages(instruction, shape, context, nil)
+	system, user := detailMessages(output, instruction, context, document)
 	complete := LLMRequest{Role: agent.Role, System: system, User: user, Files: registryFileFor(output, plan.kind)}
 	call := s.startModelCall(request, agent, complete)
 	// The slot is taken around the call only, so a chat-completion running long
@@ -741,6 +797,30 @@ func (s *StageService) detailCall(
 	return response.Payload
 }
 
+// stageQuestionPolicy names the questions a stage may ask. The questions follow
+// the subject, not the schema, and they go deeper at every stage: the same guest,
+// card or booking returns at the level the design has reached. The system owns the
+// ids, the refs and the layout, so a question about them is always wrong.
+func stageQuestionPolicy(output domain.FormType) string {
+	switch output {
+	case domain.TypeBRD:
+		return "Ask about the business in the real world: who the people are, what each business word means, which documents and devices they use, and what may go wrong. Do not ask for a field name, an id or a schema value."
+	case domain.TypeFeasibility:
+		return "Ask about the money and the time in the real world: the budget the operator has, the deadline, and the option the business prefers. Do not ask for a cost you can estimate, a currency, a confidence or a verdict."
+	case domain.TypeSRS:
+		return "Ask about the real-world behavior of this requirement: who starts it, what the actor holds or presents, which business rule decides the result, and what goes wrong and what the business does then. Ask about the card, document or device the request names at the level of this requirement. For a non-functional requirement ask only where the business can see the measurement and over which window: never ask for a device or an actor in a quality requirement. Do not ask for a type name, an id or a scenario format."
+	case domain.TypeHLD:
+		return "Ask about the outside world of this container: which external system or device it talks to, what data it reads and writes, whether it may read that data, and what the business does when the device or the service fails. Do not ask for a protocol you can choose, a type name or an id."
+	case domain.TypeADR:
+		return "Do not ask the operator why an option was rejected or why the other option is wrong: the architect cites the SRS requirement, the SRS NFR or the constraint the HLD names, and never a BRD rule, because the ADR does not read the BRD. Ask only for a business limit the input forms do not give and that would change the choice, such as a budget, a deadline or a law. Do not ask for an id or a document structure."
+	case domain.TypeLLD:
+		return "Ask about the business meaning of this contract: which business error the operation returns, what state must exist before the call, and what the client does after the call. Do not ask for inputType, outputType, an HTTP status, an id or a path."
+	case domain.TypeTaskPlan, domain.TypeTestContract:
+		return "Ask which behavior the business wants first and which result the acceptance must prove. Do not ask for an id, a file path or a task order."
+	}
+	return ""
+}
+
 // detailInstruction asks for one entry and for the layout the gates require
 // below it: a container needs a layer, a layer needs a package. Modules stay
 // optional. A contract also needs one happy and one negative path.
@@ -750,17 +830,19 @@ func detailInstruction(output domain.FormType, stage domain.Stage, plan batchPla
 		"You fill the %s form of stage %s. Answer with one JSON object only. Do not add fields. "+
 			"Detail exactly one entry: the %s entry with %s %q, now %s. "+
 			"The entry now holds: %s. "+
-			"Put the filled entry under the key \"entry\". "+
+			"Put an object with the fields of this entry under the key \"entry\". A paragraph is not an entry. "+
+			"Do not repeat the identifiers or references: the system keeps %s, containerId, formRef, moduleRef and contractRef from the document. "+
 			"If the context does not give a concrete value for one field and you are not sure, do not invent it: "+
 			"put one openGaps entry at the answer root with the question, the field of this entry it would fill "+
 			"(relative to the entry, for example modules[0].path), and the options when it is a choice. "+
+			"Do not ask about a type name, an id or a reference: the analyst names those. "+
 			"Do not ask about the layout: choose every layer, package path and module path from the HLD container tech, aggregates and relations. "+
 			"A layer holds only name and packages. A package holds only path and modules. "+
 			"Never put a container or a layer inside a layer or a package.",
-		output, stage.ID, plan.kind, plan.idFieldOf(), last.idValue, lastValue(labels), entry)
+		output, stage.ID, plan.kind, plan.idFieldOf(), last.idValue, lastValue(labels), entry, plan.idFieldOf())
 	if plan.with != "" {
-		instruction += fmt.Sprintf(" Put the %s entries whose %s is %q under the key %q.",
-			plan.with, plan.ref, last.idValue, plan.with)
+		instruction += fmt.Sprintf(" Put the %s entries that belong to this entry under the key %q: give only their meaning (kind, given, when, then, expectedErrorCode). Do not repeat %s or their ids: the system sets them to %q.",
+			plan.with, plan.with, plan.ref, last.idValue)
 	}
 	for index := len(labels) - 2; index >= 0; index-- {
 		parent := labels[index]
@@ -777,12 +859,28 @@ func detailInstruction(output domain.FormType, stage domain.Stage, plan batchPla
 		instruction += " Put one happy path and one negative path for this contract; the negative path carries its expectedErrorCode. Do not leave the paths list empty."
 	}
 	switch plan.kind {
+	case "containers":
+		instruction += " Fill tech from the HLD context (Go, Spring, React, or the stack the context names); do not leave it empty. Every aggregate entry carries root (the entity name of the aggregate), moduleRef (the module that owns it) and at least one invariant as a Statement {text, modality, priority}; an aggregate without an invariant is not a domain rule. " +
+			"An infrastructure container (reverse proxy, API gateway, identity provider, message bus, load balancer, scheduler, external system) holds no aggregate and no invariant: leave its aggregates list empty, keep purpose one sentence on what it does for the other containers, and give it its own invariant-free degradation rule in the HLD."
 	case "layers":
 		instruction += " Give every package in this layer a path. A Go container has the goca layers domain, usecase, repository, handler, di and middleware; a UI container has the atomic layers token, atom, molecule, organism, template and page. Put each HLD aggregate moduleRef in the domain layer of its container."
 	case "packages":
-		instruction += " Fill the path of this package and the path of every module it holds; a module path extends the package path."
+		instruction += " Fill the path of this package and the path of every module it holds; a module path extends the package path. The tech of the container decides the root: a Go container uses internal/<layer>/<module>, a Spring container uses src/main/java/<module>/<layer>, a UI container uses src/<layer>/<module>."
 	case "contracts":
 		instruction += " Fill moduleRef with the reference of the HLD that owns this contract. Name inputType and outputType from the contract and its fields; do not ask the operator for a type name. Set an HTTP status that matches the condition; do not ask for it."
+	case "options":
+		instruction += " Fill the summary, the cost {currency, amount}, the scheduleDays and the confidence (low, medium or high). Estimate the cost and the schedule yourself from the scope; do not ask the operator for them."
+	case "decisions":
+		instruction += " Fill the title, the context, the decision, at least two alternatives with their option and rejectedBecause, and the consequences. The context names the SRS requirement, the SRS NFR or the constraint the HLD names that forces this decision; the rejectedBecause names the same evidence, never a BRD rule. Do not repeat the id."
+	case "tests":
+		instruction += " Fill the targetTest {kind, path}, the scenario given, when and then (each a list of Text), and expectedErrorCode on a negative path. Do not repeat the test id."
+	case "fr":
+		instruction += " Fill the statement, the actor, the trigger, the response, the stateChange, the priority and at least one acceptance scenario {given, when, then}. The statement names the actor as the subject and the business object as the object: \"The receptionist checks the guest in\". Name the actor and the business objects with the words of the BRD glossary. Add one errors entry for one invalid input. Do not ask the operator for a scenario: write it from the trigger and the response."
+	case "nfr":
+		instruction += " Fill the statement, the metric, the unit, the threshold, the measurementPoint, the window and the verifyMethod. Do not ask the operator for a measurement: choose it from the NFR and the context."
+	}
+	if policy := stageQuestionPolicy(output); policy != "" {
+		instruction += " " + policy
 	}
 	return instruction
 }
@@ -795,6 +893,65 @@ func lastValue(labels []entryLabel) string {
 		parts = append(parts, label.idValue)
 	}
 	return strings.Join(parts, " / ")
+}
+
+// withEntryKeys fills the identifiers and references the system owns. The model
+// answers the meaning of one entry; the key, the companion reference and the
+// entry ids of that companion come from the walk, so the model never retypes them
+// and the merge finds the entry afterwards.
+func withEntryKeys(echo json.RawMessage, plan batchPlan, labels []entryLabel) json.RawMessage {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(echo, &doc); err != nil {
+		return echo
+	}
+	key := labels[len(labels)-1].idValue
+	if raw, ok := doc["entry"]; ok {
+		doc["entry"] = withField(raw, plan.idFieldOf(), key)
+	}
+	if plan.with != "" {
+		if raw, ok := doc[plan.with]; ok {
+			var entries []map[string]any
+			if err := json.Unmarshal(raw, &entries); err == nil {
+				for i := range entries {
+					entries[i][plan.ref] = key
+					if id, _ := entries[i]["id"].(string); id == "" {
+						entries[i]["id"] = fmt.Sprintf("%s-%s-%d", key, plan.with, i+1)
+					}
+				}
+				if encoded, err := json.Marshal(entries); err == nil {
+					doc[plan.with] = encoded
+				}
+			}
+		}
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return echo
+	}
+	return out
+}
+
+// mergeEntryFields applies the fields the model answered to the entry the
+// document already holds. A field the answer leaves out keeps its value, so the
+// keys, the references and the layout the system filled survive a prose or a
+// partial answer. A non-object answer changes nothing: the gates judge the
+// document, not a paragraph.
+func mergeEntryFields(existing, updated json.RawMessage) json.RawMessage {
+	var base, fresh map[string]json.RawMessage
+	if err := json.Unmarshal(existing, &base); err != nil {
+		return updated
+	}
+	if err := json.Unmarshal(updated, &fresh); err != nil {
+		return existing
+	}
+	for key, value := range fresh {
+		base[key] = value
+	}
+	out, err := json.Marshal(base)
+	if err != nil {
+		return existing
+	}
+	return out
 }
 
 // entryFromEcho takes the entry of the walk out of the answer. The answer echoes
@@ -1005,6 +1162,52 @@ func setList(payload json.RawMessage, kind string, entries []json.RawMessage) (j
 	}
 	document[kind] = encoded
 	return json.Marshal(document)
+}
+
+// withField sets one string field of an entry and keeps every other field as it is.
+func withField(entry json.RawMessage, field, value string) json.RawMessage {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(entry, &object); err != nil {
+		return entry
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return entry
+	}
+	object[field] = encoded
+	out, err := json.Marshal(object)
+	if err != nil {
+		return entry
+	}
+	return out
+}
+
+// assignIDs fills the entry identifiers the model left out of the outline. An id
+// is structural, not an operator value: the detail call addresses its entry by the
+// id, so a missing one leaves the entry unfilled and the gates ask the operator
+// for an internal name. Lists keyed by a business name or path keep the model's
+// own keys and are left untouched.
+func assignIDs(entries []json.RawMessage, plan batchPlan) []json.RawMessage {
+	if plan.idFieldOf() != "id" {
+		return entries
+	}
+	taken := map[string]bool{}
+	for _, entry := range entries {
+		taken[fieldOf(entry, "id")] = true
+	}
+	for index := range entries {
+		if fieldOf(entries[index], "id") != "" {
+			continue
+		}
+		base := strings.ToUpper(plan.kind) + "-" + strconv.Itoa(index+1)
+		id := base
+		for suffix := 2; taken[id]; suffix++ {
+			id = base + "-" + strconv.Itoa(suffix)
+		}
+		taken[id] = true
+		entries[index] = withField(entries[index], "id", id)
+	}
+	return entries
 }
 
 func entryByID(entries []json.RawMessage, idField, id string) (json.RawMessage, bool) {

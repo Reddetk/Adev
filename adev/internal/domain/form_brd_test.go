@@ -17,13 +17,25 @@ func TestBRDRejectsUnknownMetric(t *testing.T) {
 	}
 }
 
-func TestBRDRejectsMetricWithoutUnit(t *testing.T) {
+// A greenfield system has no measured value yet: a metric may omit unit, baseline
+// and target, and a goal may name no metric. A non-empty reference must still
+// resolve, so an unknown ID stays a mistake rather than a gap.
+func TestBRDAllowsMetricsWithoutMeasurement(t *testing.T) {
 	brd := validBRD()
 	brd.Metrics[0].Unit = ""
-
-	err := ValidateBRD(brd, StatusValid)
-	if err == nil || !strings.Contains(err.Error(), "unit") {
-		t.Fatalf("want a unit error, got %v", err)
+	brd.Metrics[0].Baseline = nil
+	brd.Metrics[0].Target = nil
+	if err := ValidateBRD(brd, StatusValid); err != nil {
+		t.Fatalf("a metric without measurement must pass the gates: %v", err)
+	}
+	brd.Goals[0].MetricID = ""
+	brd.SuccessMetrics = nil
+	if err := ValidateBRD(brd, StatusValid); err != nil {
+		t.Fatalf("a goal without a metric must pass the gates: %v", err)
+	}
+	brd.Metrics = nil
+	if err := ValidateBRD(brd, StatusValid); err != nil {
+		t.Fatalf("a BRD without metrics must pass the gates: %v", err)
 	}
 }
 

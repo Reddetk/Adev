@@ -5,6 +5,7 @@ import type { OperatorRequest, PointerChoice } from './api';
 
 export function QuestionsDashboard({
   questions,
+  systemOf,
   loading,
   error,
   onRefresh,
@@ -13,6 +14,9 @@ export function QuestionsDashboard({
   onChoose,
 }: {
   questions: OperatorRequest[];
+  // systemOf names the target system a pipeline belongs to: the list shows every
+  // pipeline, so a question must say whose business it asks about.
+  systemOf?: (pipelineId: number) => number | undefined;
   loading: boolean;
   error: string;
   onRefresh: () => void;
@@ -58,7 +62,12 @@ export function QuestionsDashboard({
 
       <div className="questions">
         {open.map((question) => (
-          <QuestionCard key={question.id} question={question} onAnswer={onAnswer} />
+          <QuestionCard
+            key={question.id}
+            question={question}
+            system={systemOf?.(question.pipelineid)}
+            onAnswer={onAnswer}
+          />
         ))}
       </div>
     </section>
@@ -67,9 +76,11 @@ export function QuestionsDashboard({
 
 function QuestionCard({
   question,
+  system,
   onAnswer,
 }: {
   question: OperatorRequest;
+  system?: number;
   onAnswer: (pointer: string, value: unknown, pipelineId: number) => void;
 }) {
   const [value, setValue] = useState('');
@@ -114,6 +125,7 @@ function QuestionCard({
           {question.blocking ? 'блокирует' : 'не блокирует'}
         </span>
         <span className="tag">пайплайн {question.pipelineid}</span>
+        {system !== undefined && <span className="tag">система {system}</span>}
         <span className="mono">{question.pointer}</span>
       </div>
       <p className="question-text">{question.question}</p>
