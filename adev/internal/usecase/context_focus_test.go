@@ -224,6 +224,144 @@ func TestFocusContextLeavesOtherStagesAlone(t *testing.T) {
 	}
 }
 
+// lldDocument is a filled LLD: two containers with their layers and packages, and
+// one contract with one path. A call works on a single branch of it.
+const lldDocument = `{
+	"containers": [
+		{"containerId": "CNT-STN", "layers": [
+			{"name": "domain", "packages": [{"path": "internal/domain/station", "modules": [{"objectId": "MOD-STN", "path": "internal/domain/station"}]}]},
+			{"name": "usecase", "packages": []}
+		]},
+		{"containerId": "CNT-BILL", "layers": [
+			{"name": "domain", "packages": [{"path": "internal/domain/bill", "modules": [{"objectId": "MOD-BILL-ONLY", "path": "internal/domain/bill"}]}]}
+		]}
+	],
+	"contracts": [
+		{"id": "CTR-STATION", "moduleRef": {"formId": "FRM-1-05", "formType": "LLD", "formVersion": 1}},
+		{"id": "CTR-BILL", "moduleRef": {"formId": "FRM-1-05", "formType": "LLD", "formVersion": 1}}
+	],
+	"paths": [
+		{"id": "P-1", "contractRef": "CTR-STATION", "kind": "happy"},
+		{"id": "P-2", "contractRef": "CTR-BILL", "kind": "happy"}
+	]
+}`
+
+// TestFocusDocumentKeepsTheContainerBranch: a call that fills one container reads
+// that container only. The layers of the other container leave the prompt, and
+// their names stay in the key list so a new package cannot reuse one.
+func TestFocusDocumentKeepsTheContainerBranch(t *testing.T) {
+	labels := []entryLabel{{plan: batchPlan{kind: "containers", idField: "containerId"}, idValue: "CNT-STN"}}
+
+	focused, keys := focusDocument(domain.TypeLLD, json.RawMessage(lldDocument), labels)
+
+	if strings.Contains(string(focused), "MOD-BILL-ONLY") {
+		t.Fatalf("the other container must leave the document, got %s", focused)
+	}
+	if !strings.Contains(string(focused), "MOD-STN") {
+		t.Fatalf("the container under work must stay, got %s", focused)
+	}
+	var doc struct {
+		Containers []json.RawMessage `json:"containers"`
+		Contracts  []json.RawMessage `json:"contracts"`
+		Paths      []json.RawMessage `json:"paths"`
+	}
+	if err := json.Unmarshal(focused, &doc); err != nil {
+		t.Fatalf("decode focused: %v", err)
+	}
+	if len(doc.Containers) != 1 || len(doc.Contracts) != 0 || len(doc.Paths) != 0 {
+		t.Fatalf("want one container and no contracts, got %d/%d/%d", len(doc.Containers), len(doc.Contracts), len(doc.Paths))
+	}
+
+	var used struct {
+		ContainerIDs []string `json:"containerIds"`
+		PackageKeys  []string `json:"packageKeys"`
+		ContractIDs  []string `json:"contractIds"`
+	}
+	if err := json.Unmarshal(keys, &used); err != nil {
+		t.Fatalf("decode keys: %v", err)
+	}
+	if len(used.ContainerIDs) != 2 || len(used.ContractIDs) != 2 {
+		t.Fatalf("the keys must name every container and contract, got %+v", used)
+	}
+	want := "CNT-BILL internal/domain/bill"
+	found := false
+	for _, key := range used.PackageKeys {
+		if key == want {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the package key of the other container must stay as a name, got %v", used.PackageKeys)
+	}
+}
+
+// TestFocusDocumentKeepsOneContractAndItsPaths: a contract call reads the contract
+// it fills and the paths of that contract. Containers leave the document.
+func TestFocusDocumentKeepsOneContractAndItsPaths(t *testing.T) {
+	labels := []entryLabel{{plan: batchPlan{kind: "contracts"}, idValue: "CTR-BILL"}}
+
+	focused, keys := focusDocument(domain.TypeLLD, json.RawMessage(lldDocument), labels)
+
+	var doc struct {
+		Containers []json.RawMessage `json:"containers"`
+		Contracts  []json.RawMessage `json:"contracts"`
+		Paths      []json.RawMessage `json:"paths"`
+	}
+	if err := json.Unmarshal(focused, &doc); err != nil {
+		t.Fatalf("decode focused: %v", err)
+	}
+	if len(doc.Containers) != 0 || len(doc.Contracts) != 1 || len(doc.Paths) != 1 {
+		t.Fatalf("want one contract and its path only, got %d/%d/%d", len(doc.Containers), len(doc.Contracts), len(doc.Paths))
+	}
+	if strings.Contains(string(focused), "P-1") || !strings.Contains(string(focused), "P-2") {
+		t.Fatalf("want the paths of this contract only, got %s", focused)
+	}
+	if len(keys) == 0 {
+		t.Fatal("the keys must still name the containers and the other contract")
+	}
+}
+
+// TestFocusDocumentLeavesOtherStagesAlone: the HLD walk keeps the whole document,
+// and the function says so with an empty key list.
+func TestFocusDocumentLeavesOtherStagesAlone(t *testing.T) {
+	labels := []entryLabel{{plan: batchPlan{kind: "containers", idField: "objectId"}, idValue: "CNT-STN"}}
+	got, keys := focusDocument(domain.TypeHLD, json.RawMessage(`{"containers":[{"objectId":"CNT-BILL"}]}`), labels)
+	if string(got) != `{"containers":[{"objectId":"CNT-BILL"}]}` || len(keys) != 0 {
+		t.Fatalf("want the document untouched and no keys, got %s / %s", got, keys)
+	}
+}
+
+// TestDetailCallShipsOneContainerOfTheDocument: the prompt of one container call
+// holds that container and the names of the others, not their layers.
+func TestDetailCallShipsOneContainerOfTheDocument(t *testing.T) {
+	t.Chdir("../..")
+	var seen LLMRequest
+	respond := func(request LLMRequest) (LLMResponse, error) {
+		seen = request
+		return LLMResponse{Payload: json.RawMessage(`{"entry":{"containerId":"CNT-STN"}}`)}, nil
+	}
+	stages := NewStageService(nil, nil, FixedLLM(&calledLLM{next: respond}), nil)
+	stages.detailCall(
+		context.Background(), StageRequest{}, &calledLLM{next: respond}, domain.AgentConfig{},
+		domain.Stage{ID: "05"}, domain.TypeLLD, "", json.RawMessage(`{}`),
+		[]entryLabel{{plan: batchPlan{kind: "containers", idField: "containerId"}, idValue: "CNT-STN"}},
+		json.RawMessage(`{"containerId":"CNT-STN"}`),
+		batchPlan{kind: "containers", idField: "containerId"},
+		json.RawMessage(lldDocument),
+	)
+
+	if strings.Contains(seen.User, "MOD-BILL-ONLY") {
+		t.Fatalf("the layers of another container must leave the prompt, got:\n%s", seen.User)
+	}
+	if !strings.Contains(seen.User, "MOD-STN") {
+		t.Fatalf("the container under work must stay in the prompt, got:\n%s", seen.User)
+	}
+	if !strings.Contains(seen.User, "The names the document already uses") ||
+		!strings.Contains(seen.User, "CNT-BILL internal/domain/bill") {
+		t.Fatalf("the prompt must name the keys of the rest of the document, got:\n%s", seen.User)
+	}
+}
+
 // TestDetailCallShipsTheBranchAndTheEntryAnswer: one contract call of the LLD
 // reads the branch of its relation, gets the contract paragraphs of the registry
 // page, and answers with the entry and its paths only.

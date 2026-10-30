@@ -343,3 +343,116 @@ func jsonStrings(entry json.RawMessage, field string) []string {
 	_ = json.Unmarshal(object[field], &values)
 	return values
 }
+
+// focusDocument returns the part of the document one detail call reads, and the
+// names the rest of the document already uses. The LLD walk fills one container or
+// one contract at a time: the layers of another container tell the model nothing
+// and are the largest part of the prompt. The names stay, because a new entry must
+// not reuse an existing container, package path or contract id.
+func focusDocument(output domain.FormType, document json.RawMessage, labels []entryLabel) (json.RawMessage, json.RawMessage) {
+	if output != domain.TypeLLD || len(labels) == 0 || len(document) == 0 {
+		return document, nil
+	}
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(document, &root); err != nil {
+		return document, nil
+	}
+	keys := documentKeys(root)
+	last := labels[len(labels)-1]
+	if last.plan.kind == "contracts" {
+		// A contract call writes the contract and its paths. The containers of the
+		// document are not its business: the relation it serves arrives in the input
+		// HLD, already focused by the branch rule.
+		root["containers"] = json.RawMessage(`[]`)
+		root["contracts"] = onlyRows(root["contracts"], "id", last.idValue)
+		root["paths"] = onlyRows(root["paths"], "contractRef", last.idValue)
+	} else {
+		containerID := ""
+		if labels[0].plan.kind == "containers" {
+			containerID = labels[0].idValue
+		}
+		if containerID == "" {
+			return document, keys
+		}
+		root["containers"] = onlyRows(root["containers"], "containerId", containerID)
+		root["contracts"] = json.RawMessage(`[]`)
+		root["paths"] = json.RawMessage(`[]`)
+	}
+	focused, err := json.Marshal(root)
+	if err != nil {
+		return document, keys
+	}
+	return focused, keys
+}
+
+// onlyRows keeps the rows whose field equals the value. Unlike keepRows it never
+// falls back to the whole list: leaving the rest out is the point of this walk.
+func onlyRows(raw json.RawMessage, field, value string) json.RawMessage {
+	if value == "" {
+		return raw
+	}
+	var rows []json.RawMessage
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return raw
+	}
+	kept := make([]json.RawMessage, 0, len(rows))
+	for _, row := range rows {
+		if fieldOf(row, field) == value {
+			kept = append(kept, row)
+		}
+	}
+	encoded, err := json.Marshal(kept)
+	if err != nil {
+		return raw
+	}
+	return encoded
+}
+
+// documentKeys lists the names the filled part of the document already uses. A
+// package path belongs to its container, so the key holds both: two services may
+// name the same relative path, and a call must not be told otherwise.
+func documentKeys(root map[string]json.RawMessage) json.RawMessage {
+	containers, contracts := jsonRows(root, "containers"), jsonRows(root, "contracts")
+	if len(containers) == 0 && len(contracts) == 0 {
+		return nil
+	}
+	containerIDs := make([]string, 0, len(containers))
+	packageKeys := make([]string, 0)
+	for _, container := range containers {
+		id := fieldOf(container, "containerId")
+		if id != "" {
+			containerIDs = append(containerIDs, id)
+		}
+		for _, layer := range rowsOf(container, "layers") {
+			for _, pkg := range rowsOf(layer, "packages") {
+				if path := fieldOf(pkg, "path"); path != "" {
+					packageKeys = append(packageKeys, id+" "+path)
+				}
+			}
+		}
+	}
+	contractIDs := make([]string, 0, len(contracts))
+	for _, contract := range contracts {
+		if id := fieldOf(contract, "id"); id != "" {
+			contractIDs = append(contractIDs, id)
+		}
+	}
+	keys, err := json.Marshal(map[string][]string{
+		"containerIds": containerIDs,
+		"packageKeys":  packageKeys,
+		"contractIds":  contractIDs,
+	})
+	if err != nil {
+		return nil
+	}
+	return keys
+}
+
+// rowsOf decodes one list of an entry.
+func rowsOf(entry json.RawMessage, kind string) []json.RawMessage {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(entry, &object); err != nil {
+		return nil
+	}
+	return jsonRows(object, kind)
+}

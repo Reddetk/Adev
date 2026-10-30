@@ -818,6 +818,10 @@ func (s *StageService) detailCall(
 ) json.RawMessage {
 	instruction := detailInstruction(output, stage, plan, labels, entry)
 	context := focusContext(output, stageContext, labels, entry)
+	document, keys := focusDocument(output, document, labels)
+	if len(keys) > 0 {
+		instruction += "\nThe names the document already uses (do not reuse one for a new entry; a package key is its container and its path, so the same path in another container is not a duplicate): " + string(keys)
+	}
 	system, user := detailMessages(output, instruction, context, document)
 	complete := LLMRequest{Role: agent.Role, System: system, User: user, Files: registryFileFor(output, plan.kind)}
 	call := s.startModelCall(request, agent, complete)
