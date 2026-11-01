@@ -28,6 +28,9 @@ type Decision struct {
 	Supersedes string            `json:"supersedes,omitempty"`
 	Context    Text              `json:"context,omitempty"`
 	ObjectRefs []string          `json:"objectRefs,omitempty"`
+	// Ownership is how a storage decision shares the data: one service, every
+	// service, or a read model built from events.
+	Ownership Ownership `json:"ownership,omitempty"`
 	// Techs are the products the decision fixes: the database, the bus, the cache,
 	// the proxy. Each one must be the tech of a container of the design, so a
 	// decision cannot name a component the design does not have.

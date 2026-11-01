@@ -131,6 +131,7 @@ func ValidateHLD(h HLD) error {
 	}
 	errs = append(errs, validatePACELC(h)...)
 	errs = append(errs, validateDecisions(h)...)
+	errs = append(errs, validateRelations(h)...)
 	// A greenfield design has no decision history, so its choices live here: each
 	// one names the option taken, at least one rejected option, and the containers
 	// it fixes. A decision that points at no container fixes nothing.

@@ -30,7 +30,7 @@ const hldOutline = `{
 	"decisions": [
 		{"id": "d-consistency-app", "area": "consistency", "contextRef": "bc-app", "title": {"lang": "STE100", "text": "Consistency"}, "decision": {"lang": "STE100", "text": "The client reads its own write."}, "alternatives": [{"option": {"lang": "STE100", "text": "Eventual"}, "rejectedBecause": {"lang": "STE100", "text": "The client confirms the receipt."}}]},
 		{"id": "d-consistency-data", "area": "consistency", "contextRef": "bc-data", "title": {"lang": "STE100", "text": "Consistency"}, "decision": {"lang": "STE100", "text": "The store waits for the write."}, "alternatives": [{"option": {"lang": "STE100", "text": "Eventual"}, "rejectedBecause": {"lang": "STE100", "text": "The route needs transactions."}}]},
-		{"id": "d-storage", "area": "storage", "title": {"lang": "STE100", "text": "Storage"}, "decision": {"lang": "STE100", "text": "PostgreSQL."}, "alternatives": [{"option": {"lang": "STE100", "text": "MongoDB"}, "rejectedBecause": {"lang": "STE100", "text": "The route needs transactions."}}], "objectRefs": ["c-data"], "techs": ["postgresql"]},
+		{"id": "d-storage", "area": "storage", "ownership": "database_per_service", "title": {"lang": "STE100", "text": "Storage"}, "decision": {"lang": "STE100", "text": "PostgreSQL."}, "alternatives": [{"option": {"lang": "STE100", "text": "MongoDB"}, "rejectedBecause": {"lang": "STE100", "text": "The route needs transactions."}}], "objectRefs": ["c-data"], "techs": ["postgresql"]},
 		{"id": "d-architecture", "area": "architecture", "style": "monolith", "title": {"lang": "STE100", "text": "Architecture"}, "decision": {"lang": "STE100", "text": "One deployable unit."}, "alternatives": [{"option": {"lang": "STE100", "text": "Microservices"}, "rejectedBecause": {"lang": "STE100", "text": "One team of two."}}]}
 	],
 	"degradationStrategy": [
@@ -50,7 +50,7 @@ const containersWithoutData = `{
 	"aggregates": [],
 	"decisions": [
 		{"id": "d-consistency-app", "area": "consistency", "contextRef": "bc-app", "title": {"lang": "STE100", "text": "Consistency"}, "decision": {"lang": "STE100", "text": "The client reads its own write."}, "alternatives": [{"option": {"lang": "STE100", "text": "Eventual"}, "rejectedBecause": {"lang": "STE100", "text": "The client confirms the receipt."}}]},
-		{"id": "d-storage", "area": "storage", "title": {"lang": "STE100", "text": "Storage"}, "decision": {"lang": "STE100", "text": "PostgreSQL."}, "alternatives": [{"option": {"lang": "STE100", "text": "MongoDB"}, "rejectedBecause": {"lang": "STE100", "text": "The route needs transactions."}}], "objectRefs": ["c-app"], "techs": ["postgresql"]},
+		{"id": "d-storage", "area": "storage", "ownership": "database_per_service", "title": {"lang": "STE100", "text": "Storage"}, "decision": {"lang": "STE100", "text": "PostgreSQL."}, "alternatives": [{"option": {"lang": "STE100", "text": "MongoDB"}, "rejectedBecause": {"lang": "STE100", "text": "The route needs transactions."}}], "objectRefs": ["c-app"], "techs": ["postgresql"]},
 		{"id": "d-architecture", "area": "architecture", "style": "monolith", "title": {"lang": "STE100", "text": "Architecture"}, "decision": {"lang": "STE100", "text": "One deployable unit."}, "alternatives": [{"option": {"lang": "STE100", "text": "Microservices"}, "rejectedBecause": {"lang": "STE100", "text": "One team of two."}}]}
 	],
 	"degradationStrategy": [

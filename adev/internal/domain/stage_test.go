@@ -73,7 +73,7 @@ func TestHLDKeepsTheDecisions(t *testing.T) {
 				}},
 			},
 			{
-				ID: "storage", Area: AreaStorage, Title: Text{Value: "Storage", Lang: LangSTE100},
+				ID: "storage", Area: AreaStorage, Ownership: OwnershipPerService, Title: Text{Value: "Storage", Lang: LangSTE100},
 				Decision:     Text{Value: "PostgreSQL.", Lang: LangSTE100},
 				Alternatives: []Alternative{{Option: Text{Value: "MongoDB", Lang: LangSTE100}, RejectedBecause: Text{Value: "The route needs transactions.", Lang: LangSTE100}}},
 				ObjectRefs:   []string{"c-1"},

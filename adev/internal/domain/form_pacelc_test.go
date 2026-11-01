@@ -47,7 +47,7 @@ func hldWith(contexts []BoundedContext, containers []Container, relations []Cont
 	})
 	if store != "" {
 		decisions = append(decisions, Decision{
-			ID: "d-storage", Area: AreaStorage,
+			ID: "d-storage", Area: AreaStorage, Ownership: OwnershipPerService,
 			Title:    Text{Value: "Storage", Lang: LangSTE100},
 			Decision: Text{Value: "The store the design carries.", Lang: LangSTE100},
 			Alternatives: []Alternative{{
@@ -185,7 +185,7 @@ func TestPACELCClassAgainstTheRelations(t *testing.T) {
 		Purpose: Text{Value: "Bill.", Lang: LangSTE100}, Tech: TechGo,
 	})
 	asyncOnly := hldWith(contexts, containers, []ContextRelation{
-		{From: "bc-1", To: "bc-2", Type: RelationAsync},
+		{From: "bc-1", To: "bc-2", Type: RelationAsync, Guarantee: DeliveryAtLeastOnce, IdempotencyKey: "shipmentId"},
 	})
 	asyncOnly.Aggregates = append(asyncOnly.Aggregates, Aggregate{
 		ID: "a-2", ContainerID: "c-2", Root: "invoice", ModuleRef: "m-2",
@@ -196,7 +196,7 @@ func TestPACELCClassAgainstTheRelations(t *testing.T) {
 	}
 
 	withSync := hldWith(contexts, containers, []ContextRelation{
-		{From: "bc-1", To: "bc-2", Type: RelationAsync},
+		{From: "bc-1", To: "bc-2", Type: RelationAsync, Guarantee: DeliveryAtLeastOnce, IdempotencyKey: "shipmentId"},
 		{From: "bc-2", To: "bc-1", Type: RelationSync},
 	})
 	withSync.Aggregates = append(withSync.Aggregates, Aggregate{

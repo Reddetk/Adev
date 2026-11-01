@@ -52,6 +52,14 @@ type ContextRelation struct {
 	To         string              `json:"to"`
 	Type       ContextRelationType `json:"type"`
 	ContractID string              `json:"contractId,omitempty"`
+	// Guarantee is what an async edge promises its consumer: at most once, at
+	// least once, or exactly once. A sync edge answers with its return value.
+	Guarantee Delivery `json:"guarantee,omitempty"`
+	// IdempotencyKey names the field that makes a repeated delivery safe; a
+	// consistent consumer cannot accept an at-least-once event without it.
+	IdempotencyKey string `json:"idempotencyKey,omitempty"`
+	Retry          bool   `json:"retry,omitempty"`
+	DLQ            string `json:"dlq,omitempty"`
 }
 
 // Degradation is one failure and the reduced behavior of the system.

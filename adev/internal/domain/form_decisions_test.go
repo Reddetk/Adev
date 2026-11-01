@@ -46,7 +46,7 @@ func design(style ArchitectureStyle, appContainers int, store string) HLD {
 	}}
 	if store != "" {
 		decisions = append(decisions, Decision{
-			ID: "d-storage", Area: AreaStorage, Title: Text{Value: "Storage", Lang: LangSTE100},
+			ID: "d-storage", Area: AreaStorage, Ownership: OwnershipPerService, Title: Text{Value: "Storage", Lang: LangSTE100},
 			Decision: Text{Value: "PostgreSQL.", Lang: LangSTE100},
 			Alternatives: []Alternative{{
 				Option:          Text{Value: "MongoDB", Lang: LangSTE100},
@@ -201,4 +201,155 @@ func withoutArea(decisions []Decision, area DecisionArea) []Decision {
 		}
 	}
 	return kept
+}
+
+// D4.4 and D5: the storage decision names who owns the data, and every relation
+// names the guarantee it buys. Both are decisions the gate can check.
+
+func designWithStore(style ArchitectureStyle) HLD {
+	return design(style, 1, TechPostgres)
+}
+
+// TestStorageDecisionNamesOwnership: a store without an owner is a database
+// somebody will share by accident.
+func TestStorageDecisionNamesOwnership(t *testing.T) {
+	hld := designWithStore(StyleModularMonolith)
+	for i := range hld.Decisions {
+		if hld.Decisions[i].Area == AreaStorage {
+			hld.Decisions[i].Ownership = ""
+		}
+	}
+	if err := ValidateHLD(hld); err == nil || !strings.Contains(err.Error(), "ownership") {
+		t.Fatalf("a storage decision must name the ownership, got %v", err)
+	}
+	hld = designWithStore(StyleModularMonolith)
+	for i := range hld.Decisions {
+		if hld.Decisions[i].Area == AreaStorage {
+			hld.Decisions[i].Ownership = OwnershipShared
+		}
+	}
+	if err := ValidateHLD(hld); err != nil {
+		t.Fatalf("a monolith with a shared database must pass, got %v", err)
+	}
+}
+
+// TestOwnershipAgainstTheStyle: services that deploy apart cannot share one
+// database without coupling every schema change to every team.
+func TestOwnershipAgainstTheStyle(t *testing.T) {
+	hld := design(StyleMicroservices, 2, TechPostgres)
+	for i := range hld.Decisions {
+		if hld.Decisions[i].Area == AreaStorage {
+			hld.Decisions[i].Ownership = OwnershipShared
+		}
+	}
+	if err := ValidateHLD(hld); err == nil || !strings.Contains(err.Error(), "shared_database") {
+		t.Fatalf("microservices over one shared database must fail, got %v", err)
+	}
+
+	hld = design(StyleMicroservices, 2, TechPostgres)
+	for i := range hld.Decisions {
+		if hld.Decisions[i].Area == AreaStorage {
+			hld.Decisions[i].Ownership = OwnershipPerService
+		}
+	}
+	if err := ValidateHLD(hld); err != nil {
+		t.Fatalf("a database per service must pass, got %v", err)
+	}
+}
+
+// TestAsyncRelationNamesAGuarantee: a message without a delivery guarantee is a
+// promise nobody can test.
+func TestAsyncRelationNamesAGuarantee(t *testing.T) {
+	hld := designWithStore(StyleModularMonolith)
+	hld.Decisions = append(hld.Decisions, Decision{
+		ID: "d-communication", Area: AreaCommunication, ContextRef: "bc-1",
+		Title:    Text{Value: "Communication", Lang: LangSTE100},
+		Decision: Text{Value: "Events between the contexts.", Lang: LangSTE100},
+		Alternatives: []Alternative{{
+			Option:          Text{Value: "Sync calls", Lang: LangSTE100},
+			RejectedBecause: Text{Value: "The caller may continue.", Lang: LangSTE100},
+		}},
+	})
+	hld.ContextRelations = []ContextRelation{{From: "bc-1", To: "bc-1", Type: RelationAsync}}
+	if err := ValidateHLD(hld); err == nil || !strings.Contains(err.Error(), "contextRelations[0].guarantee") {
+		t.Fatalf("an async relation must name its guarantee, got %v", err)
+	}
+
+	hld.ContextRelations[0].Guarantee = DeliveryAtLeastOnce
+	if err := ValidateHLD(hld); err != nil {
+		t.Fatalf("at-least-once must pass, got %v", err)
+	}
+}
+
+// TestAsyncIntoAConsistentContextNeedsAKey: an at-least-once event into a context
+// that promises consistency needs the key that makes the duplicate safe.
+func TestAsyncIntoAConsistentContextNeedsAKey(t *testing.T) {
+	hld := hldWith(
+		[]BoundedContext{{
+			ID: "bc-1", Name: "Delivery", Purpose: Text{Value: "Move parcels.", Lang: LangSTE100},
+			PACELC: PACELCPcEc, ContainerIds: []string{"c-1"},
+		}},
+		shipmentContainers(TechGo), nil,
+	)
+	hld.Decisions = append(hld.Decisions, Decision{
+		ID: "d-communication", Area: AreaCommunication, ContextRef: "bc-1",
+		Title:    Text{Value: "Communication", Lang: LangSTE100},
+		Decision: Text{Value: "Events between the contexts.", Lang: LangSTE100},
+		Alternatives: []Alternative{{
+			Option:          Text{Value: "Sync calls", Lang: LangSTE100},
+			RejectedBecause: Text{Value: "The caller may continue.", Lang: LangSTE100},
+		}},
+	})
+	hld.ContextRelations = []ContextRelation{
+		{From: "bc-1", To: "bc-1", Type: RelationSync},
+		{From: "bc-1", To: "bc-1", Type: RelationAsync, Guarantee: DeliveryAtLeastOnce},
+	}
+	if err := ValidateHLD(hld); err == nil || !strings.Contains(err.Error(), "idempotencyKey") {
+		t.Fatalf("a consistent context needs the idempotency key, got %v", err)
+	}
+	hld.ContextRelations[1].IdempotencyKey = "shipmentId"
+	if err := ValidateHLD(hld); err != nil {
+		t.Fatalf("the key must satisfy the rule, got %v", err)
+	}
+}
+
+// TestOwnershipAndGuaranteeSurviveARandomDesign: the two rules agree with an oracle
+// on any legal combination. The seed is fixed so a failure reproduces.
+func TestOwnershipAndGuaranteeSurviveARandomDesign(t *testing.T) {
+	random := rand.New(rand.NewSource(47))
+	styles := []ArchitectureStyle{StyleModularMonolith, StyleMicroservices, StyleMonolith}
+	ownerships := []Ownership{OwnershipPerService, OwnershipShared, OwnershipReadModel}
+	guarantees := []Delivery{"", DeliveryAtLeastOnce, DeliveryAtMostOnce, DeliveryExactlyOnce}
+
+	for i := 0; i < 200; i++ {
+		style := styles[random.Intn(len(styles))]
+		ownership := ownerships[random.Intn(len(ownerships))]
+		guarantee := guarantees[random.Intn(len(guarantees))]
+
+		containers := 1
+		if style.DeployedApart() {
+			containers = 2
+		}
+		hld := design(style, containers, TechPostgres)
+		for j := range hld.Decisions {
+			if hld.Decisions[j].Area == AreaStorage {
+				hld.Decisions[j].Ownership = ownership
+			}
+		}
+		hld.ContextRelations = []ContextRelation{{
+			From: "bc-1", To: "bc-1", Type: RelationAsync, Guarantee: guarantee,
+		}}
+
+		err := ValidateHLD(hld)
+		wantRefused := guarantee == ""
+		if style.DeployedApart() && ownership == OwnershipShared {
+			wantRefused = true
+		}
+		if wantRefused && err == nil {
+			t.Fatalf("iteration %d: style %s, ownership %s, guarantee %q must fail", i, style, ownership, guarantee)
+		}
+		if !wantRefused && err != nil {
+			t.Fatalf("iteration %d: style %s, ownership %s, guarantee %q must pass, got %v", i, style, ownership, guarantee, err)
+		}
+	}
 }

@@ -119,6 +119,10 @@ func validateDecisions(h HLD) []error {
 			}
 		}
 		if decision.Area == AreaStorage {
+			if !decision.Ownership.Valid() {
+				errs = append(errs, invalid(field+".ownership",
+					fmt.Sprintf("a storage decision names database_per_service, shared_database or read_model, got %q", decision.Ownership)))
+			}
 			for _, tech := range decision.Techs {
 				if storeTechs[strings.ToLower(tech)] {
 					storageDecided = true
@@ -179,8 +183,69 @@ func validateDecisions(h HLD) []error {
 				errs = append(errs, invalid("decisions",
 					fmt.Sprintf("style %q is one deployable unit but the design has %d code containers", decision.Style, codeContainers)))
 			}
+			if decision.Style.DeployedApart() {
+				if ownership, ok := ownershipOf(h.Decisions); ok && ownership == OwnershipShared {
+					errs = append(errs, invalid("decisions",
+						fmt.Sprintf("style %q deploys services apart but the storage decision shares one database (shared_database); use database_per_service or a read model", decision.Style)))
+				}
+			}
 		}
 	}
 	_ = containers
 	return errs
+}
+
+// Ownership says who owns a store: one service, every service, or a read model
+// built from events.
+type Ownership string
+
+const (
+	OwnershipPerService Ownership = "database_per_service"
+	OwnershipShared     Ownership = "shared_database"
+	OwnershipReadModel  Ownership = "read_model"
+)
+
+func (o Ownership) Valid() bool {
+	switch o {
+	case OwnershipPerService, OwnershipShared, OwnershipReadModel:
+		return true
+	}
+	return false
+}
+
+// validateRelations checks what a relation promises: an async edge names its
+// delivery guarantee, and an at-least-once edge into a consistent context names the
+// key that makes a duplicate safe.
+func validateRelations(h HLD) []error {
+	var errs []error
+	classes := map[string]PACELC{}
+	for _, context := range h.BoundedContexts {
+		classes[context.ID] = context.PACELC
+	}
+	for i, relation := range h.ContextRelations {
+		field := fmt.Sprintf("contextRelations[%d]", i)
+		if relation.Type == RelationAsync {
+			switch relation.Guarantee {
+			case DeliveryAtMostOnce, DeliveryAtLeastOnce, DeliveryExactlyOnce:
+			default:
+				errs = append(errs, invalid(field+".guarantee",
+					fmt.Sprintf("an async relation names at_most_once, at_least_once or exactly_once, got %q", relation.Guarantee)))
+			}
+			if classes[relation.To].Consistent() && relation.Guarantee != DeliveryAtMostOnce && relation.IdempotencyKey == "" {
+				errs = append(errs, invalid(field+".idempotencyKey",
+					fmt.Sprintf("context %q promises consistency and receives %s events; name the key that makes a duplicate safe", relation.To, relation.Guarantee)))
+			}
+		}
+	}
+	return errs
+}
+
+// ownershipOf reads the ownership of the storage decision, if the design has one.
+func ownershipOf(decisions []Decision) (Ownership, bool) {
+	for _, decision := range decisions {
+		if decision.Area == AreaStorage {
+			return decision.Ownership, true
+		}
+	}
+	return "", false
 }

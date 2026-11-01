@@ -119,7 +119,7 @@ no decision history, so its choices live in the design they shape.
 
 **Answer:** `payload.decisions[]` — `{ id, area, title: Text, decision: Text, context: Text?, alternatives: [{option, rejectedBecause}], consequences: Text[], objectRefs: string[], techs: string[], contextRef?, style? }`.
 **Answer:** `objectRefs` names containers of this design. `techs` names the products the decision chooses, and each product must be the `tech` of a container of this design.
-**Answer:** one consistency decision per bounded context (`contextRef`), one storage decision per design that has a store container, and exactly one architecture decision (`style`).
+**Answer:** one consistency decision per bounded context (`contextRef`), one storage decision per design that has a store container (`ownership`: `database_per_service`, `shared_database` or `read_model`), and exactly one architecture decision (`style`).
 
 ### Paragraph 8 — Degradation strategy (v2)
 
@@ -151,6 +151,8 @@ no decision history, so its choices live in the design they shape.
 14. Every `containers[].tech` is one of the technologies the registry lists.
 15. A consistent context (`PC/EC`, `PC/EL`) does not rest only on available-only stores (`cassandra`, `redis`).
 16. A consistent context that takes part in relations has at least one synchronous edge.
+16a. A storage decision names `ownership`; a style that deploys apart cannot share one database.
+16b. An async relation names its `guarantee`, and an at-least-once edge into a consistent context names its `idempotencyKey`.
 17. Every `decisions[].area` is one of architecture, communication, storage, scaling, consistency, reliability, stack, ops, process, metrics.
 18. Every bounded context has a consistency decision whose `contextRef` names it.
 19. A design with a store container has a storage decision whose `techs` names that store.
