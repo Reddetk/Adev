@@ -239,3 +239,42 @@ func TestAnswerManyRefusesTheSamePointerTwice(t *testing.T) {
 		t.Fatal("a duplicated pointer must refuse the batch")
 	}
 }
+
+// TestAnAnsweredPointerIsNotAskedAgain: the model repeats a gap that the operator
+// already answered. The completed question is the record of the decision, so the
+// same pointer does not become a question twice.
+func TestAnAnsweredPointerIsNotAskedAgain(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	requests := &fakeQuestionRequests{saved: []domain.OperatorRequest{{
+		ID: 1, PipelineID: 41, Pointer: "/nfr/0/metric", Status: "completed",
+	}}}
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), requests)
+
+	payload := json.RawMessage(`{"fr":[],"nfr":[{"id":"nfr-1","metric":"availability","unit":"","threshold":"","measurementPoint":"","window":""}],"openGaps":[
+		{"id":"g1","pointer":"/nfr/0/metric","question":{"lang":"STE100","text":"Which metric?"}},
+		{"id":"g2","pointer":"/nfr/0/unit","question":{"lang":"STE100","text":"Which unit?"}}
+	]}`)
+	form := &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-41-02", FormType: domain.TypeSRS, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusDraft, Route: domain.RouteGreenfield, Stage: "02", Mode: domain.ModeFull,
+		PipelineID: "41", TargetSystemID: "2", ProducedBy: domain.RoleAnalyst,
+	}}
+	if err := form.SetRawPayload(payload); err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	if err := store.Save(ctx, form); err != nil {
+		t.Fatalf("store: %v", err)
+	}
+
+	published, err := service.PublishGaps(ctx, form, 41)
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if published != 1 {
+		t.Fatalf("want only the unanswered unit, got %d", published)
+	}
+	if got := activeRequests(requests, 41); len(got) != 1 || got[0].Pointer != "/nfr/0/unit" {
+		t.Fatalf("want the unit question only, got %+v", got)
+	}
+}

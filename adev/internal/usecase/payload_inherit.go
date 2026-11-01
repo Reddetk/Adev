@@ -199,3 +199,19 @@ func inheritPremises(previous, next json.RawMessage) json.RawMessage {
 	}
 	return out
 }
+
+// isBlankValue reports a value that carries no answer: absent, empty text, an empty
+// list or map, and the zero of a number. A premise of zero means "not given", so a
+// gap that points at it is still a question.
+func isBlankValue(value any) bool {
+	if isEmptyValue(value) {
+		return true
+	}
+	switch typed := value.(type) {
+	case float64:
+		return typed == 0
+	case int:
+		return typed == 0
+	}
+	return false
+}

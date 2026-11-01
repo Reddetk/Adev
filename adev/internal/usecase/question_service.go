@@ -75,7 +75,7 @@ func (s *QuestionService) PublishGaps(ctx context.Context, form *domain.Form, pi
 			log.Printf("question pipeline %d: gap %s of %s is not one answerable value (%s), not asked", pipelineID, gap.ID, form.FormID, pointer)
 			continue
 		}
-		if alreadyAsked(ctx, s.requests, pipelineID, pointer) {
+		if alreadyAsked(ctx, s.requests, pipelineID, pointer) || answeredBefore(s.requests, pipelineID, pointer) {
 			continue
 		}
 		question := fmt.Sprintf("Уточнить у оператора (%s, %s): %s", form.FormType, gap.ID, gap.Question.Value)
@@ -1570,4 +1570,24 @@ func patchAnswer(form *domain.Form, payload json.RawMessage, pointer string, val
 		return nil, fmt.Errorf("answer: apply value to %s: %w", pointer, err)
 	}
 	return patched, nil
+}
+
+// answeredBefore reports a question the operator already closed for this pointer.
+// The model repeats a gap the answer removed, and asking it again costs the
+// operator a decision that stands in the document.
+func answeredBefore(requests OperatorRequestRepository, pipelineID int, pointer string) bool {
+	if requests == nil {
+		return false
+	}
+	all, err := requests.FindAll()
+	if err != nil {
+		return false
+	}
+	pointer = normalizePointer(pointer)
+	for i := range all {
+		if all[i].PipelineID == pipelineID && all[i].Status == "completed" && normalizePointer(all[i].Pointer) == pointer {
+			return true
+		}
+	}
+	return false
 }
