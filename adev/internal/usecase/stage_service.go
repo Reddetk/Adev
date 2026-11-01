@@ -346,6 +346,20 @@ func (s *StageService) runForm(
 			return StageOutcome{}, err
 		}
 
+		// The operator stopped the agent, or the run ran out of time: the entries
+		// that already answered are on disk, and the stage reports the stop instead
+		// of judging a document that no agent finished.
+		if ctx.Err() != nil {
+			saveCtx := context.WithoutCancel(ctx)
+			if saveErr := s.forms.SubmitDraft(saveCtx, form); saveErr != nil {
+				log.Printf("stage %s: keep the stopped draft %s v%d: %v", stage.ID, form.FormID, form.FormVersion, saveErr)
+			}
+			activity.Finish("stopped", "stopped by the operator")
+			s.record(saveCtx, request, stage, "stopped", attempt, ErrStageStopped.Error())
+			s.finishModelCall(call, response, payload, []string{ErrStageStopped.Error()})
+			return StageOutcome{}, ErrStageStopped
+		}
+
 		var mismatch []string
 		var failures []domain.ValidationError
 		if err := s.forms.Submit(ctx, form); err != nil {
@@ -680,6 +694,13 @@ type detailCheckpoint func(document json.RawMessage) error
 // back into the skeleton. A failed detail call keeps the skeleton entry: the gates
 // still judge the document, and the operator sees what is missing.
 func (s *StageService) detailBatches(ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig, stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage, plans []batchPlan, payload json.RawMessage, checkpoint detailCheckpoint) json.RawMessage {
+	// The outline is worth keeping on its own: a stop during the first entry leaves
+	// the entries the model already named, not an empty stage.
+	if checkpoint != nil {
+		if err := checkpoint(payload); err != nil {
+			log.Printf("stage %s: save the outline: %v", stage.ID, err)
+		}
+	}
 	var gaps []json.RawMessage
 	filled := s.detailLevel(ctx, request, client, agent, stage, output, shape, stageContext, plans, payload, payload, "", nil, &gaps, checkpoint)
 	return mergeDetailGaps(filled, gaps)
@@ -688,16 +709,20 @@ func (s *StageService) detailBatches(ctx context.Context, request StageRequest, 
 // progressSaver writes the document built so far into the draft of this form. The
 // draft keeps its version: every finished entry rewrites it, so a run of an hour
 // leaves the work on disk and the next run reads it back as the previous draft.
+// A checkpoint survives the stop signal: the write uses a context that the stop
+// does not cancel, otherwise the last entries would be lost exactly when the
+// operator wants them kept.
 // shortcut: a resumed run still calls the model per entry and keeps the answers,
 // not the calls; skip an entry whose subtree is already filled when the repeat
 // becomes the bottleneck.
 func (s *StageService) progressSaver(ctx context.Context, form *domain.Form) detailCheckpoint {
+	saveCtx := context.WithoutCancel(ctx)
 	return func(document json.RawMessage) error {
 		partial := *form
 		if err := partial.SetRawPayload(document); err != nil {
 			return err
 		}
-		return s.forms.SubmitDraft(ctx, &partial)
+		return s.forms.SubmitDraft(saveCtx, &partial)
 	}
 }
 

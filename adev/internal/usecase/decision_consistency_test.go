@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -170,7 +171,70 @@ func designCarriesTech(hld domain.HLD, tech string) bool {
 	return false
 }
 
-// TestE2ELLDSeesTheDecisionOfItsContainer: a design decision follows its
+// TestE2EStopKeepsTheAnswers: the operator stops the agent in the middle of a
+// walk. The stage reports a stop, not a gate failure, and the entries that already
+// answered stay in the draft.
+func TestE2EStopKeepsTheAnswers(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	respond := func(request LLMRequest) (LLMResponse, error) {
+		switch {
+		case strings.Contains(request.User, `the containers entry with objectId "c-app"`):
+			// The first entry answers, then the operator stops the agent.
+			cancel()
+			return LLMResponse{Payload: json.RawMessage(`{"entry":{
+				"objectId": "c-app", "tech": "java", "boundedContextId": "bc-app",
+				"purpose": {"lang": "STE100", "text": "Serve the client fast."}
+			},"aggregates":[{"id": "a-app", "root": "shipment", "moduleRef": "mod-app",
+				"invariants": [{"text": "A shipment has one route.", "modality": "shall", "priority": "must"}]}]}`)}, nil
+		default:
+			return LLMResponse{Payload: json.RawMessage(hldOutline)}, nil
+		}
+	}
+
+	store := newFakeFormStore()
+	forms := NewFormService(store, nil)
+	client := &calledLLM{next: respond}
+	stages := NewStageService(forms, nil, FixedLLM(client), nil)
+	stage := domain.Stage{ID: "03", Name: "High-Level Design", Owner: domain.RoleArchitect,
+		Inputs: []domain.FormType{domain.TypeSRS}, Outputs: []domain.FormType{domain.TypeHLD}}
+
+	_, err := stages.runForm(
+		ctx,
+		StageRequest{PipelineID: "1", TargetSystemID: 1, Route: domain.RouteGreenfield},
+		stage, domain.AgentConfig{Role: domain.RoleArchitect}, client,
+		json.RawMessage(`{}`), nil, domain.TypeHLD, "FRM-1-03", 1, nil,
+	)
+	if !errors.Is(err, ErrStageStopped) {
+		t.Fatalf("a stopped run must report the stop, got %v", err)
+	}
+
+	form, readErr := forms.Get(context.Background(), "FRM-1-03", 1)
+	if readErr != nil {
+		t.Fatalf("the stopped draft must stay stored: %v", readErr)
+	}
+	if form.Status != domain.StatusDraft {
+		t.Fatalf("want a draft, got %s", form.Status)
+	}
+	var hld domain.HLD
+	if unmarshalErr := json.Unmarshal(form.Payload, &hld); unmarshalErr != nil {
+		t.Fatalf("decode the draft: %v", unmarshalErr)
+	}
+	if len(hld.Containers) == 0 {
+		t.Fatal("the draft must keep the outline the model named")
+	}
+	filled := false
+	for _, container := range hld.Containers {
+		if container.ObjectID == "c-app" && container.Purpose.Value == "Serve the client fast." {
+			filled = true
+		}
+	}
+	if !filled {
+		t.Fatalf("the entry that answered before the stop must stay, got %+v", hld.Containers)
+	}
+}
+
 // containers, so a container call reads the choice that reaches it and not the one
 // that belongs to another container.
 func TestE2ELLDSeesTheDecisionOfItsContainer(t *testing.T) {
