@@ -474,9 +474,15 @@ const maxLLDFormAttempts = 3
 // structuralRetry reports whether the next model pass can fill a structural hole.
 // A layout the operator cannot answer (an empty container list, a missing
 // degradation rule) is the model's job: the retry runs before a question is
-// published, and the attempt cap stops a model that cannot fill it.
+// published, and the attempt cap stops a model that cannot fill it. The TEJ joins
+// them: its verdict, its recommendation and its scope delta are the analyst's
+// decision, and none of them is a question for the operator.
 func structuralRetry(output domain.FormType, attempt int) bool {
-	return (output == domain.TypeLLD || output == domain.TypeHLD) && attempt < maxLLDFormAttempts
+	switch output {
+	case domain.TypeLLD, domain.TypeHLD, domain.TypeFeasibility:
+		return attempt < maxLLDFormAttempts
+	}
+	return false
 }
 
 // failureProblems names each gate failure for the retry prompt.

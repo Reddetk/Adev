@@ -259,3 +259,23 @@ func TestDetailGapsTakeTheEntryPath(t *testing.T) {
 		}
 	}
 }
+
+// TestFeasibilityRetriesItsOwnVerdict: the verdict, the recommendation and the
+// scope delta are the analyst's decision, and a gate failure on them is no
+// question for the operator. The stage retries itself, capped by the same budget
+// as the design documents; without it the live TEJ blocked with no question and no
+// way forward.
+func TestFeasibilityRetriesItsOwnVerdict(t *testing.T) {
+	if !structuralRetry(domain.TypeFeasibility, 1) {
+		t.Fatal("the TEJ must retry its own verdict")
+	}
+	if structuralRetry(domain.TypeFeasibility, maxLLDFormAttempts) {
+		t.Fatal("the retry budget is the same as the design documents")
+	}
+	if !structuralRetry(domain.TypeHLD, 1) || !structuralRetry(domain.TypeLLD, 1) {
+		t.Fatal("the design retry must stay")
+	}
+	if structuralRetry(domain.TypeBRD, 1) {
+		t.Fatal("the BRD is an interview: its holes are questions")
+	}
+}
