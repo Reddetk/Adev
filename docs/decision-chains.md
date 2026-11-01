@@ -245,19 +245,46 @@ each answer is a named pattern with its guarantee:
 | two callers reach one key at once | concurrency control | optimistic version, pessimistic lock, single writer | no lost update vs no blocking |
 | a write and an event must agree | transactional messaging | Transactional outbox, Transaction log tailing, Polling publisher, none | atomic state change and publish |
 | one operation spans three services | consistency across services | Saga (orchestration), Saga (choreography), 2PC | completion without a global lock |
-| a query needs data from three services | query shape | API Composition, CQRS read model | cheap reads vs stale reads |
+| sagas run in parallel on the same aggregate | isolation countermeasure | semantic lock, commutative update, pessimistic view, reread value, version file | no anomaly between concurrent sagas |
+| a caller waits for a saga result | outcome reporting | respond after completion, poll by id, event to the client | no lost result, no hung request |
+| a query needs data from three services | query shape | API Composition, CQRS read model, Command-side replica | cheap reads vs stale replica |
 | the audit trail is a requirement | event history | Event sourcing, domain event + log | full history vs mutable state |
-| a consumer sees a duplicate | duplicate handling | Idempotent Consumer, dedup table, none | safe retries |
+| a consumer sees a duplicate | duplicate handling | Idempotent Consumer (`PROCESSED_MESSAGES`), dedup column, none | safe retries |
 | a call can time out | failure isolation | Circuit Breaker, retry + backoff, bulkhead | no cascade |
 | a message fails forever | poison handling | DLQ, parking lot, none | isolation vs silent loss |
 | a producer outruns a consumer | flow control | bounded queue + block, drop, degrade, scale | no unbounded memory |
 | a lock must survive a pause | safety | lease + fencing token | stale owner cannot write |
+
+Three details that the pattern pages make explicit and a prompt must not lose:
+
+- **Outbox needs a relay.** `Transactional outbox` is the table, `Transaction log tailing`
+  (CDC over the database log) and `Polling publisher` (a scheduled query) are the two
+  relays. The premise is whether the database exposes its log; without CDC, polling
+  adds latency and load, and the decision must say so.
+- **Saga has no I and no rollback.** Compensations are written by hand, and isolation
+  must be bought with a countermeasure. A saga without a named countermeasure is an
+  anomaly in production.
+- **Idempotent Consumer is one insert.** A `PROCESSED_MESSAGES` row keyed by
+  `(subscriberId, messageId)` inside the same transaction, so a duplicate rolls back
+  before it touches business state.
 
 Kafka-specific branches: producer acks and `min.insync.replicas` decide whether a
 write survives a broker loss; consumer groups decide parallelism; ordering exists
 per partition, so the partition key is a design decision; delivery is
 at-least-once in practice, and exactly-once is a consumer-side effect bought with
 Idempotent Consumer or an idempotent sink.
+
+### D7.5. Aggregate: the unit the patterns assume
+
+Every pattern above assumes a consistency boundary. In adev it already exists: the
+HLD `Aggregate` carries `root`, `invariants` and `moduleRef`. The pattern adds two
+rules the gate can check:
+
+- one command changes one aggregate; a command that must change two is a saga;
+- a reference to another aggregate is an id, never an object graph.
+
+An FR whose `stateChange` names two roots is therefore either a saga premise or a
+modelling mistake, and the chain must say which.
 
 ### D8. Platform and cross-cutting concerns
 
@@ -338,12 +365,108 @@ layer.
 - A decision without an evidence link; "best practice" is not evidence.
 - Classifying the reason for a rejection; that is a sentence about a requirement.
 
+## 6. Appendix: the pattern reference adev reads
+
+Every row is a pattern of the catalogue, the problem it solves, the premise adev
+needs before it can choose it, and where the choice lands. A pattern whose premise
+is absent is not offered.
+
+### 6.1 Architectural style and boundaries
+
+| pattern | solves | premise | lands in | decider |
+|---|---|---|---|---|
+| Monolithic architecture | one deployable unit, one transaction boundary | small team, one bounded context, no independent scaling need | `decisions[].style` | classifier |
+| Microservice architecture | independent deploy and scale per service | several contexts, several teams, independent scaling | `decisions[].style`, containers | classifier |
+| Decompose by business capability | where a service boundary goes | BRD `scope.in` capabilities | `boundedContexts` | LLM |
+| Decompose by subdomain | boundary from the domain model | `glossary`, aggregates | `boundedContexts` | LLM |
+| Self-contained Service | a sync request must not fan out | SRS latency budget, HLD relations | `contextRelations` | classifier |
+| Service per Team | boundary follows ownership | `premises.team` | `boundedContexts` | classifier |
+
+### 6.2 Refactoring to services (change route only)
+
+| pattern | solves | premise | lands in | decider |
+|---|---|---|---|---|
+| Strangler Application | replace a running system piece by piece | change route, as-is HLD | `scopeDelta`, task plan | LLM |
+| Anti-corruption layer | two models must not leak into each other | change route, legacy contract | LLD module, contract | LLM |
+
+### 6.3 Service collaboration and data
+
+| pattern | solves | premise | lands in | decider |
+|---|---|---|---|---|
+| Database per Service | private data per service, no shared schema | microservice style | container per store, `decisions[]` | classifier |
+| Shared database | one ACID boundary, cheap joins | monolith style, one team | `decisions[]`, one container | classifier |
+| Saga | a transaction across services | a command changes two aggregates in two services | `decisions[]`, relation guarantees | classifier |
+| Command-side Replica | a command needs another service's data | SRS latency, read-heavy command | `decisions[]`, a read model container | classifier |
+| API Composition | a query joins data of several services | read path, small result set | contract + relations | LLM |
+| CQRS | reads and writes have different shapes | read/write ratio from premises | `decisions[]`, read model | classifier |
+| Domain event | other contexts react to a change | an async relation exists | `contextRelations[].eventRef` | LLM |
+| Event sourcing | full history and replay are required | audit or temporal query in SRS | `decisions[]`, event store | classifier |
+
+### 6.4 Transactional messaging
+
+| pattern | solves | premise | lands in | decider |
+|---|---|---|---|---|
+| Transactional outbox | state and message commit together | an async relation after a write | `decisions[]`, outbox table in LLD | classifier |
+| Transaction log tailing | the same, without application code | the database exposes its log (CDC) | `decisions[]`, relay container | classifier |
+| Polling publisher | the same, with minimal infrastructure | no CDC available, low volume | `decisions[]`, scheduler | classifier |
+
+### 6.5 Communication
+
+| pattern | solves | premise | lands in | decider |
+|---|---|---|---|---|
+| Remote Procedure Invocation | a caller needs the answer now | PACELC allows the dependency | `contextRelations[].type: sync` | classifier |
+| Messaging | the caller may proceed without the answer | PACELC, failure profile | `type: async` | classifier |
+| Domain-specific protocol | an external system speaks its own protocol | BRD device or provider | container `tech` | LLM |
+| Idempotent Consumer | duplicates must not repeat an effect | at-least-once anywhere | `decisions[]`, LLD table | classifier |
+
+### 6.6 External API, discovery, security
+
+| pattern | solves | premise | lands in | decider |
+|---|---|---|---|---|
+| API gateway | one entry for external clients | more than one client kind | container `tech` | classifier |
+| Backend for front-end | each client gets its own shape | several client kinds with different needs | container | classifier |
+| Client-side / server-side discovery | find service instances | more than one instance per service | platform checklist | classifier |
+| Service registry | keep the instance list current | dynamic instances | platform checklist | classifier |
+| Access Token | propagate identity between services | authentication NFR | `decisions[]`, one IdP container | classifier |
+
+### 6.7 Reliability, observability, deployment
+
+| pattern | solves | premise | lands in | decider |
+|---|---|---|---|---|
+| Circuit Breaker | a failing dependency must not cascade | a sync relation with an availability NFR | `contextRelations[].retry`, `decisions[]` | classifier |
+| Log aggregation, metrics, tracing, exception tracking, audit logging, health check | see and diagnose the system | SLO in premises | `decisions[]`, platform checklist | classifier |
+| Multiple services per host, service per host, per VM, per container, serverless | where the process runs | `premises.team.ops`, budget | `decisions[].deployment` | classifier |
+| Microservice chassis, service template, externalized configuration | one answer for cross-cutting code | more than one service | `decisions[]`, LLD module set | classifier |
+
+### 6.8 Testing and UI
+
+| pattern | solves | premise | lands in | decider |
+|---|---|---|---|---|
+| Consumer-driven contract test | a provider must not break a consumer | a contract exists | TEST_CONTRACT | LLM |
+| Consumer-side contract test | the client still fits the provider | a client exists | TEST_CONTRACT | LLM |
+| Service component test | a service tested alone | a service boundary exists | TEST_CONTRACT | LLM |
+| Server-side page fragment composition | a page joins several services | server-rendered UI | LLD UI container | LLM |
+| Client-side UI composition | a page joins several services in the browser | SPA front end | LLD UI container | LLM |
+
+### 6.9 Data patterns: Aggregate
+
+| pattern | solves | premise | lands in | decider |
+|---|---|---|---|---|
+| Aggregate | one consistency boundary per transaction | invariants of the context | `aggregates[]` with `invariants` | LLM |
+
+The aggregate is the unit every other pattern assumes: one command touches one
+aggregate, two aggregates in two services need a saga, and a cross-aggregate
+reference is an id.
+
 ## Sources
 
-- [microservices.io/patterns](https://microservices.io/patterns/index.html) —
-  the pattern names and their guarantees (styles, boundaries, service
-  collaboration, transactional messaging, communication, deployment, reliability,
-  security, observability, testing, refactoring).
+- [microservices.io/patterns](https://microservices.io/patterns/index.html) — the
+  pattern language. Read in full for this document:
+  [Saga](https://microservices.io/patterns/data/saga.html),
+  [Command-side replica](https://microservices.io/patterns/data/command-side-replica.html),
+  [Transactional outbox](https://microservices.io/patterns/data/transactional-outbox.html),
+  [Idempotent Consumer](https://microservices.io/patterns/communication-style/idempotent-consumer.html);
+  the remaining entries follow the catalogue's problem and solution statements.
 - [system-design.space](https://system-design.space/) — the theory behind each
   fork: [CAP](/chapter/cap-theorem/) and [PACELC](/chapter/pacelc-theorem/)
   classes, [Jepsen consistency models](/chapter/jepsen-consistency/),
