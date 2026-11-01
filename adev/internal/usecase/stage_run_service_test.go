@@ -288,3 +288,26 @@ func TestResumeDoesNotDoubleAStage(t *testing.T) {
 	require.Eventually(t, func() bool { return runs.byID(second.ID).Status == "failed" }, time.Second, 10*time.Millisecond)
 	assert.Contains(t, runs.byID(second.ID).LastError, "already resumed")
 }
+
+// TestStartReturnsTheRunningChain: the chain of a run walks into the next stage
+// while the row keeps the stage it started from. Starting that next stage by hand
+// must not open a second chain over the same documents.
+func TestStartReturnsTheRunningChain(t *testing.T) {
+	release := make(chan struct{})
+	runs := newFakeRunStore()
+	pipelines := &fakePipelineStore{pipelines: map[int]*domain.Pipeline{
+		8: {ID: 8, TargetSystemID: 3, Route: "greenfield", Status: "ready", CurrentStage: "03"},
+	}}
+	service := NewStageRunService(&blockingChain{release: release}, runs, pipelines)
+
+	running := &domain.Run{PipelineID: 8, Stage: "02", Status: "running", CheckpointID: "greenfield"}
+	require.NoError(t, runs.Save(running))
+
+	started, err := service.Start(t.Context(), StageRequest{PipelineID: "8", TargetSystemID: 3, Route: domain.RouteGreenfield, StageID: "03"})
+	require.NoError(t, err)
+	assert.Equal(t, running.ID, started.ID, "the chain that already runs answers the start")
+	runs.mu.Lock()
+	rows := len(runs.rows)
+	runs.mu.Unlock()
+	assert.Equal(t, 1, rows, "no second chain over the same documents")
+}

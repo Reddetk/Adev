@@ -58,7 +58,7 @@ func (s *StageRunService) Start(ctx context.Context, request StageRequest) (*dom
 	// One stage, one run: a second click or an answer that starts the stage while
 	// the first run still works would write the same form twice and publish
 	// questions from drafts that are already past.
-	if existing := s.runningRow(pipelineID, request.StageID); existing != nil {
+	if existing := s.runningRow(pipelineID); existing != nil {
 		return existing, nil
 	}
 	if err := s.runs.Save(run); err != nil {
@@ -88,9 +88,10 @@ func (s *StageRunService) Resume(ctx context.Context) int {
 		if s.owns(row.ID) {
 			continue // this process already runs it
 		}
-		// One stage, one resumed run: an extra row left by a double start must not
-		// resume beside the first, or the stage works twice on one form.
-		covered := strconv.Itoa(row.PipelineID) + "/" + row.Stage
+		// One chain, one resumed run: the run of a pipeline walks into the next
+		// stages itself, so an extra row left by a double start must not resume
+		// beside it, or two chains work on one form.
+		covered := strconv.Itoa(row.PipelineID)
 		if claimed[covered] {
 			row.Status, row.LastError = "failed", "a run for this stage already resumed"
 			_ = s.runs.Update(&row)
@@ -174,8 +175,10 @@ func (s *StageRunService) owns(id uint) bool {
 	return s.live[id]
 }
 
-// runningRow returns the run that already executes this stage of the pipeline.
-func (s *StageRunService) runningRow(pipelineID int, stage string) *domain.Run {
+// runningRow returns the run that already works on this pipeline. The chain of a
+// run walks into the next stage while the row keeps the stage it started from, so
+// the pipeline, not the stage, is what a second start must match.
+func (s *StageRunService) runningRow(pipelineID int) *domain.Run {
 	if s.runs == nil {
 		return nil
 	}
@@ -184,7 +187,7 @@ func (s *StageRunService) runningRow(pipelineID int, stage string) *domain.Run {
 		return nil
 	}
 	for i := range all {
-		if all[i].PipelineID == pipelineID && all[i].Stage == stage && all[i].Status == "running" {
+		if all[i].PipelineID == pipelineID && all[i].Status == "running" {
 			row := all[i]
 			return &row
 		}
