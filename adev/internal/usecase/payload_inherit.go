@@ -1,6 +1,10 @@
 package usecase
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/Reddetk/Adev/internal/domain"
+)
 
 // inheritAccepted keeps the values of the accepted version when a rewrite of the
 // same document leaves them empty. Stage 04 rewrites the HLD that stage 03
@@ -123,4 +127,68 @@ func isEmptyValue(value any) bool {
 		return len(typed) == 0
 	}
 	return false
+}
+
+// inheritPremises keeps the premises the operator already answered when a re-run
+// returns the shape with zeros. A zero premise means "not given": the earlier
+// value wins, so an answer survives a regeneration of the document.
+func inheritPremises(previous, next json.RawMessage) json.RawMessage {
+	if len(previous) == 0 || len(next) == 0 {
+		return next
+	}
+	var oldDoc, newDoc map[string]json.RawMessage
+	if json.Unmarshal(previous, &oldDoc) != nil || json.Unmarshal(next, &newDoc) != nil {
+		return next
+	}
+	var oldPremises, newPremises domain.Premises
+	if json.Unmarshal(oldDoc["premises"], &oldPremises) != nil || json.Unmarshal(newDoc["premises"], &newPremises) != nil {
+		return next
+	}
+	keep := func(newValue *int, oldValue int) {
+		if *newValue == 0 && oldValue != 0 {
+			*newValue = oldValue
+		}
+	}
+	keep(&newPremises.Traffic.PeakQps, oldPremises.Traffic.PeakQps)
+	if newPremises.Traffic.ReadWriteRatio == 0 {
+		newPremises.Traffic.ReadWriteRatio = oldPremises.Traffic.ReadWriteRatio
+	}
+	keep(&newPremises.Traffic.PayloadBytes, oldPremises.Traffic.PayloadBytes)
+	if newPremises.Storage.GBPerYear == 0 {
+		newPremises.Storage.GBPerYear = oldPremises.Storage.GBPerYear
+	}
+	if newPremises.Storage.GrowthPerYear == 0 {
+		newPremises.Storage.GrowthPerYear = oldPremises.Storage.GrowthPerYear
+	}
+	keep(&newPremises.Team.Size, oldPremises.Team.Size)
+	if len(newPremises.Team.Languages) == 0 {
+		newPremises.Team.Languages = oldPremises.Team.Languages
+	}
+	if newPremises.Team.OpsMaturity == "" {
+		newPremises.Team.OpsMaturity = oldPremises.Team.OpsMaturity
+	}
+	if newPremises.BudgetMonthly == nil || newPremises.BudgetMonthly.Amount <= 0 {
+		newPremises.BudgetMonthly = oldPremises.BudgetMonthly
+	} else if newPremises.BudgetMonthly.Currency == "" && oldPremises.BudgetMonthly != nil {
+		newPremises.BudgetMonthly.Currency = oldPremises.BudgetMonthly.Currency
+	}
+	keep(&newPremises.DeadlineDays, oldPremises.DeadlineDays)
+	if newPremises.Availability == 0 {
+		newPremises.Availability = oldPremises.Availability
+	}
+	keep(&newPremises.RPOMinutes, oldPremises.RPOMinutes)
+	keep(&newPremises.RTOMinutes, oldPremises.RTOMinutes)
+	if len(newPremises.Compliance) == 0 {
+		newPremises.Compliance = oldPremises.Compliance
+	}
+	encoded, err := json.Marshal(newPremises)
+	if err != nil {
+		return next
+	}
+	newDoc["premises"] = encoded
+	out, err := json.Marshal(newDoc)
+	if err != nil {
+		return next
+	}
+	return out
 }

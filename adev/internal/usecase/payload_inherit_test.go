@@ -68,3 +68,34 @@ func TestRewriteKeepsTheAcceptedAggregate(t *testing.T) {
 		t.Fatalf("the answered questions must not come back, got %s", merged)
 	}
 }
+
+// TestTheOperatorPremisesSurviveARegeneration: a stage re-runs after an answer and
+// the model returns the shape with zeros again. The values the operator already
+// gave stay: a premise is a fact, not a field the next answer may clear.
+func TestTheOperatorPremisesSurviveARegeneration(t *testing.T) {
+	draft := json.RawMessage(`{"premises":{"traffic":{"peakQps":50},"storage":{"gbPerYear":200},"team":{"size":5,"languages":["go"],"opsMaturity":"medium"},"budgetMonthly":{"amount":800,"currency":"EUR"}},"options":[]}`)
+	next := json.RawMessage(`{"premises":{"traffic":{"peakQps":0},"storage":{"gbPerYear":0},"team":{"size":0,"languages":[],"opsMaturity":""},"budgetMonthly":{"amount":0,"currency":""}},"options":[]}`)
+
+	merged := inheritPremises(draft, next)
+
+	var got struct {
+		Premises struct {
+			Traffic struct {
+				PeakQps int `json:"peakQps"`
+			} `json:"traffic"`
+			Team struct {
+				Size      int      `json:"size"`
+				Languages []string `json:"languages"`
+			} `json:"team"`
+			Budget struct {
+				Amount int `json:"amount"`
+			} `json:"budgetMonthly"`
+		} `json:"premises"`
+	}
+	if err := json.Unmarshal(merged, &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Premises.Traffic.PeakQps != 50 || got.Premises.Team.Size != 5 || got.Premises.Budget.Amount != 800 || len(got.Premises.Team.Languages) != 1 {
+		t.Fatalf("the answered premises must survive, got %s", merged)
+	}
+}
