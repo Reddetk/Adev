@@ -380,23 +380,28 @@ func (s *StageService) runForm(
 
 		var mismatch []string
 		var failures []domain.ValidationError
-		if err := s.forms.Submit(ctx, form); err != nil {
-			switch {
-			case errors.Is(err, domain.ErrVersionExists):
+		for repair := 0; ; repair++ {
+			err := s.forms.Submit(ctx, form)
+			if errors.Is(err, domain.ErrVersionExists) {
 				// The detail walk saved this draft after every finished entry: the
 				// accepted payload rewrites that version instead of a new one.
-				if updateErr := s.forms.UpdatePayload(ctx, form); updateErr != nil {
-					activity.Finish("failed", updateErr.Error())
-					s.record(ctx, request, stage, "failed", attempt, updateErr.Error())
-					s.finishModelCall(call, response, payload, []string{updateErr.Error()})
-					return StageOutcome{}, updateErr
-				}
-			case !isFormRejection(err):
+				err = s.forms.UpdatePayload(ctx, form)
+			}
+			if err == nil {
+				break
+			}
+			if !isFormRejection(err) {
 				activity.Finish("failed", err.Error())
 				s.record(ctx, request, stage, "failed", attempt, err.Error())
 				s.finishModelCall(call, response, payload, []string{err.Error()})
 				return StageOutcome{}, err
-			default:
+			}
+			failures = collectFailures(err)
+			// A rejected entry is repaired with one call for that entry, before the
+			// whole document is regenerated or the operator is asked for a value the
+			// model owes.
+			repairs := entryRepairs(output, payload, failures)
+			if repair >= maxEntryRepairs || len(repairs) == 0 {
 				if draftErr := s.forms.SubmitDraft(ctx, form); draftErr != nil {
 					activity.Finish("failed", draftErr.Error())
 					s.record(ctx, request, stage, "failed", attempt, draftErr.Error())
@@ -404,8 +409,28 @@ func (s *StageService) runForm(
 					return StageOutcome{}, draftErr
 				}
 				mismatch = []string{err.Error()}
-				failures = collectFailures(err)
 				log.Printf("stage %s: the draft holds a gate mismatch: %v", stage.ID, err)
+				break
+			}
+			repaired := s.repairEntries(ctx, request, client, agent, stage, output, shape, stageContext, payload, repairs, s.progressSaver(ctx, form))
+			if string(repaired) == string(payload) {
+				// Nothing came back: the whole-document path owns this failure.
+				if draftErr := s.forms.SubmitDraft(ctx, form); draftErr != nil {
+					activity.Finish("failed", draftErr.Error())
+					s.record(ctx, request, stage, "failed", attempt, draftErr.Error())
+					s.finishModelCall(call, response, payload, []string{draftErr.Error()})
+					return StageOutcome{}, draftErr
+				}
+				mismatch = []string{err.Error()}
+				log.Printf("stage %s: the draft holds a gate mismatch: %v", stage.ID, err)
+				break
+			}
+			payload = repaired
+			if setErr := form.SetRawPayload(payload); setErr != nil {
+				activity.Finish("failed", setErr.Error())
+				s.record(ctx, request, stage, "failed", attempt, setErr.Error())
+				s.finishModelCall(call, response, payload, []string{setErr.Error()})
+				return StageOutcome{}, setErr
 			}
 		}
 
@@ -758,7 +783,7 @@ func (s *StageService) detailEntry(
 	stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage,
 	plan batchPlan, labels []entryLabel, entry json.RawMessage, entryPath string, document json.RawMessage,
 ) detailResult {
-	echo := s.detailCall(ctx, request, client, agent, stage, output, shape, stageContext, labels, entry, plan, document)
+	echo := s.detailCall(ctx, request, client, agent, stage, output, shape, stageContext, labels, entry, plan, document, "")
 	// The system owns the identifiers and the companion reference: the model
 	// answers the meaning only, and the merge needs the keys it did not send.
 	echo = withEntryKeys(echo, plan, labels)
@@ -887,8 +912,9 @@ func (s *StageService) detailCall(
 	ctx context.Context, request StageRequest, client LLM, agent domain.AgentConfig,
 	stage domain.Stage, output domain.FormType, shape string, stageContext json.RawMessage,
 	labels []entryLabel, entry json.RawMessage, plan batchPlan, document json.RawMessage,
+	extra string,
 ) json.RawMessage {
-	instruction := detailInstruction(output, stage, plan, labels, entry)
+	instruction := detailInstruction(output, stage, plan, labels, entry) + extra
 	context := focusContext(output, stageContext, labels, entry)
 	document, keys := focusDocument(output, document, labels)
 	if tech := containerTech(document); tech != "" {

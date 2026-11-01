@@ -347,7 +347,7 @@ func TestDetailCallShipsOneContainerOfTheDocument(t *testing.T) {
 		[]entryLabel{{plan: batchPlan{kind: "containers", idField: "containerId"}, idValue: "CNT-STN"}},
 		json.RawMessage(`{"containerId":"CNT-STN"}`),
 		batchPlan{kind: "containers", idField: "containerId"},
-		json.RawMessage(lldDocument),
+		json.RawMessage(lldDocument), "",
 	)
 
 	if strings.Contains(seen.User, "MOD-BILL-ONLY") {
@@ -379,7 +379,7 @@ func TestDetailCallShipsThePathRootOfTheContainer(t *testing.T) {
 		[]entryLabel{{plan: batchPlan{kind: "containers", idField: "containerId"}, idValue: "c-app"}},
 		json.RawMessage(`{"containerId":"c-app"}`),
 		batchPlan{kind: "layers", idField: "name"},
-		json.RawMessage(`{"containers":[{"containerId":"c-app","tech":"go"}],"contracts":[],"paths":[]}`),
+		json.RawMessage(`{"containers":[{"containerId":"c-app","tech":"go"}],"contracts":[],"paths":[]}`), "",
 	)
 
 	if !strings.Contains(seen.User, "internal/<layer>/<module>") {

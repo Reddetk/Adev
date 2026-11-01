@@ -289,7 +289,7 @@ func TestE2ELLDSeesTheDecisionOfItsContainer(t *testing.T) {
 		[]entryLabel{{plan: batchPlan{kind: "containers", idField: "containerId"}, idValue: "c-app"}},
 		json.RawMessage(`{"containerId":"c-app"}`),
 		batchPlan{kind: "containers", idField: "containerId"},
-		json.RawMessage(`{"containers":[],"contracts":[],"paths":[]}`),
+		json.RawMessage(`{"containers":[],"contracts":[],"paths":[]}`), "",
 	)
 
 	if !strings.Contains(seen.User, "PostgreSQL.") {
