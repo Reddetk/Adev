@@ -122,3 +122,36 @@ func TestAnAnsweredRequirementSurvivesARegeneration(t *testing.T) {
 		t.Fatalf("the answered requirement must survive, got %s", merged)
 	}
 }
+
+// TestAnAnsweredRequirementSurvivesARenaming: the detail walk names the entries
+// from the statement, so a regeneration can keep the same order with new ids. The
+// operator answers then match by position, or they would be asked again.
+func TestAnAnsweredRequirementSurvivesARenaming(t *testing.T) {
+	draft := json.RawMessage(`{"fr":[
+		{"id":"fr-1","concurrency":"per_key"},
+		{"id":"fr-2","concurrency":"any","idempotency":"required"}
+	]}`)
+	next := json.RawMessage(`{"fr":[
+		{"id":"fr-10","concurrency":""},
+		{"id":"fr-11","concurrency":"","idempotency":""}
+	]}`)
+
+	merged := inheritAccepted(draft, next)
+
+	var got struct {
+		FR []struct {
+			ID          string `json:"id"`
+			Concurrency string `json:"concurrency"`
+			Idempotency string `json:"idempotency"`
+		} `json:"fr"`
+	}
+	if err := json.Unmarshal(merged, &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.FR) != 2 || got.FR[0].Concurrency != "per_key" || got.FR[1].Idempotency != "required" {
+		t.Fatalf("the answers must follow the position when the model renames the entries, got %s", merged)
+	}
+	if got.FR[0].ID != "fr-10" {
+		t.Fatalf("the new ids stay, got %q", got.FR[0].ID)
+	}
+}

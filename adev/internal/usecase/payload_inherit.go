@@ -72,8 +72,9 @@ func fillNested(oldField, newField any) (any, bool) {
 			return newField, false
 		}
 		changed := false
+		sameLength := len(oldValue) == len(newValue)
 		for i := range newValue {
-			oldEntry, ok := counterpart(oldValue, newValue[i], i)
+			oldEntry, ok := counterpart(oldValue, newValue[i], i, sameLength)
 			if !ok {
 				continue
 			}
@@ -90,7 +91,7 @@ func fillNested(oldField, newField any) (any, bool) {
 
 // counterpart finds the old entry a new entry replaces: the entry with the same
 // id, or the entry at the same index when neither side carries an id.
-func counterpart(oldValue []any, newEntry any, index int) (any, bool) {
+func counterpart(oldValue []any, newEntry any, index int, sameLength bool) (any, bool) {
 	id := entryID(newEntry)
 	if id == "" {
 		if index < len(oldValue) && entryID(oldValue[index]) == "" {
@@ -102,6 +103,12 @@ func counterpart(oldValue []any, newEntry any, index int) (any, bool) {
 		if entryID(oldEntry) == id {
 			return oldEntry, true
 		}
+	}
+	// The model renamed the entries: when both lists are the same length, the
+	// position is the only stable key left. A shorter or longer list is not paired
+	// by position, because a shifted entry would take its neighbour values.
+	if sameLength && index < len(oldValue) {
+		return oldValue[index], true
 	}
 	return nil, false
 }
