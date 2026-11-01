@@ -790,12 +790,16 @@ func systemOwnedPointer(formType domain.FormType, pointer string) bool {
 	if len(segments) == 0 || segments[0] == "" {
 		return false
 	}
+	// A cost estimate of an option belongs to the analyst; the monthly budget of
+	// the operator is a premise and must stay a question.
+	if last := segments[len(segments)-1]; last == "currency" || last == "amount" {
+		return strings.HasPrefix(pointer, "/options/")
+	}
 	switch segments[len(segments)-1] {
 	case "id", "objectId", "containerId", "containerRef", "contractRef", "moduleRef",
 		"formRef", "formId", "formType", "formVersion", "inputType", "outputType",
 		"httpStatus", "expectedErrorCode", "traceGoal", "reportType", "verdict",
-		"recommendedOption", "scopeDelta", "scheduleDays", "confidence",
-		"currency", "amount":
+		"recommendedOption", "scopeDelta", "scheduleDays", "confidence":
 		return true
 	}
 	switch formType {
