@@ -214,6 +214,12 @@ func (s *StageService) Run(ctx context.Context, request StageRequest) (StageOutc
 		}
 		formOutcome, err := s.runForm(ctx, request, stage, agent, client, stageContext, refs, output, formID, version, previous)
 		if err != nil || formOutcome.Blocked {
+			// The BRD rewrite of the study is a refinement, not the deliverable: a
+			// model that mangles the document must not fail a study that passed.
+			if err != nil && stage.ID == "01" && output == domain.TypeBRD {
+				log.Printf("stage %s pipeline %s: the BRD rewrite failed, the study stands: %v", stage.ID, request.PipelineID, err)
+				continue
+			}
 			return formOutcome, err
 		}
 		outcome.Attempts += formOutcome.Attempts
