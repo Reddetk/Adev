@@ -171,6 +171,9 @@ func (s *StageService) Run(ctx context.Context, request StageRequest) (StageOutc
 
 	outcome := StageOutcome{Stage: stage.ID}
 	for _, output := range stage.Outputs {
+		if s.skipsOutput(ctx, stage, output, request.PipelineID) {
+			continue
+		}
 		formID := stageFormID(request.PipelineID, stage.ID, output, len(stage.Outputs) > 1)
 		finished, version, previous, err := s.nextVersion(ctx, formID)
 		if err != nil {
@@ -1514,4 +1517,29 @@ func stageFormID(pipelineID, stageID string, output domain.FormType, multi bool)
 		return "FRM-" + pipelineID + "-" + stageID + "-" + string(output)
 	}
 	return "FRM-" + pipelineID + "-" + stageID
+}
+
+// verdictOf reads the verdict of the newest feasibility study of the pipeline.
+func (s *StageService) verdictOf(ctx context.Context, pipelineID string) (domain.Verdict, bool) {
+	versions, err := s.forms.ByPipeline(ctx, pipelineID, domain.TypeFeasibility)
+	if err != nil || len(versions) == 0 {
+		return "", false
+	}
+	var feasibility domain.Feasibility
+	if json.Unmarshal(versions[len(versions)-1].Payload, &feasibility) != nil {
+		return "", false
+	}
+	return feasibility.Verdict, true
+}
+
+// skipsOutput reports a stage output the run must not write. The BRD of stage 01 is
+// rewritten only when the verdict revises it: a go or a no_go leaves the BRD as the
+// operator accepted it, and a rewrite the model mangles must not fail a study that
+// already passed.
+func (s *StageService) skipsOutput(ctx context.Context, stage domain.Stage, output domain.FormType, pipelineID string) bool {
+	if stage.ID != "01" || output != domain.TypeBRD {
+		return false
+	}
+	verdict, ok := s.verdictOf(ctx, pipelineID)
+	return !ok || verdict != domain.VerdictRevise
 }

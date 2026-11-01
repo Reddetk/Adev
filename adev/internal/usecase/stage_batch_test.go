@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -277,5 +278,49 @@ func TestFeasibilityRetriesItsOwnVerdict(t *testing.T) {
 	}
 	if structuralRetry(domain.TypeBRD, 1) {
 		t.Fatal("the BRD is an interview: its holes are questions")
+	}
+}
+
+// TestAGoVerdictDoesNotRewriteTheBRD: stage 01 writes the BRD back only when the
+// verdict revises it. A go study leaves the operator document as accepted, and a
+// rewrite the model mangles no longer fails a study that already passed.
+func TestAGoVerdictDoesNotRewriteTheBRD(t *testing.T) {
+	ctx := context.Background()
+	store := newFakeFormStore()
+	forms := NewFormService(store, nil)
+	stages := NewStageService(forms, nil, FixedLLM(&calledLLM{}), nil)
+	stage := domain.Stage{ID: "01", Name: "Techno-Economic Justification", Owner: domain.RoleAnalyst,
+		Inputs: []domain.FormType{domain.TypeBRD}, Outputs: []domain.FormType{domain.TypeFeasibility, domain.TypeBRD}}
+
+	// A go study in the pipeline: the BRD stays as it is.
+	goStudy := &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-3-01-FEASIBILITY", FormType: domain.TypeFeasibility, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusValid, Route: domain.RouteGreenfield, Stage: "01", Mode: domain.ModeFull,
+		PipelineID: "3", TargetSystemID: "2", ProducedBy: domain.RoleAnalyst,
+	}}
+	if err := goStudy.SetRawPayload(json.RawMessage(`{"verdict":"go"}`)); err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	if err := store.Save(ctx, goStudy); err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	if !stages.skipsOutput(ctx, stage, domain.TypeBRD, "3") {
+		t.Fatal("a go verdict must leave the BRD alone")
+	}
+	if stages.skipsOutput(ctx, stage, domain.TypeFeasibility, "3") {
+		t.Fatal("the study itself is never skipped")
+	}
+
+	// A revise verdict rewrites the BRD.
+	revise := *goStudy
+	revise.FormVersion = 2
+	if err := revise.SetRawPayload(json.RawMessage(`{"verdict":"revise"}`)); err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	if err := store.Save(ctx, &revise); err != nil {
+		t.Fatalf("store the revise: %v", err)
+	}
+	if stages.skipsOutput(ctx, stage, domain.TypeBRD, "3") {
+		t.Fatal("a revise verdict must rewrite the BRD")
 	}
 }
