@@ -9,6 +9,52 @@ const (
 	ConfidenceHigh   Confidence = "high"
 )
 
+// OpsMaturity is how much operational work the team already carries: a low
+// maturity team cannot absorb a platform that needs a dedicated operator.
+type OpsMaturity string
+
+const (
+	OpsLow    OpsMaturity = "low"
+	OpsMedium OpsMaturity = "medium"
+	OpsHigh   OpsMaturity = "high"
+)
+
+// TrafficProfile is the load the design must survive: peak requests per second,
+// how many reads fall on one write, and the size of a request body.
+type TrafficProfile struct {
+	PeakQps        int     `json:"peakQps"`
+	ReadWriteRatio float64 `json:"readWriteRatio,omitempty"`
+	PayloadBytes   int     `json:"payloadBytes,omitempty"`
+}
+
+// StorageProfile is how much data the system keeps and how fast it grows.
+type StorageProfile struct {
+	GBPerYear     float64 `json:"gbPerYear"`
+	GrowthPerYear float64 `json:"growthPerYear,omitempty"`
+}
+
+// TeamProfile is who builds and runs the system. The language is a premise, not a
+// preference: the design takes what the team already runs.
+type TeamProfile struct {
+	Size        int         `json:"size"`
+	Languages   []string    `json:"languages"`
+	OpsMaturity OpsMaturity `json:"opsMaturity"`
+}
+
+// Premises are the facts the design decisions are scored against. A premise is
+// never a default: a missing one becomes a question for the operator.
+type Premises struct {
+	Traffic       TrafficProfile `json:"traffic"`
+	Storage       StorageProfile `json:"storage"`
+	Team          TeamProfile    `json:"team"`
+	BudgetMonthly *Cost          `json:"budgetMonthly,omitempty"`
+	DeadlineDays  int            `json:"deadlineDays"`
+	Availability  float64        `json:"availability"`
+	RPOMinutes    int            `json:"rpoMinutes"`
+	RTOMinutes    int            `json:"rtoMinutes"`
+	Compliance    []string       `json:"compliance,omitempty"`
+}
+
 // Cost is a monetary amount in one currency.
 type Cost struct {
 	Currency string  `json:"currency"`
@@ -68,6 +114,7 @@ const (
 // route with a running baseline; the greenfield gates accept a TEJ only.
 type Feasibility struct {
 	ReportType        ReportType   `json:"reportType"`
+	Premises          Premises     `json:"premises"`
 	Options           []Option     `json:"options"`
 	Risks             []Risk       `json:"risks,omitempty"`
 	RecommendedOption string       `json:"recommendedOption"`

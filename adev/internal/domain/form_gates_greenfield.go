@@ -10,6 +10,7 @@ import (
 // Gates that need the object registry or a stored BRD are left to the orchestrator.
 func ValidateFeasibility(f Feasibility) error {
 	var errs []error
+	errs = append(errs, validatePremises(f.Premises)...)
 	if len(f.Options) == 0 {
 		errs = append(errs, invalid("options", "must contain at least one entry"))
 	}

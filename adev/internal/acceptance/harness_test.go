@@ -224,8 +224,19 @@ func validBRD(t *testing.T) json.RawMessage {
 
 func validFeasibility(t *testing.T) json.RawMessage {
 	cost := domain.Cost{Currency: "EUR", Amount: 1000}
+	budget := domain.Cost{Currency: "EUR", Amount: 800}
 	return mustJSON(t, domain.Feasibility{
 		ReportType: domain.ReportTEJ,
+		Premises: domain.Premises{
+			Traffic:       domain.TrafficProfile{PeakQps: 120, ReadWriteRatio: 4, PayloadBytes: 2048},
+			Storage:       domain.StorageProfile{GBPerYear: 40, GrowthPerYear: 1.5},
+			Team:          domain.TeamProfile{Size: 4, Languages: []string{"go"}, OpsMaturity: domain.OpsMedium},
+			BudgetMonthly: &budget,
+			DeadlineDays:  120,
+			Availability:  99.9,
+			RPOMinutes:    15,
+			RTOMinutes:    60,
+		},
 		Options: []domain.Option{{
 			ID: "OPT-1", Summary: ste("Build the lending module."),
 			Cost: &cost, ScheduleDays: 30, Confidence: domain.ConfidenceHigh,

@@ -900,7 +900,7 @@ func stageQuestionPolicy(output domain.FormType) string {
 	case domain.TypeBRD:
 		return "Ask about the business in the real world: who the people are, what each business word means, which documents and devices they use, and what may go wrong. Do not ask for a field name, an id or a schema value."
 	case domain.TypeFeasibility:
-		return "Ask about the money and the time in the real world: the budget the operator has, the deadline, and the option the business prefers. Do not ask for a cost you can estimate, a currency, a confidence or a verdict."
+		return "Ask about the load, the data and the team in the real world: how many requests a peak second brings, how many gigabytes a year the business stores, how many people build and run the system and in which language, and which availability the business promises. Ask about the money and the time too: the monthly budget, the deadline, the acceptable data loss and downtime. Do not ask for a cost you can estimate, a currency, a confidence or a verdict."
 	case domain.TypeSRS:
 		return "Ask about the real-world behavior of this requirement: who starts it, what the actor holds or presents, which business rule decides the result, and what goes wrong and what the business does then. Ask about the card, document or device the request names at the level of this requirement. For a non-functional requirement ask only where the business can see the measurement and over which window: never ask for a device or an actor in a quality requirement. Do not ask for a type name, an id or a scenario format."
 	case domain.TypeHLD:

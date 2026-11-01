@@ -238,7 +238,7 @@ func skeletonInstruction(stage domain.Stage, output domain.FormType) string {
 			"Fill boundedContexts (one entry per container), the contextRelations between them, and a degradationStrategy with one entry for every infrastructure container {failure, degradation, detection, timeoutMs}: the name of what fails, what the system does instead, how it detects the failure, and the timeout in milliseconds. A system with an availability NFR needs a degradation rule for the identity provider, the message bus and the gateway, not only for the external devices."
 	}
 	if output == domain.TypeFeasibility {
-		base += " For FEASIBILITY: list at least two options with an id and a short summary. Leave cost, scheduleDays and confidence to the detail calls. At the root set recommendedOption to the id of the option you choose, verdict to go, revise or no_go, and reason to one sentence. Do not ask the operator for a currency, a cost or a confidence. Fill risks with at least one technical or economic risk. scopeDelta records only the scope an option changes: leave it empty when the option adds or removes nothing."
+		base += " For FEASIBILITY: fill premises before the options: peakQps, gbPerYear, team size and languages and opsMaturity, budgetMonthly, deadlineDays, availability, rpoMinutes and rtoMinutes. Every later design decision is scored against these numbers, so a premise the context does not give is a question, not a guess. Then list at least two options with an id and a short summary. Leave cost, scheduleDays and confidence to the detail calls. At the root set recommendedOption to the id of the option you choose, verdict to go, revise or no_go, and reason to one sentence. Do not ask the operator for a currency, a cost or a confidence. Fill risks with at least one technical or economic risk. scopeDelta records only the scope an option changes: leave it empty when the option adds or removes nothing."
 	}
 	if output == domain.TypeADR {
 		base += " For ADR: list one decision for EVERY architecture area, in this order, because a later decision rests on an earlier one: " +
@@ -372,6 +372,7 @@ func stageInstruction(stage domain.Stage, output domain.FormType) string {
 	}
 	if output == domain.TypeFeasibility {
 		base += " For FEASIBILITY you write a techno-economic justification, not a questionnaire. " +
+			"The premises come first: peakQps, gbPerYear, team size and languages and opsMaturity, budgetMonthly, deadlineDays, availability, rpoMinutes, rtoMinutes. Fill what the operator and the BRD give; a missing premise is a question. " +
 			"Propose at least two options that satisfy the BRD goals: for example build in-house, buy a ready product, extend the current system. " +
 			"Each option has an id, a summary, scheduleDays, a cost {currency, amount} and a confidence of low, medium or high. " +
 			"Estimate the cost and the schedule yourself from the scope of the BRD; use low confidence when the data is thin. " +

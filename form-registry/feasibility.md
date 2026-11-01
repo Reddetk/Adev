@@ -17,6 +17,27 @@ HLD can assess risks on its own stage instead.
 
 ## Template
 
+### Paragraph 0 — Premises
+
+**Scope:** The facts every later design decision is scored against. A premise is
+not a wish: it is what the operator already knows about load, data, team, money and
+time. A missing premise becomes a question, never a default.
+
+**Questions:**
+1. What is the peak request rate in requests per second?
+2. How many reads fall on one write, and how large is one request body?
+3. How many gigabytes does the system keep per year, and how fast does that grow?
+4. How many people build and run the system, which language do they already run,
+   and how much operational work can they carry?
+5. What is the monthly budget?
+6. How many days does the deadline allow?
+7. Which availability does the business promise, and what loss (RPO) and downtime
+   (RTO) does it tolerate?
+8. Which law or data class limits the storage?
+
+**Answer:** `payload.premises` — `{ traffic: { peakQps, readWriteRatio?, payloadBytes? }, storage: { gbPerYear, growthPerYear? }, team: { size, languages[], opsMaturity }, budgetMonthly: { currency, amount }, deadlineDays, availability, rpoMinutes, rtoMinutes, compliance[] }`.
+**Answer:** `opsMaturity` is `low`, `medium` or `high`. `availability` is a percentage: 99.0 or more and below 100.
+
 ### Paragraph 1 — Option set
 
 **Scope:** The solution options that the analyst compares.
@@ -73,6 +94,7 @@ HLD can assess risks on its own stage instead.
 3. `verdict: no_go` stops the pipeline until the operator closes the pipeline or creates a `QUESTION`.
 4. `verdict: revise` returns a new `BRD` version.
 5. `scopeDelta` is not empty when `verdict` is `revise`.
+6. The premises are complete: `peakQps` and `gbPerYear` are greater than zero, the team names at least one language and a maturity level, `budgetMonthly.amount` is greater than zero, `deadlineDays` is greater than zero, and `availability` is at least 99.0 and below 100. A TEJ without the premises cannot score a design decision.
 
 ## Object use
 

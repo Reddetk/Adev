@@ -115,6 +115,37 @@ func TestSkeletonInstructionAsksForTheRequirements(t *testing.T) {
 	}
 }
 
+// TestSkeletonInstructionAsksForThePremises: the TEJ collects the load, the data,
+// the team and the SLO before it prices an option, because every later decision is
+// scored against those numbers.
+func TestSkeletonInstructionAsksForThePremises(t *testing.T) {
+	got := skeletonInstruction(domain.Stage{ID: "01"}, domain.TypeFeasibility)
+	for _, want := range []string{
+		"premises before the options",
+		"peakQps",
+		"gbPerYear",
+		"opsMaturity",
+		"availability",
+		"rpoMinutes",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("the TEJ outline misses %q: %s", want, got)
+		}
+	}
+}
+
+// TestFeasibilityQuestionsAskForTheWorld: the classifier needs numbers, so the
+// interview asks for the load, the volume, the team and the promise, not for a
+// currency or a confidence.
+func TestFeasibilityQuestionsAskForTheWorld(t *testing.T) {
+	got := stageQuestionPolicy(domain.TypeFeasibility)
+	for _, want := range []string{"requests a peak second", "gigabytes", "language", "availability"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("the TEJ policy misses %q: %s", want, got)
+		}
+	}
+}
+
 // TestSkeletonInstructionAsksForTheDecisions: a greenfield design keeps its
 // choices in the design, so the outline lists them and names what they fix.
 func TestSkeletonInstructionAsksForTheDecisions(t *testing.T) {
