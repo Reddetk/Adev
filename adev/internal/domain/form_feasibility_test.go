@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"errors"
 	"math/rand"
 	"strings"
 	"testing"
@@ -40,6 +41,32 @@ func feasibilityWith(premises Premises) Feasibility {
 	}
 }
 
+// TestPremiseFailuresNameOneAnswerableValue: the question machinery asks for one
+// value at a pointer of the shape. A failure that names a whole object or list can
+// never become a question, so the operator would never see it.
+func TestPremiseFailuresNameOneAnswerableValue(t *testing.T) {
+	errs := validatePremises(Premises{})
+	if len(errs) == 0 {
+		t.Fatal("an empty premise set must fail")
+	}
+	scalars := map[string]bool{
+		"premises.traffic.peakQps": true, "premises.storage.gbPerYear": true,
+		"premises.team.size": true, "premises.team.languages[0]": true,
+		"premises.team.opsMaturity": true, "premises.budgetMonthly.amount": true,
+		"premises.budgetMonthly.currency": true, "premises.deadlineDays": true,
+		"premises.availability": true,
+	}
+	for _, err := range errs {
+		var validation *ValidationError
+		if !errors.As(err, &validation) {
+			t.Fatalf("want a validation error, got %v", err)
+		}
+		if !scalars[validation.Field] {
+			t.Fatalf("field %q names no single answerable value", validation.Field)
+		}
+	}
+}
+
 // TestFeasibilityNeedsThePremises: every premise is a question the operator
 // answers before the design can choose anything. A missing premise is a gate
 // failure that names the field, so the operator answer has somewhere to land.
@@ -56,11 +83,11 @@ func TestFeasibilityNeedsThePremises(t *testing.T) {
 		{"no volume", func(p *Premises) { p.Storage.GBPerYear = 0 }, "premises.storage.gbPerYear"},
 		{"negative growth", func(p *Premises) { p.Storage.GrowthPerYear = -1 }, "premises.storage.growthPerYear"},
 		{"no team", func(p *Premises) { p.Team.Size = 0 }, "premises.team.size"},
-		{"no language", func(p *Premises) { p.Team.Languages = nil }, "premises.team.languages"},
-		{"empty language", func(p *Premises) { p.Team.Languages = []string{" "} }, "premises.team.languages"},
+		{"no language", func(p *Premises) { p.Team.Languages = nil }, "premises.team.languages[0]"},
+		{"empty language", func(p *Premises) { p.Team.Languages = []string{" "} }, "premises.team.languages[0]"},
 		{"unknown maturity", func(p *Premises) { p.Team.OpsMaturity = "expert" }, "premises.team.opsMaturity"},
-		{"no budget", func(p *Premises) { p.BudgetMonthly = nil }, "premises.budgetMonthly"},
-		{"zero budget", func(p *Premises) { p.BudgetMonthly = &Cost{Currency: "EUR", Amount: 0} }, "premises.budgetMonthly"},
+		{"no budget", func(p *Premises) { p.BudgetMonthly = nil }, "premises.budgetMonthly.amount"},
+		{"zero budget", func(p *Premises) { p.BudgetMonthly = &Cost{Currency: "EUR", Amount: 0} }, "premises.budgetMonthly.amount"},
 		{"no deadline", func(p *Premises) { p.DeadlineDays = 0 }, "premises.deadlineDays"},
 		{"no availability", func(p *Premises) { p.Availability = 0 }, "premises.availability"},
 		{"negative rpo", func(p *Premises) { p.RPOMinutes = -1 }, "premises.rpoMinutes"},

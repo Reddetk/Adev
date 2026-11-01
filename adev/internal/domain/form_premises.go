@@ -34,11 +34,13 @@ func validatePremises(p Premises) []error {
 		add("premises.team.size", "must be greater than zero")
 	}
 	if len(p.Team.Languages) == 0 {
-		add("premises.team.languages", "must name the language the team runs")
+		// The question machinery asks for one value: name the first slot, not the
+		// whole list, or the operator would never see the question.
+		add("premises.team.languages[0]", "must name the language the team runs")
 	}
 	for _, language := range p.Team.Languages {
 		if strings.TrimSpace(language) == "" {
-			add("premises.team.languages", "must not hold an empty language")
+			add("premises.team.languages[0]", "must not hold an empty language")
 			break
 		}
 	}
@@ -48,13 +50,14 @@ func validatePremises(p Premises) []error {
 		add("premises.team.opsMaturity", fmt.Sprintf("unknown value %q", p.Team.OpsMaturity))
 	}
 	if p.BudgetMonthly == nil {
-		add("premises.budgetMonthly", "must state the monthly budget")
+		add("premises.budgetMonthly.amount", "must state the monthly budget")
+		add("premises.budgetMonthly.currency", "must name the currency")
 	} else {
 		if p.BudgetMonthly.Amount <= 0 {
-			add("premises.budgetMonthly", "must be greater than zero")
+			add("premises.budgetMonthly.amount", "must be greater than zero")
 		}
 		if strings.TrimSpace(p.BudgetMonthly.Currency) == "" {
-			add("premises.budgetMonthly", "must name the currency")
+			add("premises.budgetMonthly.currency", "must name the currency")
 		}
 	}
 	if p.DeadlineDays <= 0 {
