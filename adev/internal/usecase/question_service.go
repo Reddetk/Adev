@@ -803,6 +803,13 @@ func systemOwnedPointer(formType domain.FormType, pointer string) bool {
 		return true
 	}
 	switch formType {
+	case domain.TypeSRS:
+		// The requirement says what the model reads from the BRD: its wording and its
+		// scenario. The behaviour premises stay questions, the business decides them.
+		switch segments[len(segments)-1] {
+		case "actor", "trigger", "response", "stateChange", "priority", "statement":
+			return true
+		}
 	case domain.TypeLLD, domain.TypeHLD:
 		switch segments[len(segments)-1] {
 		case "name", "path", "tech", "kind", "timeoutMs", "failure", "degradation", "detection":

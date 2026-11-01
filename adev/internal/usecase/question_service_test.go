@@ -681,15 +681,15 @@ func TestAnswerRemovesItsGapEvenWhenTheRestIsBroken(t *testing.T) {
 	form := waitingForm(t, domain.TypeSRS, "FRM-16-02", "02", `{
 		"fr": [{"id": "FR-1", "errors": "payment failure, internal error"}],
 		"openGaps": [
-			{"id": "OG-2", "pointer": "/fr/0/response", "blocking": false, "question": {"lang": "STE100", "text": "What is the response?"}},
+			{"id": "OG-2", "pointer": "/fr/0/concurrency", "blocking": false, "question": {"lang": "STE100", "text": "What happens on two callers?"}},
 			{"id": "OG-3", "pointer": "/fr/0/errors", "blocking": false, "question": {"lang": "STE100", "text": "Which errors?"}}
 		]
 	}`)
-	if err := service.Publish(ctx, form, []domain.ValidationError{{Field: "fr[0].response", Problem: "is empty"}}, 16); err != nil {
+	if err := service.Publish(ctx, form, []domain.ValidationError{{Field: "fr[0].concurrency", Problem: "unknown value"}}, 16); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 
-	answer, err := service.AnswerOnPipeline(ctx, 16, "/fr/0/response", json.RawMessage(`"The system shows the booking reference."`))
+	answer, err := service.AnswerOnPipeline(ctx, 16, "/fr/0/concurrency", json.RawMessage(`"per_key"`))
 	if err != nil {
 		t.Fatalf("answer: %v", err)
 	}

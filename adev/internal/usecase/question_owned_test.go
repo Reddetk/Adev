@@ -22,3 +22,20 @@ func TestSystemOwnedPointerDropsTheMoneyChoice(t *testing.T) {
 		}
 	}
 }
+
+// TestSRSStructuralFieldsAreNotQuestions: actor, trigger, response, stateChange and
+// the scenarios are what the requirement says, and the model writes them from the
+// BRD. The four behaviour premises stay questions, because the business decides
+// them.
+func TestSRSStructuralFieldsAreNotQuestions(t *testing.T) {
+	for _, pointer := range []string{"/fr/1/actor", "/fr/1/trigger", "/fr/1/response", "/fr/1/stateChange", "/fr/1/priority"} {
+		if !systemOwnedPointer(domain.TypeSRS, pointer) {
+			t.Fatalf("%s is the model job, not a question", pointer)
+		}
+	}
+	for _, pointer := range []string{"/fr/1/concurrency", "/fr/1/idempotency", "/fr/1/delivery", "/fr/1/failureMode"} {
+		if systemOwnedPointer(domain.TypeSRS, pointer) {
+			t.Fatalf("%s is a business decision and must stay a question", pointer)
+		}
+	}
+}
