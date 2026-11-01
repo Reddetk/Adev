@@ -267,3 +267,24 @@ func (c *blockingChain) Run(_ context.Context, request StageRequest) (StageOutco
 	<-c.release
 	return StageOutcome{Stage: request.StageID}, nil
 }
+
+// TestResumeDoesNotDoubleAStage: two running rows for one stage are the artifact of
+// a double start. The resume runs the stage once and closes the extra row, instead
+// of working on one form twice.
+func TestResumeDoesNotDoubleAStage(t *testing.T) {
+	chain := &fakeChain{outcome: StageOutcome{Stage: "02"}}
+	runs := newFakeRunStore()
+	first := &domain.Run{PipelineID: 7, Stage: "02", Status: "running", CheckpointID: "greenfield"}
+	second := &domain.Run{PipelineID: 7, Stage: "02", Status: "running", CheckpointID: "greenfield"}
+	require.NoError(t, runs.Save(first))
+	require.NoError(t, runs.Save(second))
+	pipelines := &fakePipelineStore{pipelines: map[int]*domain.Pipeline{
+		7: {ID: 7, TargetSystemID: 3, Route: "greenfield", Status: "ready", CurrentStage: "02"},
+	}}
+	service := NewStageRunService(chain, runs, pipelines)
+
+	resumed := service.Resume(t.Context())
+	assert.Equal(t, 1, resumed, "the stage resumes once")
+	require.Eventually(t, func() bool { return runs.byID(second.ID).Status == "failed" }, time.Second, 10*time.Millisecond)
+	assert.Contains(t, runs.byID(second.ID).LastError, "already resumed")
+}

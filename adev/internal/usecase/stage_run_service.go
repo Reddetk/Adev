@@ -79,6 +79,7 @@ func (s *StageRunService) Resume(ctx context.Context) int {
 		return 0
 	}
 	resumed := 0
+	claimed := map[string]bool{}
 	for i := range all {
 		row := all[i]
 		if row.Status != "running" {
@@ -87,6 +88,15 @@ func (s *StageRunService) Resume(ctx context.Context) int {
 		if s.owns(row.ID) {
 			continue // this process already runs it
 		}
+		// One stage, one resumed run: an extra row left by a double start must not
+		// resume beside the first, or the stage works twice on one form.
+		covered := strconv.Itoa(row.PipelineID) + "/" + row.Stage
+		if claimed[covered] {
+			row.Status, row.LastError = "failed", "a run for this stage already resumed"
+			_ = s.runs.Update(&row)
+			continue
+		}
+		claimed[covered] = true
 		pipeline, err := s.pipelines.FindByID(row.PipelineID)
 		if err != nil {
 			// The pipeline went away: the run can never find its inputs again.
