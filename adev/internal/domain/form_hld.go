@@ -99,11 +99,11 @@ func (h HLD) Texts() []Text {
 	}
 	for _, a := range h.Aggregates {
 		for _, invariant := range a.Invariants {
-			out = append(out, Text{Value: invariant.Text, Lang: LangACE})
+			out = append(out, Text{Value: invariant.Text})
 		}
 	}
 	for _, d := range h.DegradationStrategy {
-		out = append(out, Text{Value: d.Failure, Lang: LangSTE100}, Text{Value: d.Degradation, Lang: LangSTE100})
+		out = append(out, Text{Value: d.Failure}, Text{Value: d.Degradation})
 	}
 	for _, d := range h.Decisions {
 		out = append(out, d.Title, d.Context, d.Decision)

@@ -206,20 +206,10 @@ func coerceNode(shape any, value any) any {
 		}
 		return out
 	case map[string]any:
-		// A Text record: the words alone become the record and get the language.
-		_, hasText := node["text"]
-		_, hasLang := node["lang"]
-		if hasText && hasLang {
-			switch typed := value.(type) {
-			case string:
-				return map[string]any{"lang": domain.LangSTE100, "text": typed}
-			case map[string]any:
-				// The words are right, only the language is missing: fill it in.
-				if _, has := typed["lang"]; !has {
-					if _, has := typed["text"]; has {
-						typed["lang"] = domain.LangSTE100
-					}
-				}
+		// A Text record: the words alone become the record.
+		if _, hasText := node["text"]; hasText && len(node) == 1 {
+			if typed, ok := value.(string); ok {
+				return map[string]any{"text": typed}
 			}
 			return value
 		}

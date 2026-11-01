@@ -65,7 +65,7 @@ func shapeOf(value reflect.Value) any {
 
 	switch value.Type() {
 	case reflect.TypeOf(Text{}):
-		return map[string]any{"text": "...", "lang": "STE100"}
+		return map[string]any{"text": "..."}
 	case reflect.TypeOf(Statement{}):
 		return map[string]any{"id": "...", "text": "...", "modality": "shall", "priority": "must"}
 	case reflect.TypeOf(Ref{}):

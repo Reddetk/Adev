@@ -29,7 +29,7 @@ Every form uses this envelope. Do not repeat these fields in a form file.
 | atom | fields |
 | --- | --- |
 | `Ref` | `formId, formType, formVersion, pointer?, hash` |
-| `Text` | `text, lang: "STE100" \| "ACE"` |
+| `Text` | `text` |
 | `Statement` | `id, text, modality: "shall" \| "should" \| "may", priority: "must" \| "high" \| "low"` |
 | `Scenario` | `given: [Text], when: [Text], then: [Text]` |
 | `TargetRef` | `objectId?, kind, path?, containerId?, new?`. `objectId` is mandatory for an existing object. `new: true` requires `path` and `kind`. The registry assigns the final `objectId` at approval. |

@@ -8,9 +8,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-// A Text value is {text, lang}: the operator reads the sentence, not the code.
+// A Text value is {text}: the operator reads the sentence, not the code.
 function sentenceOf(value: unknown): string | null {
-  if (isRecord(value) && typeof value.text === 'string' && typeof value.lang === 'string') {
+  if (isRecord(value) && typeof value.text === 'string' && Object.keys(value).length === 1) {
     return value.text;
   }
   return null;

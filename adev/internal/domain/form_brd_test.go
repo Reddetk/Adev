@@ -41,7 +41,7 @@ func TestBRDAllowsMetricsWithoutMeasurement(t *testing.T) {
 
 func TestBRDRejectsDesignTerms(t *testing.T) {
 	brd := validBRD()
-	brd.Goals[0].Outcome = Text{Value: "The system shall use a module.", Lang: LangSTE100}
+	brd.Goals[0].Outcome = Text{Value: "The system shall use a module."}
 
 	err := ValidateBRD(brd, StatusValid)
 	if err == nil || !strings.Contains(err.Error(), "module") {
@@ -53,7 +53,7 @@ func TestBRDRejectsBlockingGapOnApproval(t *testing.T) {
 	brd := validBRD()
 	brd.OpenGaps = []Gap{{
 		ID: "GAP-1", Pointer: "/metrics", Blocking: true,
-		Question: Text{Value: "Which value applies?", Lang: LangSTE100},
+		Question: Text{Value: "Which value applies?"},
 	}}
 	form := newBRDForm(t, brd)
 
@@ -93,7 +93,7 @@ func TestBRDRejectsAGapPointerOutsideThePayload(t *testing.T) {
 	brd := validBRD()
 	brd.OpenGaps = []Gap{{
 		ID: "GAP-1", Pointer: "/feasibility/costEstimate",
-		Question: Text{Value: "What is the cost?", Lang: LangSTE100},
+		Question: Text{Value: "What is the cost?"},
 	}}
 	form := newBRDForm(t, brd)
 	form.Status = StatusDraft

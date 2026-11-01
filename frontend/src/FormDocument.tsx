@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { JsonTree } from './JsonTree';
 import type { FormDetail } from './api';
 
-type Text = { text?: string; lang?: string };
+type Text = { text?: string };
 
 type Brd = {
   goals?: { id?: string; outcome?: Text; metricId?: string }[];

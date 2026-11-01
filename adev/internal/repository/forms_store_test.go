@@ -20,7 +20,7 @@ func buildForm(t *testing.T, formID string, version int, pipelineID string, prev
 	}}
 	payload := domain.BRD{
 		Goals: []domain.Goal{{
-			ID: "GOAL-1", Outcome: domain.Text{Value: "The system shall reduce the cycle time.", Lang: domain.LangSTE100},
+			ID: "GOAL-1", Outcome: domain.Text{Value: "The system shall reduce the cycle time."},
 			MetricID: "M-1",
 		}},
 		Metrics: []domain.Metric{{

@@ -109,10 +109,10 @@ type SRS struct {
 func (s SRS) Texts() []Text {
 	var out []Text
 	for _, fr := range s.FR {
-		out = append(out, Text{Value: fr.Statement.Text, Lang: LangACE})
+		out = append(out, Text{Value: fr.Statement.Text})
 	}
 	for _, nfr := range s.NFR {
-		out = append(out, Text{Value: nfr.Statement.Text, Lang: LangACE})
+		out = append(out, Text{Value: nfr.Statement.Text})
 	}
 	for _, item := range s.OutOfScope {
 		out = append(out, item.Text)

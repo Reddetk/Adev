@@ -529,11 +529,10 @@ func answerShape(shape any, answer any) (any, bool) {
 		return []any{item}, true
 	case map[string]any:
 		_, hasText := node["text"].(string)
-		_, hasLang := node["lang"].(string)
-		if hasText && hasLang {
-			// A Text value: the words keep the shape and get the document language.
-			if text, ok := answer.(string); ok {
-				return map[string]any{"text": text, "lang": domain.LangSTE100}, true
+		if hasText && len(node) == 1 {
+			// A Text value: the words keep the shape.
+			if words, ok := answer.(string); ok {
+				return map[string]any{"text": words}, true
 			}
 			return nil, false
 		}

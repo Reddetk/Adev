@@ -10,10 +10,10 @@ import (
 )
 
 type ContextInfo struct {
-	Keys     []string `json:"keys"`
-	Bytes    int      `json:"bytes"`
-	Dup      []string `json:"dup"`
-	Missing  []string `json:"missing"`
+	Keys    []string `json:"keys"`
+	Bytes   int      `json:"bytes"`
+	Dup     []string `json:"dup"`
+	Missing []string `json:"missing"`
 }
 
 type ControlQuery struct {
@@ -24,21 +24,21 @@ type ControlQuery struct {
 }
 
 type TempoReport struct {
-	Stage          string           `json:"stage"`
-	Path           string           `json:"path"`
-	ModelCalls     []ModelCallInfo  `json:"modelCalls"`
+	Stage           string          `json:"stage"`
+	Path            string          `json:"path"`
+	ModelCalls      []ModelCallInfo `json:"modelCalls"`
 	AttachedContext ContextInfo     `json:"attachedContext"`
-	ControlQueries []ControlQuery   `json:"controlQueries"`
+	ControlQueries  []ControlQuery  `json:"controlQueries"`
 	OperatorAnswers []opAnswerInfo  `json:"operatorAnswers"`
-	SkeletonCheck  SkeletonCheck   `json:"skeletonCheck"`
-	GapsResolved   int             `json:"gapsResolved"`
-	TimeMs         int64           `json:"timeMs"`
+	SkeletonCheck   SkeletonCheck   `json:"skeletonCheck"`
+	GapsResolved    int             `json:"gapsResolved"`
+	TimeMs          int64           `json:"timeMs"`
 }
 
 type ModelCallInfo struct {
-	Index    int      `json:"index"`
-	Context  ContextInfo `json:"context"`
-	Summary  string   `json:"summary"`
+	Index   int         `json:"index"`
+	Context ContextInfo `json:"context"`
+	Summary string      `json:"summary"`
 }
 
 type opAnswerInfo struct {

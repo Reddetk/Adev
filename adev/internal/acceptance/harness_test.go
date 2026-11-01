@@ -31,7 +31,7 @@ const (
 	testTarget   = int64(1)
 )
 
-func ste(value string) domain.Text { return domain.Text{Value: value, Lang: domain.LangSTE100} }
+func ste(value string) domain.Text { return domain.Text{Value: value} }
 
 func mustJSON(t *testing.T, value any) json.RawMessage {
 	t.Helper()

@@ -48,7 +48,7 @@ func (p TaskPlan) Texts() []Text {
 	for _, task := range p.Tasks {
 		out = append(out, task.Title)
 		for _, acceptance := range task.Acceptance {
-			out = append(out, Text{Value: acceptance.Text, Lang: LangSTE100})
+			out = append(out, Text{Value: acceptance.Text})
 		}
 	}
 	return out

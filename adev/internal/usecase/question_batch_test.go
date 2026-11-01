@@ -31,16 +31,16 @@ func feasibilityDraft(t *testing.T, pipelineID string) *domain.Form {
 			RTOMinutes:    60,
 		},
 		Options: []domain.Option{{
-			ID: "opt-1", Summary: domain.Text{Value: "Build it.", Lang: domain.LangSTE100},
+			ID: "opt-1", Summary: domain.Text{Value: "Build it."},
 			Cost: &cost, ScheduleDays: 30, Confidence: domain.ConfidenceHigh,
 		}},
 		RecommendedOption: "opt-1",
 		Verdict:           domain.VerdictGo,
-		Reason:            domain.Text{Value: "The team can build it.", Lang: domain.LangSTE100},
+		Reason:            domain.Text{Value: "The team can build it."},
 		OpenGaps: []domain.Gap{
-			{ID: "gap-1", Pointer: "/premises/traffic/peakQps", Question: domain.Text{Value: "What is the peak request rate?", Lang: domain.LangSTE100}},
-			{ID: "gap-2", Pointer: "/premises/storage/gbPerYear", Question: domain.Text{Value: "How many gigabytes a year?", Lang: domain.LangSTE100}},
-			{ID: "gap-3", Pointer: "/premises/team/size", Question: domain.Text{Value: "How many people build it?", Lang: domain.LangSTE100}},
+			{ID: "gap-1", Pointer: "/premises/traffic/peakQps", Question: domain.Text{Value: "What is the peak request rate?"}},
+			{ID: "gap-2", Pointer: "/premises/storage/gbPerYear", Question: domain.Text{Value: "How many gigabytes a year?"}},
+			{ID: "gap-3", Pointer: "/premises/team/size", Question: domain.Text{Value: "How many people build it?"}},
 		},
 	}
 	raw, err := json.Marshal(payload)

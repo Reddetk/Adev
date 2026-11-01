@@ -28,7 +28,7 @@ func runChaosAcc(t *testing.T, p e2ePath) {
 	})
 	// Seed initial user input
 	f.submit(t, "FRM-1-00", domain.TypeUserInput, "00", mustJSONRaw(domain.UserInput{
-		RawRequest: domain.Text{Value: "e2e chaos test", Lang: domain.LangSTE100},
+		RawRequest: domain.Text{Value: "e2e chaos test"},
 		Source:     domain.SourceOperator,
 		ReceivedAt: time.Now().UTC().Format(time.RFC3339),
 	}))

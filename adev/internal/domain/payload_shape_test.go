@@ -30,7 +30,7 @@ func TestPayloadShape(t *testing.T) {
 	}
 	first, _ := goal[0].(map[string]any)
 	outcome, _ := first["outcome"].(map[string]any)
-	if outcome["text"] != "..." || outcome["lang"] != "STE100" {
+	if outcome["text"] != "..." || len(outcome) != 1 {
 		t.Fatalf("the Text shape is wrong: %s", shape)
 	}
 	if _, ok := first["metricId"]; !ok {

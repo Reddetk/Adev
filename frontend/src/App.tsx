@@ -585,7 +585,7 @@ export default function App() {
         producedBy: 'operator',
         inputs: [],
         payload: {
-          rawRequest: { text: request, lang: 'STE100' },
+          rawRequest: { text: request },
           source: 'operator',
           receivedAt: new Date().toISOString(),
         },

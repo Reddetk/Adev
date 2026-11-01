@@ -112,7 +112,7 @@ func userInputForm(t *testing.T) *domain.Form {
 		PipelineID: "PIPE-1", TargetSystemID: "TGT-1", ProducedBy: domain.RoleOperator,
 	}}
 	payload := domain.UserInput{
-		RawRequest: domain.Text{Value: "The operator sends a request.", Lang: domain.LangSTE100},
+		RawRequest: domain.Text{Value: "The operator sends a request."},
 		Source:     domain.SourceOperator,
 		ReceivedAt: "2026-10-19T21:00:00Z",
 	}

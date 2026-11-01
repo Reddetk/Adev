@@ -137,7 +137,6 @@ func main() {
 	// 4. The USER_INPUT form the stage 00 reads.
 	rawRequest := domain.Text{
 		Value: "Build a web system for a small lending desk: the operator registers books, visitors reserve them and take them home.",
-		Lang:  domain.LangSTE100,
 	}
 	input := domain.Form{Envelope: domain.Envelope{
 		FormID:        fmt.Sprintf("FRM-%s-IN", pipelineID),

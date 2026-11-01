@@ -14,20 +14,20 @@ import (
 // store container and the decisions the caller names.
 func design(style ArchitectureStyle, appContainers int, store string) HLD {
 	contexts := []BoundedContext{{
-		ID: "bc-1", Name: "Delivery", Purpose: Text{Value: "Move parcels.", Lang: LangSTE100},
+		ID: "bc-1", Name: "Delivery", Purpose: Text{Value: "Move parcels."},
 		PACELC: PACELCPaEl,
 	}}
 	containers := make([]Container, 0, appContainers+1)
 	for i := 0; i < appContainers; i++ {
 		containers = append(containers, Container{
 			ObjectID: "c-" + string(rune('a'+i)), BoundedContextID: "bc-1",
-			Purpose: Text{Value: "Serve the client.", Lang: LangSTE100}, Tech: TechGo,
+			Purpose: Text{Value: "Serve the client."}, Tech: TechGo,
 		})
 	}
 	if store != "" {
 		containers = append(containers, Container{
 			ObjectID: "c-store", BoundedContextID: "bc-1",
-			Purpose: Text{Value: "Keep the records.", Lang: LangSTE100}, Tech: store,
+			Purpose: Text{Value: "Keep the records."}, Tech: store,
 		})
 	}
 	contexts[0].ContainerIds = make([]string, 0, len(containers))
@@ -37,31 +37,31 @@ func design(style ArchitectureStyle, appContainers int, store string) HLD {
 
 	decisions := []Decision{{
 		ID: "d-consistency", Area: AreaConsistency, ContextRef: "bc-1",
-		Title:    Text{Value: "Consistency", Lang: LangSTE100},
-		Decision: Text{Value: "The context answers after the write.", Lang: LangSTE100},
+		Title:    Text{Value: "Consistency"},
+		Decision: Text{Value: "The context answers after the write."},
 		Alternatives: []Alternative{{
-			Option:          Text{Value: "Eventual", Lang: LangSTE100},
-			RejectedBecause: Text{Value: "The client confirms the receipt.", Lang: LangSTE100},
+			Option:          Text{Value: "Eventual"},
+			RejectedBecause: Text{Value: "The client confirms the receipt."},
 		}},
 	}}
 	if store != "" {
 		decisions = append(decisions, Decision{
-			ID: "d-storage", Area: AreaStorage, Ownership: OwnershipPerService, Title: Text{Value: "Storage", Lang: LangSTE100},
-			Decision: Text{Value: "PostgreSQL.", Lang: LangSTE100},
+			ID: "d-storage", Area: AreaStorage, Ownership: OwnershipPerService, Title: Text{Value: "Storage"},
+			Decision: Text{Value: "PostgreSQL."},
 			Alternatives: []Alternative{{
-				Option:          Text{Value: "MongoDB", Lang: LangSTE100},
-				RejectedBecause: Text{Value: "The route needs transactions.", Lang: LangSTE100},
+				Option:          Text{Value: "MongoDB"},
+				RejectedBecause: Text{Value: "The route needs transactions."},
 			}},
 			ObjectRefs: []string{"c-store"}, Techs: []string{store},
 		})
 	}
 	decisions = append(decisions, Decision{
 		ID: "d-architecture", Area: AreaArchitecture, Style: style,
-		Title:    Text{Value: "Architecture", Lang: LangSTE100},
-		Decision: Text{Value: "The style the design implements.", Lang: LangSTE100},
+		Title:    Text{Value: "Architecture"},
+		Decision: Text{Value: "The style the design implements."},
 		Alternatives: []Alternative{{
-			Option:          Text{Value: "The other style", Lang: LangSTE100},
-			RejectedBecause: Text{Value: "The team size and the budget decide.", Lang: LangSTE100},
+			Option:          Text{Value: "The other style"},
+			RejectedBecause: Text{Value: "The team size and the budget decide."},
 		}},
 	})
 
@@ -263,11 +263,11 @@ func TestAsyncRelationNamesAGuarantee(t *testing.T) {
 	hld := designWithStore(StyleModularMonolith)
 	hld.Decisions = append(hld.Decisions, Decision{
 		ID: "d-communication", Area: AreaCommunication, ContextRef: "bc-1",
-		Title:    Text{Value: "Communication", Lang: LangSTE100},
-		Decision: Text{Value: "Events between the contexts.", Lang: LangSTE100},
+		Title:    Text{Value: "Communication"},
+		Decision: Text{Value: "Events between the contexts."},
 		Alternatives: []Alternative{{
-			Option:          Text{Value: "Sync calls", Lang: LangSTE100},
-			RejectedBecause: Text{Value: "The caller may continue.", Lang: LangSTE100},
+			Option:          Text{Value: "Sync calls"},
+			RejectedBecause: Text{Value: "The caller may continue."},
 		}},
 	})
 	hld.ContextRelations = []ContextRelation{{From: "bc-1", To: "bc-1", Type: RelationAsync}}
@@ -286,18 +286,18 @@ func TestAsyncRelationNamesAGuarantee(t *testing.T) {
 func TestAsyncIntoAConsistentContextNeedsAKey(t *testing.T) {
 	hld := hldWith(
 		[]BoundedContext{{
-			ID: "bc-1", Name: "Delivery", Purpose: Text{Value: "Move parcels.", Lang: LangSTE100},
+			ID: "bc-1", Name: "Delivery", Purpose: Text{Value: "Move parcels."},
 			PACELC: PACELCPcEc, ContainerIds: []string{"c-1"},
 		}},
 		shipmentContainers(TechGo), nil,
 	)
 	hld.Decisions = append(hld.Decisions, Decision{
 		ID: "d-communication", Area: AreaCommunication, ContextRef: "bc-1",
-		Title:    Text{Value: "Communication", Lang: LangSTE100},
-		Decision: Text{Value: "Events between the contexts.", Lang: LangSTE100},
+		Title:    Text{Value: "Communication"},
+		Decision: Text{Value: "Events between the contexts."},
 		Alternatives: []Alternative{{
-			Option:          Text{Value: "Sync calls", Lang: LangSTE100},
-			RejectedBecause: Text{Value: "The caller may continue.", Lang: LangSTE100},
+			Option:          Text{Value: "Sync calls"},
+			RejectedBecause: Text{Value: "The caller may continue."},
 		}},
 	})
 	hld.ContextRelations = []ContextRelation{

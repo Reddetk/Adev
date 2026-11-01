@@ -15,11 +15,11 @@ func hldWith(contexts []BoundedContext, containers []Container, relations []Cont
 	for _, context := range contexts {
 		decisions = append(decisions, Decision{
 			ID: "d-consistency-" + context.ID, Area: AreaConsistency, ContextRef: context.ID,
-			Title:    Text{Value: "Consistency", Lang: LangSTE100},
-			Decision: Text{Value: "The context answers as its class says.", Lang: LangSTE100},
+			Title:    Text{Value: "Consistency"},
+			Decision: Text{Value: "The context answers as its class says."},
 			Alternatives: []Alternative{{
-				Option:          Text{Value: "The other class", Lang: LangSTE100},
-				RejectedBecause: Text{Value: "The business needs this promise.", Lang: LangSTE100},
+				Option:          Text{Value: "The other class"},
+				RejectedBecause: Text{Value: "The business needs this promise."},
 			}},
 		})
 	}
@@ -38,21 +38,21 @@ func hldWith(contexts []BoundedContext, containers []Container, relations []Cont
 	}
 	decisions = append(decisions, Decision{
 		ID: "d-architecture", Area: AreaArchitecture, Style: style,
-		Title:    Text{Value: "Architecture", Lang: LangSTE100},
-		Decision: Text{Value: "The style the containers carry.", Lang: LangSTE100},
+		Title:    Text{Value: "Architecture"},
+		Decision: Text{Value: "The style the containers carry."},
 		Alternatives: []Alternative{{
-			Option:          Text{Value: "The other style", Lang: LangSTE100},
-			RejectedBecause: Text{Value: "The container count decides.", Lang: LangSTE100},
+			Option:          Text{Value: "The other style"},
+			RejectedBecause: Text{Value: "The container count decides."},
 		}},
 	})
 	if store != "" {
 		decisions = append(decisions, Decision{
 			ID: "d-storage", Area: AreaStorage, Ownership: OwnershipPerService,
-			Title:    Text{Value: "Storage", Lang: LangSTE100},
-			Decision: Text{Value: "The store the design carries.", Lang: LangSTE100},
+			Title:    Text{Value: "Storage"},
+			Decision: Text{Value: "The store the design carries."},
 			Alternatives: []Alternative{{
-				Option:          Text{Value: "The other store", Lang: LangSTE100},
-				RejectedBecause: Text{Value: "The class decides.", Lang: LangSTE100},
+				Option:          Text{Value: "The other store"},
+				RejectedBecause: Text{Value: "The class decides."},
 			}},
 			Techs: []string{store},
 		})
@@ -72,7 +72,7 @@ func hldWith(contexts []BoundedContext, containers []Container, relations []Cont
 
 func shipmentContexts(pacelc PACELC) []BoundedContext {
 	return []BoundedContext{{
-		ID: "bc-1", Name: "Delivery", Purpose: Text{Value: "Move parcels.", Lang: LangSTE100},
+		ID: "bc-1", Name: "Delivery", Purpose: Text{Value: "Move parcels."},
 		ContainerIds: []string{"c-1"}, PACELC: pacelc,
 	}}
 }
@@ -80,7 +80,7 @@ func shipmentContexts(pacelc PACELC) []BoundedContext {
 func shipmentContainers(tech string) []Container {
 	return []Container{{
 		ObjectID: "c-1", BoundedContextID: "bc-1",
-		Purpose: Text{Value: "Serve the client.", Lang: LangSTE100}, Tech: tech,
+		Purpose: Text{Value: "Serve the client."}, Tech: tech,
 	}}
 }
 
@@ -177,12 +177,12 @@ func TestPACELCClassAgainstTheStore(t *testing.T) {
 // be wired only by asynchronous edges, because nothing then waits for its answer.
 func TestPACELCClassAgainstTheRelations(t *testing.T) {
 	contexts := append(shipmentContexts(PACELCPcEc), BoundedContext{
-		ID: "bc-2", Name: "Billing", Purpose: Text{Value: "Bill the client.", Lang: LangSTE100},
+		ID: "bc-2", Name: "Billing", Purpose: Text{Value: "Bill the client."},
 		ContainerIds: []string{"c-2"}, PACELC: PACELCPcEc,
 	})
 	containers := append(shipmentContainers(TechGo), Container{
 		ObjectID: "c-2", BoundedContextID: "bc-2",
-		Purpose: Text{Value: "Bill.", Lang: LangSTE100}, Tech: TechGo,
+		Purpose: Text{Value: "Bill."}, Tech: TechGo,
 	})
 	asyncOnly := hldWith(contexts, containers, []ContextRelation{
 		{From: "bc-1", To: "bc-2", Type: RelationAsync, Guarantee: DeliveryAtLeastOnce, IdempotencyKey: "shipmentId"},

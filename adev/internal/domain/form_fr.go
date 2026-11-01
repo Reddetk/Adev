@@ -22,7 +22,7 @@ type NFR struct {
 func (f FR) Texts() []Text {
 	var out []Text
 	for _, item := range f.FR {
-		out = append(out, Text{Value: item.Statement.Text, Lang: LangACE})
+		out = append(out, Text{Value: item.Statement.Text})
 	}
 	return out
 }
@@ -31,7 +31,7 @@ func (f FR) Texts() []Text {
 func (n NFR) Texts() []Text {
 	var out []Text
 	for _, item := range n.NFR {
-		out = append(out, Text{Value: item.Statement.Text, Lang: LangACE})
+		out = append(out, Text{Value: item.Statement.Text})
 	}
 	return out
 }

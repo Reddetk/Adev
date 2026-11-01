@@ -9,8 +9,8 @@ import (
 
 // TestCoercePayload: the model answers the meaning and loses the wrapper. The
 // repair touches the wrapping only: strings become the Text records, a number
-// inside a sentence lands as the number, a Text keeps its language. The gates
-// still judge the values the model brought.
+// inside a sentence lands as the number. The gates still judge the values the
+// model brought.
 func TestCoercePayload(t *testing.T) {
 	raw := `{
 		"openGaps": [
@@ -31,7 +31,7 @@ func TestCoercePayload(t *testing.T) {
 
 	gap := payload["openGaps"].([]any)[0].(map[string]any)
 	question := gap["question"].(map[string]any)
-	if question["text"] != "What unit counts one day of the calendar?" || question["lang"] != "STE100" {
+	if question["text"] != "What unit counts one day of the calendar?" {
 		t.Fatalf("the question must land as the Text record: %v", question)
 	}
 
@@ -46,8 +46,8 @@ func TestCoercePayload(t *testing.T) {
 	}
 
 	in := payload["scope"].(map[string]any)["in"].([]any)[0].(map[string]any)
-	if in["lang"] != "STE100" || in["text"] != "use emoji" {
-		t.Fatalf("a Text without its language gets the language: %v", in)
+	if in["text"] != "use emoji" || len(in) != 1 {
+		t.Fatalf("a Text keeps its words and nothing else: %v", in)
 	}
 
 	window := payload["successMetrics"].([]any)[0].(map[string]any)["window"]

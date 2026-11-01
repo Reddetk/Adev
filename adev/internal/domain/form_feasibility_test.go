@@ -31,12 +31,12 @@ func feasibilityWith(premises Premises) Feasibility {
 	return Feasibility{
 		ReportType: ReportTEJ,
 		Options: []Option{{
-			ID: "opt-1", Summary: Text{Value: "Build the lending module.", Lang: LangSTE100},
+			ID: "opt-1", Summary: Text{Value: "Build the lending module."},
 			Cost: &cost, ScheduleDays: 30, Confidence: ConfidenceHigh,
 		}},
 		RecommendedOption: "opt-1",
 		Verdict:           VerdictGo,
-		Reason:            Text{Value: "The team can build it.", Lang: LangSTE100},
+		Reason:            Text{Value: "The team can build it."},
 		Premises:          premises,
 	}
 }
@@ -224,7 +224,7 @@ func TestFeasibilityPremisesSurviveARandomOperator(t *testing.T) {
 func TestTEJDoesNotChooseTheArchitecture(t *testing.T) {
 	for _, phrase := range []string{"Build a monolith", "Use microservices", "An event-driven design", "A serverless delivery"} {
 		feas := feasibilityWith(validPremises())
-		feas.Options[0].Summary = Text{Value: phrase, Lang: LangSTE100}
+		feas.Options[0].Summary = Text{Value: phrase}
 		err := ValidateFeasibility(feas)
 		if err == nil || !strings.Contains(err.Error(), "options[0].summary") {
 			t.Fatalf("the option %q must be refused with its field named, got %v", phrase, err)
@@ -233,7 +233,7 @@ func TestTEJDoesNotChooseTheArchitecture(t *testing.T) {
 
 	for _, phrase := range []string{"Build the module in-house.", "Buy a ready learning platform.", "Extend the current platform."} {
 		feas := feasibilityWith(validPremises())
-		feas.Options[0].Summary = Text{Value: phrase, Lang: LangSTE100}
+		feas.Options[0].Summary = Text{Value: phrase}
 		if err := ValidateFeasibility(feas); err != nil {
 			t.Fatalf("the delivery option %q must pass, got %v", phrase, err)
 		}
@@ -250,13 +250,13 @@ func TestDeliveryOptionsSurviveARandomTEJ(t *testing.T) {
 	for i := 0; i < 200; i++ {
 		feas := feasibilityWith(validPremises())
 		cleanOption := clean[random.Intn(len(clean))]
-		feas.Options[0].Summary = Text{Value: cleanOption, Lang: LangSTE100}
+		feas.Options[0].Summary = Text{Value: cleanOption}
 		if err := ValidateFeasibility(feas); err != nil {
 			t.Fatalf("iteration %d: %q must pass, got %v", i, cleanOption, err)
 		}
 
 		dirtyOption := dirty[random.Intn(len(dirty))]
-		feas.Options[0].Summary = Text{Value: dirtyOption, Lang: LangSTE100}
+		feas.Options[0].Summary = Text{Value: dirtyOption}
 		if err := ValidateFeasibility(feas); err == nil {
 			t.Fatalf("iteration %d: %q must be refused", i, dirtyOption)
 		}

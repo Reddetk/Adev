@@ -12,19 +12,19 @@ func validBRD() BRD {
 	return BRD{
 		Goals: []Goal{{
 			ID:       "GOAL-1",
-			Outcome:  Text{Value: "The system shall reduce the cycle time.", Lang: LangSTE100},
+			Outcome:  Text{Value: "The system shall reduce the cycle time."},
 			MetricID: "M-1",
 		}},
 		Metrics: []Metric{{
 			ID: "M-1", Name: "cycle_time_hours", Unit: "hour", Baseline: ptr(40), Target: ptr(24),
 		}},
 		Scope: Scope{
-			In:  []Text{{Value: "The system shall plan the work.", Lang: LangSTE100}},
-			Out: []Text{{Value: "The system shall host the result.", Lang: LangSTE100}},
+			In:  []Text{{Value: "The system shall plan the work."}},
+			Out: []Text{{Value: "The system shall host the result."}},
 		},
 		Actors: []Actor{{
 			ID: "A-1", Name: "operator",
-			Tasks:          []Text{{Value: "The operator sends a request.", Lang: LangSTE100}},
+			Tasks:          []Text{{Value: "The operator sends a request."}},
 			Frequency:      FrequencyDay,
 			BusinessObject: "request",
 		}},

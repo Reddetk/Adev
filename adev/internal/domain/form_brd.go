@@ -79,7 +79,7 @@ func (b BRD) Texts() []Text {
 		out = append(out, actor.Tasks...)
 	}
 	for _, constraint := range b.Constraints {
-		out = append(out, Text{Value: constraint.Text, Lang: LangSTE100})
+		out = append(out, Text{Value: constraint.Text})
 	}
 	out = append(out, b.Assumptions...)
 	out = append(out, b.Glossary...)

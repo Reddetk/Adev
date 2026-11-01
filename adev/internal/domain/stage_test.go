@@ -45,9 +45,9 @@ func TestGreenfieldHasNoADRStage(t *testing.T) {
 // the design, not in a second document that restates it.
 func TestHLDKeepsTheDecisions(t *testing.T) {
 	hld := HLD{
-		BoundedContexts: []BoundedContext{{ID: "bc-1", Name: "Delivery", Purpose: Text{Value: "Move parcels.", Lang: LangSTE100}, PACELC: PACELCPaEl}},
+		BoundedContexts: []BoundedContext{{ID: "bc-1", Name: "Delivery", Purpose: Text{Value: "Move parcels."}, PACELC: PACELCPaEl}},
 		Containers: []Container{{
-			ObjectID: "c-1", BoundedContextID: "bc-1", Purpose: Text{Value: "Serve the client.", Lang: LangSTE100}, Tech: "go",
+			ObjectID: "c-1", BoundedContextID: "bc-1", Purpose: Text{Value: "Serve the client."}, Tech: "go",
 		}},
 		Aggregates: []Aggregate{{
 			ID: "a-1", ContainerID: "c-1", Root: "shipment", ModuleRef: "m-1",
@@ -56,26 +56,26 @@ func TestHLDKeepsTheDecisions(t *testing.T) {
 		Decisions: []Decision{
 			{
 				ID: "d-consistency", Area: AreaConsistency, ContextRef: "bc-1",
-				Title:    Text{Value: "Consistency", Lang: LangSTE100},
-				Decision: Text{Value: "The context answers after the write.", Lang: LangSTE100},
+				Title:    Text{Value: "Consistency"},
+				Decision: Text{Value: "The context answers after the write."},
 				Alternatives: []Alternative{{
-					Option:          Text{Value: "Eventual", Lang: LangSTE100},
-					RejectedBecause: Text{Value: "The client confirms the receipt.", Lang: LangSTE100},
+					Option:          Text{Value: "Eventual"},
+					RejectedBecause: Text{Value: "The client confirms the receipt."},
 				}},
 			},
 			{
 				ID: "d-architecture", Area: AreaArchitecture, Style: StyleModularMonolith,
-				Title:    Text{Value: "Architecture", Lang: LangSTE100},
-				Decision: Text{Value: "One deployable unit.", Lang: LangSTE100},
+				Title:    Text{Value: "Architecture"},
+				Decision: Text{Value: "One deployable unit."},
 				Alternatives: []Alternative{{
-					Option:          Text{Value: "Microservices", Lang: LangSTE100},
-					RejectedBecause: Text{Value: "The team is small.", Lang: LangSTE100},
+					Option:          Text{Value: "Microservices"},
+					RejectedBecause: Text{Value: "The team is small."},
 				}},
 			},
 			{
-				ID: "storage", Area: AreaStorage, Ownership: OwnershipPerService, Title: Text{Value: "Storage", Lang: LangSTE100},
-				Decision:     Text{Value: "PostgreSQL.", Lang: LangSTE100},
-				Alternatives: []Alternative{{Option: Text{Value: "MongoDB", Lang: LangSTE100}, RejectedBecause: Text{Value: "The route needs transactions.", Lang: LangSTE100}}},
+				ID: "storage", Area: AreaStorage, Ownership: OwnershipPerService, Title: Text{Value: "Storage"},
+				Decision:     Text{Value: "PostgreSQL."},
+				Alternatives: []Alternative{{Option: Text{Value: "MongoDB"}, RejectedBecause: Text{Value: "The route needs transactions."}}},
 				ObjectRefs:   []string{"c-1"},
 			},
 		},
@@ -92,9 +92,9 @@ func TestHLDKeepsTheDecisions(t *testing.T) {
 
 	foreign := hld
 	foreign.Decisions = []Decision{{
-		ID: "storage", Title: Text{Value: "Storage", Lang: LangSTE100},
-		Decision:     Text{Value: "PostgreSQL.", Lang: LangSTE100},
-		Alternatives: []Alternative{{Option: Text{Value: "MongoDB", Lang: LangSTE100}, RejectedBecause: Text{Value: "No transactions.", Lang: LangSTE100}}},
+		ID: "storage", Title: Text{Value: "Storage"},
+		Decision:     Text{Value: "PostgreSQL."},
+		Alternatives: []Alternative{{Option: Text{Value: "MongoDB"}, RejectedBecause: Text{Value: "No transactions."}}},
 		ObjectRefs:   []string{"c-9"},
 	}}
 	assert.Error(t, ValidateHLD(foreign), "a decision that names no container of this design fixes nothing")
@@ -104,9 +104,9 @@ func TestHLDKeepsTheDecisions(t *testing.T) {
 	// container had.
 	ghostProduct := hld
 	ghostProduct.Decisions = []Decision{{
-		ID: "storage", Title: Text{Value: "Storage", Lang: LangSTE100},
-		Decision:     Text{Value: "Redis.", Lang: LangSTE100},
-		Alternatives: []Alternative{{Option: Text{Value: "Memcached", Lang: LangSTE100}, RejectedBecause: Text{Value: "No persistence.", Lang: LangSTE100}}},
+		ID: "storage", Title: Text{Value: "Storage"},
+		Decision:     Text{Value: "Redis."},
+		Alternatives: []Alternative{{Option: Text{Value: "Memcached"}, RejectedBecause: Text{Value: "No persistence."}}},
 		ObjectRefs:   []string{"c-1"},
 		Techs:        []string{"redis"},
 	}}

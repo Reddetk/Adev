@@ -1,17 +1,8 @@
 package domain
 
-// Lang is the controlled language of a text value.
-type Lang string
-
-const (
-	LangSTE100 Lang = "STE100"
-	LangACE    Lang = "ACE"
-)
-
 // Text is the only carrier of free text in a form.
 type Text struct {
 	Value string `json:"text"`
-	Lang  Lang   `json:"lang"`
 }
 
 // Modality is the strength of a normative statement.

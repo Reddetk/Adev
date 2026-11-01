@@ -173,10 +173,6 @@ func (s *FormService) checkTexts(texts []domain.Text) error {
 		if text.Value == "" {
 			continue
 		}
-		if text.Lang != domain.LangSTE100 && text.Lang != domain.LangACE {
-			errs = append(errs, fmt.Errorf("texts[%d]: unknown lang %q", i, text.Lang))
-			continue
-		}
 		if err := s.checker.Check(text); err != nil {
 			errs = append(errs, fmt.Errorf("texts[%d]: %w", i, err))
 		}

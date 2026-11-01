@@ -44,15 +44,15 @@ type modelCallInfo struct {
 }
 
 type tempoRpt struct {
-	Stage           string         `json:"stage"`
-	Path            string         `json:"path"`
+	Stage           string          `json:"stage"`
+	Path            string          `json:"path"`
 	ModelCalls      []modelCallInfo `json:"modelCalls"`
-	AttachedContext ctxInfo        `json:"attachedContext"`
-	ControlQueries  []ctrlQuery    `json:"controlQueries"`
-	OperatorAnswers []opAnsInfo    `json:"operatorAnswers"`
-	SkeletonCheck   skCheck        `json:"skeletonCheck"`
-	GapsResolved    int            `json:"gapsResolved"`
-	TimeMs          int64          `json:"timeMs"`
+	AttachedContext ctxInfo         `json:"attachedContext"`
+	ControlQueries  []ctrlQuery     `json:"controlQueries"`
+	OperatorAnswers []opAnsInfo     `json:"operatorAnswers"`
+	SkeletonCheck   skCheck         `json:"skeletonCheck"`
+	GapsResolved    int             `json:"gapsResolved"`
+	TimeMs          int64           `json:"timeMs"`
 }
 
 func trackCtxFromUser(user string) ctxInfo {

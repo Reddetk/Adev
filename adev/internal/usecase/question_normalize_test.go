@@ -23,7 +23,7 @@ func TestCoerceAnswerShapesTheAnswerLikeTheField(t *testing.T) {
 			formType: domain.TypeBRD,
 			pointer:  "/scope/in",
 			value:    `"book registration"`,
-			want:     `[{"lang":"STE100","text":"book registration"}]`,
+			want:     `[{"text":"book registration"}]`,
 		},
 		{
 			name:     "a sentence fills the free text of a list entry the draft left out",

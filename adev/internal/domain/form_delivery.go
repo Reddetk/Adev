@@ -185,7 +185,7 @@ type ImplementationSpec struct {
 func (s ImplementationSpec) Texts() []Text {
 	out := make([]Text, 0, len(s.Constraints)+len(s.Steps))
 	for _, constraint := range s.Constraints {
-		out = append(out, Text{Value: constraint.Text, Lang: LangACE})
+		out = append(out, Text{Value: constraint.Text})
 	}
 	for _, step := range s.Steps {
 		out = append(out, step.Text)

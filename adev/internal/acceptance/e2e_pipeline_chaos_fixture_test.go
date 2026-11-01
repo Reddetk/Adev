@@ -23,10 +23,10 @@ func init() {
 type chaosPath string
 
 const (
-	chaosHappy  chaosPath = "happyPath"
-	chaosNeg1   chaosPath = "negPath-1"
-	chaosNeg2   chaosPath = "negPath-2"
-	chaosEmpty  chaosPath = "empty"
+	chaosHappy chaosPath = "happyPath"
+	chaosNeg1  chaosPath = "negPath-1"
+	chaosNeg2  chaosPath = "negPath-2"
+	chaosEmpty chaosPath = "empty"
 )
 
 var ruP = []string{"нужно  указать   ", "короче,     ", "вот   кратко:   ", "как бы   ", "мне кажется   ", "извините за сумбур   ", "по сути   ", "в общем   "}
