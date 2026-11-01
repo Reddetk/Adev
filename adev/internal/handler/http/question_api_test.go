@@ -14,12 +14,15 @@ import (
 
 	"github.com/Reddetk/Adev/internal/domain"
 	apphttp "github.com/Reddetk/Adev/internal/handler/http"
+	"github.com/Reddetk/Adev/internal/usecase"
 )
 
 // fakeAnswers stands for the QuestionService: the answer already landed on the
 // form, the handler only decides whether the stage continues.
 type fakeAnswers struct {
-	form *domain.Form
+	form       *domain.Form
+	batchCalls int
+	lastBatch  []usecase.AnswerInput
 }
 
 func (f *fakeAnswers) AnswerOnPipeline(context.Context, int, string, json.RawMessage) (*domain.Form, error) {
@@ -27,6 +30,12 @@ func (f *fakeAnswers) AnswerOnPipeline(context.Context, int, string, json.RawMes
 }
 
 func (f *fakeAnswers) AnswerChoice(context.Context, int, string, string, json.RawMessage) (*domain.Form, error) {
+	return f.form, nil
+}
+
+func (f *fakeAnswers) AnswerManyOnPipeline(_ context.Context, _ int, answers []usecase.AnswerInput) (*domain.Form, error) {
+	f.batchCalls++
+	f.lastBatch = answers
 	return f.form, nil
 }
 
@@ -45,6 +54,50 @@ func answerRequest(t *testing.T, router *mux.Router) *httptest.ResponseRecorder 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
 	return recorder
+}
+
+// TestAnswersApplyTheBatchOnce: the console sends five answers as one request, the
+// service applies them as one action, and the stage restarts once.
+func TestAnswersApplyTheBatchOnce(t *testing.T) {
+	answers := &fakeAnswers{form: &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-9-01-FEASIBILITY", FormType: domain.TypeFeasibility, FormVersion: 1,
+		Status: domain.StatusDraft, Route: domain.RouteGreenfield, Stage: "01",
+		PipelineID: "9", TargetSystemID: "1",
+	}}}
+	starter := &fakeRunStarter{}
+	router := newQuestionAPI(answers, starter)
+
+	body := strings.NewReader(`{"pipelineId":9,"answers":[` +
+		`{"pointer":"/premises/traffic/peakQps","value":120},` +
+		`{"pointer":"/premises/team/size","value":4}]}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/operatorrequests/answers", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, 1, answers.batchCalls, "the handler must apply the batch in one call")
+	require.Len(t, answers.lastBatch, 2)
+	assert.Equal(t, "/premises/traffic/peakQps", answers.lastBatch[0].Pointer)
+	assert.Equal(t, "01", starter.request.StageID, "the stage restarts once after the batch")
+}
+
+// TestAnswersRefuseAnEmptyBatch: a request without answers is a client mistake, not
+// a stage restart.
+func TestAnswersRefuseAnEmptyBatch(t *testing.T) {
+	answers := &fakeAnswers{form: &domain.Form{}}
+	starter := &fakeRunStarter{}
+	router := newQuestionAPI(answers, starter)
+
+	body := strings.NewReader(`{"pipelineId":9,"answers":[]}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/operatorrequests/answers", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.Equal(t, 0, answers.batchCalls)
+	assert.Empty(t, starter.request.StageID)
 }
 
 // TestAnswerContinuesTheStage: the last answer leaves a draft, so the handler

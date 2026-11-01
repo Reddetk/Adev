@@ -416,25 +416,25 @@ func (s *StageService) runForm(
 			version = form.FormVersion + 1
 			continue
 		}
-		asked := false
-		gapBlocked := false
+		gapPublished := 0
 		if s.questions != nil && request.PipelineID != "" {
 			pipelineID, _ := strconv.Atoi(request.PipelineID)
-			_, gapBlocked, err = s.questions.PublishGaps(ctx, form, pipelineID)
+			gapPublished, err = s.questions.PublishGaps(ctx, form, pipelineID)
 			if err != nil {
 				log.Printf("stage %s pipeline %s: publish gap: %v", stage.ID, request.PipelineID, err)
 			}
-			if gapBlocked {
+			if gapPublished > 0 {
 				blocked = true
 				reasons = append(reasons, "the draft holds open questions for the operator")
-			} else if blocked {
-				// No gap went out: the gate mismatch itself asks the operator, the
-				// same repair path the answer flow uses.
-				asked, err = s.questions.PublishGate(ctx, form, failures, pipelineID)
-				if err != nil {
-					log.Printf("stage %s pipeline %s: publish gate: %v", stage.ID, request.PipelineID, err)
+			}
+			// The gate failures fill what the gaps left in the batch: the operator
+			// answers five values per round instead of one value per stage run.
+			if budget := questionsPerRun - gapPublished; blocked && budget > 0 {
+				gateAsked, gateErr := s.questions.PublishGate(ctx, form, failures, pipelineID, budget)
+				if gateErr != nil {
+					log.Printf("stage %s pipeline %s: publish gate: %v", stage.ID, request.PipelineID, gateErr)
 				}
-				if asked {
+				if gateAsked > 0 {
 					reasons = append(reasons, "the draft holds open questions for the operator")
 				}
 			}

@@ -36,7 +36,8 @@ func (s *QuestionService) Publish(ctx context.Context, form *domain.Form, failur
 		// The draft may hold non-JSON garbage; the question must still reach the operator.
 		log.Printf("question pipeline %d: keep draft of %s: %v", pipelineID, form.FormType, err)
 	}
-	return s.ask(ctx, form, failures, pipelineID)
+	_, err := s.ask(ctx, form, failures, pipelineID, questionsPerRun)
+	return err
 }
 
 // questionsPerRun caps one batch of questions: a document that asks for 78 values
@@ -52,18 +53,17 @@ const questionsPerRun = 5
 // shortcut: one question per run is the registry rule; here a run is one small
 // batch, reconcile with the registry when the ask-loop moves to model-driven
 // conversation.
-func (s *QuestionService) PublishGaps(ctx context.Context, form *domain.Form, pipelineID int) (published, blocked bool, err error) {
+func (s *QuestionService) PublishGaps(ctx context.Context, form *domain.Form, pipelineID int) (published int, err error) {
 	if s.requests == nil || form == nil {
-		return false, false, nil
+		return 0, nil
 	}
 	// Questions whose document can no longer take an answer leave the dashboard.
 	s.CloseStale(ctx, pipelineID)
 	// A batch already waits for this document: the answers publish the next batch,
 	// a re-run must not stack a second one on top.
 	if s.hasActiveRequestsForForm(pipelineID, form) {
-		return false, true, nil
+		return 0, nil
 	}
-	asked := 0
 	for _, position := range form.Gaps() {
 		gap := position.Gap
 		pointer := normalizePointer(gap.Pointer)
@@ -88,20 +88,19 @@ func (s *QuestionService) PublishGaps(ctx context.Context, form *domain.Form, pi
 			Blocking:   gap.Blocking,
 			Status:     "active",
 		}); err != nil {
-			return published, false, err
+			return published, err
 		}
-		published = true
-		asked++
-		if asked >= questionsPerRun {
+		published++
+		if published >= questionsPerRun {
 			break
 		}
 	}
-	if published && s.forms != nil {
+	if published > 0 && s.forms != nil {
 		if err := s.forms.SetStatus(ctx, form.FormID, form.FormVersion, domain.StatusWaitingOperator); err != nil {
 			log.Printf("question pipeline %d: set waiting_operator: %v", pipelineID, err)
 		}
 	}
-	return published, published, nil
+	return published, nil
 }
 
 // alreadyAsked reports an active request for the same pointer and pipeline, so a
@@ -229,20 +228,28 @@ func (s *QuestionService) answerAt(ctx context.Context, form *domain.Form, asked
 
 	// The answered value is decided: the request closes even when other gaps remain.
 	s.closeRequests(ctx, pipelineID, pointer)
+	return s.finishAnswer(ctx, &derived, pipelineID, pointer)
+}
+
+// finishAnswer settles the draft after the operator values landed: it asks the next
+// questions, accepts the document, or leaves the draft for the next pass. The
+// caller owns the payload write and the answered requests, so a batch of answers
+// reaches the gates once.
+func (s *QuestionService) finishAnswer(ctx context.Context, derived *domain.Form, pipelineID int, label string) (*domain.Form, error) {
 	// The gap gate wakes up only on a valid status: check the draft as a would-be valid form.
 	derived.Status = domain.StatusValid
 	if err := derived.ValidatePayloadWithStatus(); err != nil {
-		log.Printf("question pipeline %d: answer %s still fails: %v", pipelineID, pointer, err)
+		log.Printf("question pipeline %d: answer %s still fails: %v", pipelineID, label, err)
 		// A remaining gap is not a field to patch: its own question goes out
 		// first, and only when none went out the gate failures take the turn.
-		published, _, gapErr := s.PublishGaps(ctx, &derived, pipelineID)
+		published, gapErr := s.PublishGaps(ctx, derived, pipelineID)
 		if gapErr != nil {
 			log.Printf("question pipeline %d: publish gaps: %v", pipelineID, gapErr)
 		}
-		if published {
+		if published > 0 {
 			// The run sees the stored status: the version still waits on questions.
 			derived.Status = domain.StatusWaitingOperator
-			return &derived, nil
+			return derived, nil
 		}
 		// A failure no question can answer (a payload that no longer decodes) must not
 		// hold the version waiting: nothing would wake it up.
@@ -251,9 +258,9 @@ func (s *QuestionService) answerAt(ctx context.Context, form *domain.Form, asked
 			// A question that can land on this version still waits in the dashboard:
 			// keep the version waiting, so the pending answer finds it. Questions
 			// for other documents do not hold this one.
-			if s.hasActiveRequestsForForm(pipelineID, &derived) {
+			if s.hasActiveRequestsForForm(pipelineID, derived) {
 				derived.Status = domain.StatusWaitingOperator
-				return &derived, nil
+				return derived, nil
 			}
 			// Nothing answers anywhere and no question went out: falling back to
 			// the stored draft lets the next stage run repair the payload. A
@@ -263,12 +270,13 @@ func (s *QuestionService) answerAt(ctx context.Context, form *domain.Form, asked
 			if err := s.forms.SetStatus(ctx, derived.FormID, derived.FormVersion, domain.StatusDraft); err != nil {
 				return nil, err
 			}
-			return &derived, nil
+			return derived, nil
 		}
 		// The returned form mirrors the stored status: a valid status would make
 		// the UI re-run the stage while its question is still open.
 		derived.Status = domain.StatusWaitingOperator
-		return &derived, s.ask(ctx, &derived, remaining, pipelineID)
+		_, askErr := s.ask(ctx, derived, remaining, pipelineID, questionsPerRun)
+		return derived, askErr
 	}
 	// The BRD is assembled from the interview answers: a valid status would freeze
 	// the raw answers as the document (roles merged into one name, one capability
@@ -282,28 +290,27 @@ func (s *QuestionService) answerAt(ctx context.Context, form *domain.Form, asked
 		return nil, err
 	}
 	derived.Status = status
-	return &derived, nil
+	return derived, nil
 }
 
 // PublishGate turns a run's gate mismatch into one blocking operator question:
 // the run path reaches the operator the same way the answer path does, so a
 // mismatch the model left asks instead of silently blocking the stage.
-func (s *QuestionService) PublishGate(ctx context.Context, form *domain.Form, failures []domain.ValidationError, pipelineID int) (bool, error) {
-	if s.requests == nil || form == nil || len(failures) == 0 {
-		return false, nil
+func (s *QuestionService) PublishGate(ctx context.Context, form *domain.Form, failures []domain.ValidationError, pipelineID int, budget int) (int, error) {
+	if s.requests == nil || form == nil || len(failures) == 0 || budget <= 0 {
+		return 0, nil
 	}
 	failures = valueFailures(form.FormType, form.Payload, answerable(gapGate(failures)))
 	if len(failures) == 0 {
-		return false, nil
+		return 0, nil
 	}
-	if err := s.ask(ctx, form, failures, pipelineID); err != nil {
-		return false, err
-	}
-	return true, nil
+	return s.ask(ctx, form, failures, pipelineID, budget)
 }
 
-// ask marks the form waiting and writes one operator request for the first failure.
-func (s *QuestionService) ask(ctx context.Context, form *domain.Form, failures []domain.ValidationError, pipelineID int) error {
+// ask marks the form waiting and writes a question for each failure, up to the
+// budget. The gate failures fill what the gaps left in the batch, so the operator
+// answers five values per round instead of one value per stage run.
+func (s *QuestionService) ask(ctx context.Context, form *domain.Form, failures []domain.ValidationError, pipelineID int, budget int) (int, error) {
 	failures = answerable(failures)
 	failures = valueFailures(form.FormType, form.Payload, failures)
 	if (len(failures) == 0 || s.requests == nil) && !s.hasActiveRequestsForForm(pipelineID, form) {
@@ -316,7 +323,7 @@ func (s *QuestionService) ask(ctx context.Context, form *domain.Form, failures [
 				log.Printf("question pipeline %d: set draft: %v", pipelineID, err)
 			}
 		}
-		return nil
+		return 0, nil
 	}
 	// The version waits even when no new question goes out: the questions already
 	// in the dashboard must find it, or the next answer dies with "no form waiting".
@@ -325,28 +332,42 @@ func (s *QuestionService) ask(ctx context.Context, form *domain.Form, failures [
 			log.Printf("question pipeline %d: set waiting_operator: %v", pipelineID, err)
 		}
 	}
-	if len(failures) == 0 || s.requests == nil {
-		return nil
+	if len(failures) == 0 || s.requests == nil || budget <= 0 {
+		return 0, nil
 	}
-	first := failures[0]
-	pointer := pointerOf(first.Field)
-	// The dashboard already holds this question: do not ask twice.
+	// The dashboard already holds a question for one field: do not ask twice.
+	active := map[string]bool{}
 	if all, err := s.requests.FindAll(); err == nil {
 		for i := range all {
-			if all[i].PipelineID == pipelineID && all[i].Pointer == pointer && all[i].Status == "active" {
-				return nil
+			if all[i].PipelineID == pipelineID && all[i].Status == "active" {
+				active[normalizePointer(all[i].Pointer)] = true
 			}
 		}
 	}
-	return s.requests.Save(&domain.OperatorRequest{
-		PipelineID: pipelineID,
-		Pointer:    pointer,
-		Question:   fmt.Sprintf("Гейт бракует поле %s: %s. Что записать в поле формы %s?", first.Field, first.Problem, form.FormType),
-		Options:    nil,
-		Format:     answerFormat(form.FormType, pointer, nil),
-		Blocking:   true,
-		Status:     "active",
-	})
+	published := 0
+	for _, failure := range failures {
+		pointer := pointerOf(failure.Field)
+		if active[normalizePointer(pointer)] {
+			continue
+		}
+		if err := s.requests.Save(&domain.OperatorRequest{
+			PipelineID: pipelineID,
+			Pointer:    pointer,
+			Question:   fmt.Sprintf("Гейт бракует поле %s: %s. Что записать в поле формы %s?", failure.Field, failure.Problem, form.FormType),
+			Options:    nil,
+			Format:     answerFormat(form.FormType, pointer, nil),
+			Blocking:   true,
+			Status:     "active",
+		}); err != nil {
+			return published, err
+		}
+		active[normalizePointer(pointer)] = true
+		published++
+		if published >= budget {
+			break
+		}
+	}
+	return published, nil
 }
 
 // hasActiveRequests reports an open question for the pipeline: its answer must
@@ -1330,4 +1351,219 @@ func (s *QuestionService) CloseStale(ctx context.Context, pipelineID int) {
 			s.closeRequests(ctx, pipelineID, request.Pointer)
 		}
 	}
+}
+
+// AnswerInput is one operator decision: the pointer the question named and the
+// value the operator typed.
+type AnswerInput struct {
+	Pointer string          `json:"pointer"`
+	Value   json.RawMessage `json:"value"`
+}
+
+// answerOp is one value of a batch after the slot of the draft is resolved.
+type answerOp struct {
+	asked   string
+	pointer string
+	value   json.RawMessage
+}
+
+// AnswerManyOnPipeline applies a batch of answers as one operator action: one
+// payload write, one gate check, one stage restart. The batch is atomic: a
+// pointer outside the draft or a repeated pointer refuses the whole set, so no
+// half-applied decision reaches the document.
+func (s *QuestionService) AnswerManyOnPipeline(ctx context.Context, pipelineID int, answers []AnswerInput) (*domain.Form, error) {
+	if len(answers) == 0 {
+		return nil, fmt.Errorf("answer: the batch is empty")
+	}
+	form, firstSlot, err := s.waitingFormFor(ctx, pipelineID, answers[0].Pointer)
+	if err != nil {
+		return nil, err
+	}
+	ops := make([]answerOp, 0, len(answers))
+	for i, answer := range answers {
+		pointer := firstSlot
+		if i > 0 {
+			_, pointer = prepareSlot(form.FormType, form.Payload, normalizePointer(answer.Pointer))
+		}
+		ops = append(ops, answerOp{asked: normalizePointer(answer.Pointer), pointer: pointer, value: answer.Value})
+	}
+	return s.answerBatch(ctx, form, ops, pipelineID)
+}
+
+// waitingFormFor finds the draft that waits for this pointer in the pipeline.
+func (s *QuestionService) waitingFormFor(ctx context.Context, pipelineID int, pointer string) (*domain.Form, string, error) {
+	pointer = normalizePointer(pointer)
+	pipeline := strconv.Itoa(pipelineID)
+	// An answer to a dead question dismisses it instead of failing forever.
+	s.CloseStale(ctx, pipelineID)
+	waiting := false
+	for _, formType := range domain.FormTypesWithGates() {
+		versions, err := s.forms.ByPipeline(ctx, pipeline, formType)
+		if err != nil {
+			return nil, "", err
+		}
+		if len(versions) == 0 {
+			continue
+		}
+		if last := versions[len(versions)-1]; last.Status == domain.StatusValid || last.Status == domain.StatusApproved {
+			continue
+		}
+		waitingIdx := -1
+		for i := len(versions) - 1; i >= 0; i-- {
+			if versions[i].Status == domain.StatusWaitingOperator {
+				waitingIdx = i
+				break
+			}
+		}
+		if waitingIdx < 0 {
+			continue
+		}
+		waiting = true
+		latest := versions[waitingIdx]
+		payload, slot := prepareSlot(latest.FormType, latest.Payload, pointer)
+		if !domain.Patchable(latest.FormType, payload, slot) {
+			continue
+		}
+		prepared := *latest
+		prepared.Payload = payload
+		return &prepared, slot, nil
+	}
+	if waiting {
+		return nil, "", fmt.Errorf("pointer %s has no place in the draft: check the list index, such as /metrics/1/unit", pointer)
+	}
+	return nil, "", fmt.Errorf("%w: pipeline %d has no form waiting on %s", domain.ErrFormNotFound, pipelineID, pointer)
+}
+
+// answerBatch applies every value of one operator action, writes the draft once
+// and settles it after the gates saw the whole set.
+func (s *QuestionService) answerBatch(ctx context.Context, form *domain.Form, ops []answerOp, pipelineID int) (*domain.Form, error) {
+	if form == nil {
+		return nil, fmt.Errorf("answer: form is nil")
+	}
+	if len(ops) == 0 {
+		return nil, fmt.Errorf("answer: the batch is empty")
+	}
+	seen := make(map[string]bool, len(ops))
+	for i := range ops {
+		ops[i].asked = normalizePointer(ops[i].asked)
+		ops[i].pointer = normalizePointer(ops[i].pointer)
+		if ops[i].pointer == "" {
+			return nil, fmt.Errorf("answer: pointer is empty")
+		}
+		if seen[ops[i].pointer] {
+			return nil, fmt.Errorf("answer: %s is answered twice", ops[i].pointer)
+		}
+		seen[ops[i].pointer] = true
+		if len(ops[i].value) == 0 {
+			return nil, fmt.Errorf("answer: value for %s is empty", ops[i].pointer)
+		}
+		if ops[i].pointer != "/payload" {
+			if !domain.Patchable(form.FormType, form.Payload, ops[i].pointer) ||
+				!domain.ShapePointer(form.FormType, ops[i].pointer) {
+				return nil, fmt.Errorf("answer: %s is not a field of the %s form", ops[i].pointer, form.FormType)
+			}
+		}
+	}
+
+	// The answered gaps leave the payload: the decision went into its field.
+	var removals []int
+	for index, gapPointer := range rawGapPointers(form.Payload) {
+		normalized := normalizePointer(gapPointer)
+		resolved := resolvePointer(form.Payload, normalized)
+		for _, op := range ops {
+			if normalized == op.asked || resolved == op.pointer {
+				removals = append(removals, index)
+				break
+			}
+		}
+	}
+
+	payload := form.Payload
+	for _, op := range ops {
+		value := op.value
+		// The operator may type anything: a value that is not JSON becomes a JSON
+		// string, because an answer is a decision and never a rejected request.
+		if !json.Valid(value) {
+			quoted, err := json.Marshal(string(value))
+			if err != nil {
+				return nil, fmt.Errorf("answer: encode value: %w", err)
+			}
+			value = quoted
+		}
+		// The operator answers in plain words; the field keeps the type it has.
+		value = coerceAnswer(form.FormType, op.pointer, value)
+		if op.pointer == "/payload" {
+			payload = value
+			continue
+		}
+		patched, err := patchAnswer(form, payload, op.pointer, value)
+		if err != nil {
+			return nil, err
+		}
+		payload = patched
+	}
+	if len(removals) > 0 {
+		var ops []patchOp
+		// Remove from the end, so the earlier indexes stay valid.
+		for i := len(removals) - 1; i >= 0; i-- {
+			ops = append(ops, patchOp{Op: "remove", Path: "/openGaps/" + strconv.Itoa(removals[i])})
+		}
+		encoded, err := json.Marshal(ops)
+		if err != nil {
+			return nil, fmt.Errorf("answer: encode removals: %w", err)
+		}
+		payload, err = ApplyDelta(payload, encoded)
+		if err != nil {
+			return nil, fmt.Errorf("answer: remove answered gaps: %w", err)
+		}
+	}
+
+	derived := *form
+	if err := derived.SetPayload(payload); err != nil {
+		return nil, err
+	}
+	if err := s.forms.UpdatePayload(ctx, &derived); err != nil {
+		return nil, err
+	}
+	for _, op := range ops {
+		s.closeRequests(ctx, pipelineID, op.pointer)
+		if op.asked != "" && op.asked != op.pointer {
+			s.closeRequests(ctx, pipelineID, op.asked)
+		}
+	}
+	return s.finishAnswer(ctx, &derived, pipelineID, ops[0].pointer)
+}
+
+// patchAnswer writes one value into the current payload. A gap may name the slot
+// right past the end of an array: RFC 6902 appends there with add, while replace
+// only rewrites an existing value.
+func patchAnswer(form *domain.Form, payload json.RawMessage, pointer string, value json.RawMessage) (json.RawMessage, error) {
+	op := "replace"
+	var doc any
+	if err := json.Unmarshal(payload, &doc); err == nil {
+		if valueAt(doc, pointer) == nil {
+			op = "add"
+		}
+	}
+	var ops []patchOp
+	for _, parent := range parentsToCreate(doc, pointer) {
+		// A missing list parent must be a list: an object there makes the next
+		// add to an index fail, and the answer dies with 422. A missing record
+		// parent stays an empty object.
+		empty := json.RawMessage(`{}`)
+		if _, isList := fieldShape(form.FormType, parent).([]any); isList {
+			empty = json.RawMessage(`[]`)
+		}
+		ops = append(ops, patchOp{Op: "add", Path: parent, Value: empty})
+	}
+	ops = append(ops, patchOp{Op: op, Path: pointer, Value: value})
+	encoded, err := json.Marshal(ops)
+	if err != nil {
+		return nil, fmt.Errorf("answer: encode patch: %w", err)
+	}
+	patched, err := ApplyDelta(payload, encoded)
+	if err != nil {
+		return nil, fmt.Errorf("answer: apply value to %s: %w", pointer, err)
+	}
+	return patched, nil
 }

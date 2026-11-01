@@ -179,12 +179,12 @@ func TestOpenGapBecomesAnOperatorQuestion(t *testing.T) {
 	}
 
 	// The run publishes the open gap as one question and marks the form waiting.
-	published, blocked, err := service.PublishGaps(ctx, form, 15)
+	published, err := service.PublishGaps(ctx, form, 15)
 	if err != nil {
 		t.Fatalf("publish gaps: %v", err)
 	}
-	if !published || !blocked {
-		t.Fatalf("a blocking gap must be published and stop the stage, got published=%v blocked=%v", published, blocked)
+	if published != 1 {
+		t.Fatalf("a blocking gap must be published, got %d", published)
 	}
 	if len(requests.saved) != 1 {
 		t.Fatalf("want one operator request, got %d", len(requests.saved))
@@ -208,7 +208,7 @@ func TestOpenGapBecomesAnOperatorQuestion(t *testing.T) {
 	}
 
 	// A re-run does not ask the same question again while the request is active.
-	if _, _, err := service.PublishGaps(ctx, form, 15); err != nil {
+	if _, err := service.PublishGaps(ctx, form, 15); err != nil {
 		t.Fatalf("republish: %v", err)
 	}
 	if len(requests.saved) != 1 {
@@ -823,19 +823,19 @@ func TestOneRunAsksABatchOfValueGaps(t *testing.T) {
 		t.Fatalf("save draft: %v", err)
 	}
 
-	published, blocked, err := service.PublishGaps(ctx, form, 16)
+	published, err := service.PublishGaps(ctx, form, 16)
 	if err != nil {
 		t.Fatalf("publish gaps: %v", err)
 	}
-	if !published || !blocked {
-		t.Fatalf("want the batch published and blocking, got published=%v blocked=%v", published, blocked)
+	if published != 5 {
+		t.Fatalf("want the batch published, got %d", published)
 	}
 	if len(requests.saved) != 5 {
 		t.Fatalf("want one batch of five questions, got %d", len(requests.saved))
 	}
 
 	// A re-run while the batch waits must not stack a second batch.
-	if _, _, err := service.PublishGaps(ctx, form, 16); err != nil {
+	if _, err := service.PublishGaps(ctx, form, 16); err != nil {
 		t.Fatalf("republish: %v", err)
 	}
 	if len(requests.saved) != 5 {
