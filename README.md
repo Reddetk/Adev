@@ -180,4 +180,5 @@ adev/internal/repository/   pgx adapters, OpenAI-compatible model client with re
 adev/internal/handler/http/ REST API the console uses
 frontend/           operator console (React + TypeScript + Vite)
 docs/               requirements, architecture, diagrams
+docs/decision-chains.md  event storming of the pipeline, the decision order, where a classifier belongs
 ```
