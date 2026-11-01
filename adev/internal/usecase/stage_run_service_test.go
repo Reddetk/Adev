@@ -232,3 +232,38 @@ func (f *fakePipelineStore) FindByID(id int) (*domain.Pipeline, error) {
 	}
 	return nil, errNotFound
 }
+
+// TestStartDoesNotDoubleAStage: a second click, or an answer that starts the stage
+// while the first run still works, must not open a second run: two runs write the
+// same form and publish questions from drafts that are already past.
+func TestStartDoesNotDoubleAStage(t *testing.T) {
+	release := make(chan struct{})
+	chain := &blockingChain{release: release}
+	runs := newFakeRunStore()
+	pipelines := &fakePipelineStore{pipelines: map[int]*domain.Pipeline{
+		1: {ID: 1, TargetSystemID: 3, Route: "greenfield", Status: "ready", CurrentStage: "02"},
+	}}
+	service := NewStageRunService(chain, runs, pipelines)
+	request := StageRequest{PipelineID: "1", TargetSystemID: 3, Route: domain.RouteGreenfield, StageID: "02"}
+
+	first, err := service.Start(t.Context(), request)
+	require.NoError(t, err)
+	second, err := service.Start(t.Context(), request)
+	require.NoError(t, err)
+	assert.Equal(t, first.ID, second.ID, "the running stage answers with its own run")
+
+	close(release)
+	require.Eventually(t, func() bool { return runs.byID(first.ID).Status != "running" }, 2*time.Second, 10*time.Millisecond)
+	runs.mu.Lock()
+	rows := len(runs.rows)
+	runs.mu.Unlock()
+	assert.Equal(t, 1, rows, "no second row was written")
+}
+
+// blockingChain holds the stage until the test releases it.
+type blockingChain struct{ release chan struct{} }
+
+func (c *blockingChain) Run(_ context.Context, request StageRequest) (StageOutcome, error) {
+	<-c.release
+	return StageOutcome{Stage: request.StageID}, nil
+}

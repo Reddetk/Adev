@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -276,5 +277,73 @@ func TestAnAnsweredPointerIsNotAskedAgain(t *testing.T) {
 	}
 	if got := activeRequests(requests, 41); len(got) != 1 || got[0].Pointer != "/nfr/0/unit" {
 		t.Fatalf("want the unit question only, got %+v", got)
+	}
+}
+
+// TestAStaleDraftPublishesNothing: a second run keeps an old draft in hand while
+// the pipeline already holds a valid version of the same form. Questions from that
+// draft point at a document nobody waits for, and the operator cannot answer them.
+func TestAStaleDraftPublishesNothing(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	requests := &fakeQuestionRequests{}
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), requests)
+
+	payload := json.RawMessage(`{"premises":{"traffic":{"peakQps":0}},"openGaps":[
+		{"id":"g1","pointer":"/premises/traffic/peakQps","question":{"lang":"STE100","text":"How much traffic?"}}
+	]}`)
+	old := &domain.Form{Envelope: domain.Envelope{
+		FormID: "FRM-61-01-FEASIBILITY", FormType: domain.TypeFeasibility, SchemaVersion: 1, FormVersion: 1,
+		Status: domain.StatusWaitingOperator, Route: domain.RouteGreenfield, Stage: "01", Mode: domain.ModeFull,
+		PipelineID: "61", TargetSystemID: "2", ProducedBy: domain.RoleAnalyst,
+	}}
+	if err := old.SetRawPayload(payload); err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	if err := store.Save(ctx, old); err != nil {
+		t.Fatalf("store the old draft: %v", err)
+	}
+	accepted := *old
+	accepted.FormVersion = 2
+	accepted.Status = domain.StatusValid
+	accepted.PreviousFormVersion = &domain.Ref{FormID: old.FormID, FormType: old.FormType, FormVersion: 1}
+	if err := store.Save(ctx, &accepted); err != nil {
+		t.Fatalf("store the accepted version: %v", err)
+	}
+
+	published, err := service.PublishGaps(ctx, old, 61)
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if published != 0 {
+		t.Fatalf("a draft older than the accepted version publishes nothing, got %d", published)
+	}
+}
+
+// TestAnswerToAStaleQuestionClosesIt: the operator clicks an answer whose document
+// moved on. The question closes and the call reports a stale question, not a
+// missing form.
+func TestAnswerToAStaleQuestionClosesIt(t *testing.T) {
+	ctx := context.Background()
+	store := repository.NewMemoryFormsStore()
+	requests := &fakeQuestionRequests{}
+	service := usecase.NewQuestionService(usecase.NewFormService(store, nil), requests)
+
+	form := waitingForm(t, domain.TypeSRS, "FRM-62-02", "02", `{"fr":[]}`)
+	form.Status = domain.StatusValid
+	form.PipelineID = "62"
+	if err := store.Save(ctx, form); err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	if err := requests.Save(&domain.OperatorRequest{PipelineID: 62, Pointer: "/fr/0/actor", Status: "active", Question: "Who starts it?"}); err != nil {
+		t.Fatalf("request: %v", err)
+	}
+
+	_, err := service.AnswerOnPipeline(ctx, 62, "/fr/0/actor", json.RawMessage(`"student"`))
+	if !errors.Is(err, usecase.ErrQuestionStale) {
+		t.Fatalf("want a stale question, got %v", err)
+	}
+	if got := activeRequests(requests, 62); len(got) != 0 {
+		t.Fatalf("the stale question must close, %d still open", len(got))
 	}
 }

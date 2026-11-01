@@ -55,6 +55,12 @@ func (s *StageRunService) Start(ctx context.Context, request StageRequest) (*dom
 	if err := run.Validate(); err != nil {
 		return nil, err
 	}
+	// One stage, one run: a second click or an answer that starts the stage while
+	// the first run still works would write the same form twice and publish
+	// questions from drafts that are already past.
+	if existing := s.runningRow(pipelineID, request.StageID); existing != nil {
+		return existing, nil
+	}
 	if err := s.runs.Save(run); err != nil {
 		return nil, fmt.Errorf("stage runs: record run: %w", err)
 	}
@@ -156,4 +162,22 @@ func (s *StageRunService) owns(id uint) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.live[id]
+}
+
+// runningRow returns the run that already executes this stage of the pipeline.
+func (s *StageRunService) runningRow(pipelineID int, stage string) *domain.Run {
+	if s.runs == nil {
+		return nil
+	}
+	all, err := s.runs.FindAll()
+	if err != nil {
+		return nil
+	}
+	for i := range all {
+		if all[i].PipelineID == pipelineID && all[i].Stage == stage && all[i].Status == "running" {
+			row := all[i]
+			return &row
+		}
+	}
+	return nil
 }

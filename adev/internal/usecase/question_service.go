@@ -64,6 +64,18 @@ func (s *QuestionService) PublishGaps(ctx context.Context, form *domain.Form, pi
 	if s.hasActiveRequestsForForm(pipelineID, form) {
 		return 0, nil
 	}
+	// A draft older than an accepted version is a document nobody waits for: its
+	// questions cannot be answered, so they never go out.
+	if s.forms != nil {
+		if versions, err := s.forms.ByPipeline(ctx, strconv.Itoa(pipelineID), form.FormType); err == nil {
+			for _, version := range versions {
+				if version.FormVersion > form.FormVersion &&
+					(version.Status == domain.StatusValid || version.Status == domain.StatusApproved) {
+					return 0, nil
+				}
+			}
+		}
+	}
 	for _, position := range form.Gaps() {
 		gap := position.Gap
 		pointer := normalizePointer(gap.Pointer)
@@ -1192,7 +1204,10 @@ func (s *QuestionService) answerOnPipeline(ctx context.Context, pipelineID int, 
 	if waiting {
 		return nil, fmt.Errorf("pointer %s has no place in the draft: check the list index, such as /metrics/1/unit", pointer)
 	}
-	return nil, fmt.Errorf("%w: pipeline %d has no form waiting on %s", domain.ErrFormNotFound, pipelineID, pointer)
+	// The document moved on: the question is stale. Closing it stops the operator
+	// from answering a form that no longer waits.
+	s.closeRequests(ctx, pipelineID, pointer)
+	return nil, fmt.Errorf("%w: pipeline %d has no form waiting on %s", ErrQuestionStale, pipelineID, pointer)
 }
 
 // entryChoices lists the entries a pointer may mean when its first list without an
@@ -1598,3 +1613,7 @@ func answeredBefore(requests OperatorRequestRepository, pipelineID int, pointer 
 	}
 	return false
 }
+
+// ErrQuestionStale reports an answer whose document moved on: the form was accepted
+// or a newer version replaced the draft the question was asked about.
+var ErrQuestionStale = errors.New("the question is stale: the document moved on")
