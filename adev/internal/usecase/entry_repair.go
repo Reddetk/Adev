@@ -15,10 +15,11 @@ import (
 // the entry id the walk addresses it by, and the fields inside it that came back
 // empty.
 type entryRepair struct {
-	plan   batchPlan
-	index  int
-	id     string
-	fields []string
+	plan     batchPlan
+	index    int
+	id       string
+	fields   []string // the field names inside the entry
+	problems []string // "field: reason" pairs, the way the gate stated them
 }
 
 // maxEntryRepairs caps the repair rounds of one stage attempt: a model that cannot
@@ -69,7 +70,9 @@ func entryRepairs(output domain.FormType, payload json.RawMessage, failures []do
 			order = append(order, key)
 		}
 		// The field is named relative to the entry, the way a detail answer names it.
-		repair.fields = append(repair.fields, strings.Join(segments[2:], "."))
+		field := strings.Join(segments[2:], ".")
+		repair.fields = append(repair.fields, field)
+		repair.problems = append(repair.problems, field+": "+failure.Problem)
 	}
 	out := make([]entryRepair, 0, len(order))
 	for _, key := range order {
@@ -108,8 +111,8 @@ func (s *StageService) repairEntries(
 			continue
 		}
 		labels := []entryLabel{{plan: repair.plan, idValue: repair.id}}
-		extra := fmt.Sprintf(" The previous answer left these fields of this entry empty: %s. Fill them and repeat the whole entry.",
-			strings.Join(repair.fields, ", "))
+		extra := fmt.Sprintf(" The gates rejected these fields of this entry: %s. Correct them and repeat the whole entry.",
+			strings.Join(repair.problems, "; "))
 		echo := s.detailCall(ctx, request, client, agent, stage, output, shape, stageContext, labels, entries[repair.index], repair.plan, payload, extra)
 		if len(echo) == 0 {
 			continue

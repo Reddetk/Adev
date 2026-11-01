@@ -79,7 +79,7 @@ func TestAnEmptyFieldIsRepairedForItsEntry(t *testing.T) {
 	detailCalls, repairCalls := 0, 0
 	respond := func(request LLMRequest) (LLMResponse, error) {
 		switch {
-		case strings.Contains(request.User, "left these fields of this entry empty"):
+		case strings.Contains(request.User, "The gates rejected these fields of this entry"):
 			repairCalls++
 			return LLMResponse{Payload: json.RawMessage(`{"entry":{
 				"id":"fr-1","actor":"student","trigger":"The student opens the course.",
@@ -134,5 +134,25 @@ func TestAnEmptyFieldIsRepairedForItsEntry(t *testing.T) {
 	}
 	if len(srs.FR) != 1 || len(srs.FR[0].Acceptance) != 1 {
 		t.Fatalf("the repair must fill the acceptance, got %+v", srs.FR)
+	}
+}
+
+// TestEntryRepairCarriesTheGateReason: an entry can fail on a value that is not
+// empty, such as a tech no container runs. The repair call must name the reason the
+// gate gave, or the model repeats the same value.
+func TestEntryRepairCarriesTheGateReason(t *testing.T) {
+	payload := json.RawMessage(`{"decisions":[
+		{"id":"d-1","area":"architecture","techs":["java"]},
+		{"id":"d-7","area":"storage","techs":["postgresql"]}
+	]}`)
+	failures := []domain.ValidationError{
+		{Field: "decisions[1].techs", Problem: `"postgresql" is not the tech of any container`},
+	}
+	repairs := entryRepairs(domain.TypeHLD, payload, failures)
+	if len(repairs) != 1 {
+		t.Fatalf("want one entry to repair, got %+v", repairs)
+	}
+	if len(repairs[0].problems) != 1 || !strings.Contains(repairs[0].problems[0], "not the tech of any container") {
+		t.Fatalf("the repair must carry the gate reason, got %+v", repairs[0].problems)
 	}
 }
