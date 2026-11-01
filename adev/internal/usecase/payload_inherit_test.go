@@ -99,3 +99,26 @@ func TestTheOperatorPremisesSurviveARegeneration(t *testing.T) {
 		t.Fatalf("the answered premises must survive, got %s", merged)
 	}
 }
+
+// TestAnAnsweredRequirementSurvivesARegeneration: the SRS is filled FR by FR, and a
+// re-run that returns the same ids with empty behaviour fields must keep the
+// answers the operator already gave.
+func TestAnAnsweredRequirementSurvivesARegeneration(t *testing.T) {
+	draft := json.RawMessage(`{"fr":[{"id":"fr-1","concurrency":"per_key","idempotency":"none","delivery":"sync","failureMode":"fail_fast","statement":{"text":"The student enrols."}}]}`)
+	next := json.RawMessage(`{"fr":[{"id":"fr-1","concurrency":"","idempotency":"","delivery":"","failureMode":"","statement":{"text":"The student enrols in a course."}}]}`)
+
+	merged := inheritAccepted(draft, next)
+
+	var got struct {
+		FR []struct {
+			Concurrency string `json:"concurrency"`
+			FailureMode string `json:"failureMode"`
+		} `json:"fr"`
+	}
+	if err := json.Unmarshal(merged, &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.FR) != 1 || got.FR[0].Concurrency != "per_key" || got.FR[0].FailureMode != "fail_fast" {
+		t.Fatalf("the answered requirement must survive, got %s", merged)
+	}
+}

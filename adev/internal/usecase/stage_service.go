@@ -344,10 +344,14 @@ func (s *StageService) runForm(
 		// as a plain string instead of the Text record. Repair the wrapping only;
 		// the gates still judge the values.
 		payload = coercePayload(output, payload)
-		// A premise is a fact the operator gave: a re-run that returns the shape with
-		// zeros keeps the answer instead of asking for it again.
-		if len(resume) > 0 && output == domain.TypeFeasibility {
-			payload = inheritPremises(resume, payload)
+		// A re-run must not lose what the operator already answered: the whole
+		// previous draft fills the fields the new answer leaves empty, and the
+		// premises keep their numbers.
+		if len(resume) > 0 {
+			if output == domain.TypeFeasibility {
+				payload = inheritPremises(resume, payload)
+			}
+			payload = inheritAccepted(resume, payload)
 		}
 		payload = normalizeLLDLayout(output, payload)
 		payload = inheritAccepted(accepted, payload)
