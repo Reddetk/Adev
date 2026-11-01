@@ -9,3 +9,6 @@ frontend/dist/
 
 # The server writes its log here so a background run stays readable.
 adev/logs/
+
+# E2E tempo dumps and any local run artifact.
+adev/internal/logs/
