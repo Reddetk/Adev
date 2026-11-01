@@ -33,9 +33,11 @@
 2. Which lifecycle or actor owns this context?
 3. Which terms change meaning across this boundary?
 4. Why can these terms not share the same model?
-5. Which containers implement the context?
+5. Which PACELC class does this context promise: PA/EL, PC/EC, PA/EC or PC/EL?
+6. Which containers implement the context?
 
-**Answer:** `payload.boundedContexts[]` — `{ id, name, purpose: Text, containerIds, owns, reason }`.
+**Answer:** `payload.boundedContexts[]` — `{ id, name, purpose: Text, pacelc, containerIds, owns, reason }`.
+**Answer:** `pacelc` is `PA/EL`, `PC/EC`, `PA/EC` or `PC/EL`. A context that promises consistency (`PC/...`) needs a consistent store and at least one synchronous edge.
 
 ### Paragraph 3 — Container
 
@@ -46,7 +48,7 @@ bus deploy and fail on their own, so they are not a box inside an application.
 **Questions:**
 1. Which `objectId` identifies the container?
 2. Which bounded context does the container implement?
-3. Which runtime technology does the container use?
+3. Which runtime technology does the container use, from the registry list?
 4. Which NFR drives the technology choice?
 5. Which container accepts the request at the edge: a reverse proxy or an API gateway?
 6. Which container proves who the user is, when the BRD has a sign-up or a sign-in?
@@ -54,6 +56,7 @@ bus deploy and fail on their own, so they are not a box inside an application.
 8. Which container balances the traffic, when more than one container serves the same client?
 
 **Answer:** `payload.containers[]` — `{ objectId, purpose: Text, boundedContextId, tech, nfrRefs }`.
+**Answer:** `tech` is a closed list: `go`, `java`, `node`, `python`, `react`, `angular`, `vue`, `postgresql`, `mysql`, `mongodb`, `cassandra`, `redis`, `kafka`, `rabbitmq`, `nats`, `nginx`, `envoy`, `kong`, `keycloak`, `elasticsearch`, `minio`, `kubernetes`, `external`. A product outside the list has no container.
 **Answer:** an infrastructure container has its own `boundedContextId`, its own `tech` and its own degradation entry.
 
 ### Paragraph 4 — Aggregate
@@ -140,6 +143,10 @@ no decision history, so its choices live in the design they shape.
 10. A change to `boundedContexts` or `aggregates` requires an `ADR` on the change route.
 11. Each decision has at least one rejected alternative, and every `objectRefs` value is a container of this design.
 12. Every `decisions[].techs` value is the `tech` of a container of this design: a database, a cache or a bus the system takes is a container, not a name in a sentence.
+13. Every `boundedContexts[].pacelc` is `PA/EL`, `PC/EC`, `PA/EC` or `PC/EL`.
+14. Every `containers[].tech` is one of the technologies the registry lists.
+15. A consistent context (`PC/EC`, `PC/EL`) does not rest only on available-only stores (`cassandra`, `redis`).
+16. A consistent context that takes part in relations has at least one synchronous edge.
 
 ## Delta
 

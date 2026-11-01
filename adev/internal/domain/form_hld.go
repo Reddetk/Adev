@@ -13,6 +13,9 @@ type BoundedContext struct {
 	Name         string   `json:"name"`
 	Purpose      Text     `json:"purpose"`
 	ContainerIds []string `json:"containerIds,omitempty"`
+	// PACELC is the consistency class this boundary promises: decided before the
+	// store and the relations, because it rules both of them out.
+	PACELC PACELC `json:"pacelc"`
 }
 
 // Container is one deployable unit.

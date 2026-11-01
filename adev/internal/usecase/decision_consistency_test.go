@@ -19,8 +19,8 @@ import (
 // database that the second container carries.
 const hldOutline = `{
 	"boundedContexts": [
-		{"id": "bc-app", "name": "Delivery", "purpose": {"lang": "STE100", "text": "Move parcels."}},
-		{"id": "bc-data", "name": "Storage", "purpose": {"lang": "STE100", "text": "Keep the records."}}
+		{"id": "bc-app", "name": "Delivery", "pacelc": "PA/EL", "purpose": {"lang": "STE100", "text": "Move parcels."}},
+		{"id": "bc-data", "name": "Storage", "pacelc": "PC/EC", "purpose": {"lang": "STE100", "text": "Keep the records."}}
 	],
 	"containers": [
 		{"objectId": "c-app", "tech": "java", "boundedContextId": "bc-app", "purpose": {"lang": "STE100", "text": "Serve the client."}},
@@ -39,7 +39,7 @@ const hldOutline = `{
 // decision keeps naming a product that nothing carries.
 const containersWithoutData = `{
 	"boundedContexts": [
-		{"id": "bc-app", "name": "Delivery", "purpose": {"lang": "STE100", "text": "Move parcels."}}
+		{"id": "bc-app", "name": "Delivery", "pacelc": "PA/EL", "purpose": {"lang": "STE100", "text": "Move parcels."}}
 	],
 	"containers": [
 		{"objectId": "c-app", "tech": "java", "boundedContextId": "bc-app", "purpose": {"lang": "STE100", "text": "Serve the client."}}

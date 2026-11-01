@@ -116,6 +116,10 @@ func ValidateHLD(h HLD) error {
 		if c.ObjectID == "" {
 			errs = append(errs, invalid(fmt.Sprintf("containers[%d].objectId", i), "is empty"))
 		}
+		if !knownTechs[strings.ToLower(c.Tech)] {
+			errs = append(errs, invalid(fmt.Sprintf("containers[%d].tech", i),
+				fmt.Sprintf("unknown value %q; name one of the technologies the registry lists", c.Tech)))
+		}
 		if !contextIDs[c.BoundedContextID] {
 			errs = append(errs, invalid(fmt.Sprintf("containers[%d].boundedContextId", i), "does not exist in boundedContexts"))
 		}
@@ -124,6 +128,7 @@ func ValidateHLD(h HLD) error {
 			containerTechs[strings.ToLower(c.Tech)] = true
 		}
 	}
+	errs = append(errs, validatePACELC(h)...)
 	// A greenfield design has no decision history, so its choices live here: each
 	// one names the option taken, at least one rejected option, and the containers
 	// it fixes. A decision that points at no container fixes nothing.

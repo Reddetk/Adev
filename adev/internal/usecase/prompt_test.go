@@ -146,6 +146,35 @@ func TestFeasibilityQuestionsAskForTheWorld(t *testing.T) {
 	}
 }
 
+// TestSkeletonInstructionNamesTheClosedTechList: a product outside the list has no
+// layout and no capability, so the outline names the list and the class.
+func TestSkeletonInstructionNamesTheClosedTechList(t *testing.T) {
+	got := skeletonInstruction(domain.Stage{ID: "03"}, domain.TypeHLD)
+	for _, want := range []string{"PACELC", "PA/EL", "PC/EC", "postgresql", "cassandra", "closed list"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("the HLD outline misses %q: %s", want, got)
+		}
+	}
+}
+
+// TestFeasibilityInstructionNamesEveryPremisePointer: the model copied the zeros of
+// the shape instead of asking. The outline now carries the pointer of every premise
+// and forbids a zero the operator did not give.
+func TestFeasibilityInstructionNamesEveryPremisePointer(t *testing.T) {
+	got := skeletonInstruction(domain.Stage{ID: "01"}, domain.TypeFeasibility)
+	for _, want := range []string{
+		"Never return a zero the operator did not give",
+		"/premises/traffic/peakQps",
+		"/premises/team/languages",
+		"/premises/budgetMonthly/amount",
+		"/premises/availability",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("the TEJ outline misses %q: %s", want, got)
+		}
+	}
+}
+
 // TestSkeletonInstructionAsksForTheDecisions: a greenfield design keeps its
 // choices in the design, so the outline lists them and names what they fix.
 func TestSkeletonInstructionAsksForTheDecisions(t *testing.T) {

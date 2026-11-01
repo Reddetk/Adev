@@ -45,7 +45,7 @@ func TestGreenfieldHasNoADRStage(t *testing.T) {
 // the design, not in a second document that restates it.
 func TestHLDKeepsTheDecisions(t *testing.T) {
 	hld := HLD{
-		BoundedContexts: []BoundedContext{{ID: "bc-1", Name: "Delivery", Purpose: Text{Value: "Move parcels.", Lang: LangSTE100}}},
+		BoundedContexts: []BoundedContext{{ID: "bc-1", Name: "Delivery", Purpose: Text{Value: "Move parcels.", Lang: LangSTE100}, PACELC: PACELCPaEl}},
 		Containers: []Container{{
 			ObjectID: "c-1", BoundedContextID: "bc-1", Purpose: Text{Value: "Serve the client.", Lang: LangSTE100}, Tech: "go",
 		}},
