@@ -217,3 +217,48 @@ func TestFeasibilityPremisesSurviveARandomOperator(t *testing.T) {
 		}
 	}
 }
+
+// TestTEJDoesNotChooseTheArchitecture: the estimate prices a way to deliver the
+// system. The style needs the bounded contexts, so it belongs to the HLD and a TEJ
+// that names one is refused with the option it came from.
+func TestTEJDoesNotChooseTheArchitecture(t *testing.T) {
+	for _, phrase := range []string{"Build a monolith", "Use microservices", "An event-driven design", "A serverless delivery"} {
+		feas := feasibilityWith(validPremises())
+		feas.Options[0].Summary = Text{Value: phrase, Lang: LangSTE100}
+		err := ValidateFeasibility(feas)
+		if err == nil || !strings.Contains(err.Error(), "options[0].summary") {
+			t.Fatalf("the option %q must be refused with its field named, got %v", phrase, err)
+		}
+	}
+
+	for _, phrase := range []string{"Build the module in-house.", "Buy a ready learning platform.", "Extend the current platform."} {
+		feas := feasibilityWith(validPremises())
+		feas.Options[0].Summary = Text{Value: phrase, Lang: LangSTE100}
+		if err := ValidateFeasibility(feas); err != nil {
+			t.Fatalf("the delivery option %q must pass, got %v", phrase, err)
+		}
+	}
+}
+
+// TestDeliveryOptionsSurviveARandomTEJ: the rule agrees with an oracle on any
+// phrase, so a wording that slips through is reproducible. The seed is fixed.
+func TestDeliveryOptionsSurviveARandomTEJ(t *testing.T) {
+	random := rand.New(rand.NewSource(41))
+	clean := []string{"Build in-house.", "Buy a product.", "Extend the platform.", "Hire a team.", "Use a managed service."}
+	dirty := []string{"Build a monolith.", "Split into microservices.", "Go event-driven.", "Run serverless.", "Hexagonal modules."}
+
+	for i := 0; i < 200; i++ {
+		feas := feasibilityWith(validPremises())
+		cleanOption := clean[random.Intn(len(clean))]
+		feas.Options[0].Summary = Text{Value: cleanOption, Lang: LangSTE100}
+		if err := ValidateFeasibility(feas); err != nil {
+			t.Fatalf("iteration %d: %q must pass, got %v", i, cleanOption, err)
+		}
+
+		dirtyOption := dirty[random.Intn(len(dirty))]
+		feas.Options[0].Summary = Text{Value: dirtyOption, Lang: LangSTE100}
+		if err := ValidateFeasibility(feas); err == nil {
+			t.Fatalf("iteration %d: %q must be refused", i, dirtyOption)
+		}
+	}
+}

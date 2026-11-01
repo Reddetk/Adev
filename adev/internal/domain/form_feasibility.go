@@ -1,5 +1,10 @@
 package domain
 
+import (
+	"fmt"
+	"strings"
+)
+
 // Confidence is the strength of a cost estimate. A percentage without a method is a guess.
 type Confidence string
 
@@ -139,4 +144,32 @@ func (f Feasibility) Texts() []Text {
 		out = append(out, delta.Reason)
 	}
 	return out
+}
+
+// architectureWords are the style names the TEJ must not choose: the style is a
+// decision of the HLD, where the bounded contexts already exist and the container
+// count can prove or break it.
+var architectureWords = []string{
+	"monolith", "microservice", "event-driven", "event driven",
+	"serverless", "hexagonal", "cell-based", "cell based",
+}
+
+// validateFeasibilityOptions keeps the estimate an estimate: a delivery option,
+// not a deployment style. The live TEJ offered "a monolith" and "microservices" as
+// options before the domain had a single bounded context.
+// shortcut: a keyword check on the summary; replace it with the option kind when the
+// option carries one.
+func validateFeasibilityOptions(options []Option) []error {
+	var errs []error
+	for i, option := range options {
+		lower := strings.ToLower(option.Summary.Value)
+		for _, word := range architectureWords {
+			if strings.Contains(lower, word) {
+				errs = append(errs, invalid(fmt.Sprintf("options[%d].summary", i),
+					fmt.Sprintf("names the architecture style %q; the HLD chooses the style after the bounded contexts, the estimate prices a way to deliver", word)))
+				break
+			}
+		}
+	}
+	return errs
 }

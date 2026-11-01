@@ -11,6 +11,7 @@ import (
 func ValidateFeasibility(f Feasibility) error {
 	var errs []error
 	errs = append(errs, validatePremises(f.Premises)...)
+	errs = append(errs, validateFeasibilityOptions(f.Options)...)
 	if len(f.Options) == 0 {
 		errs = append(errs, invalid("options", "must contain at least one entry"))
 	}

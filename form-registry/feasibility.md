@@ -40,12 +40,18 @@ time. A missing premise becomes a question, never a default.
 
 ### Paragraph 1 — Option set
 
-**Scope:** The solution options that the analyst compares.
+**Scope:** The ways to deliver the system, priced: build it in-house, buy a ready
+product, extend an existing platform. Not the architecture: the style is chosen in
+the HLD, after the bounded contexts exist.
 
 **Questions:**
-1. Which option can satisfy the BRD goals?
+1. Which delivery option can satisfy the BRD goals?
 2. Which option is the smallest change to the current system?
 3. Which option uses only existing target-system objects?
+
+> Never offer "a monolith" or "microservices" as an option here: the estimate
+> prices a way to deliver, and a deployment style without bounded contexts is a
+> guess. The HLD decides the style and the gate checks it against the containers.
 
 **Answer:** `payload.options[]` — `{ id, summary: Text, reused: [objectId], created: [TargetRef] }`.
 
@@ -95,6 +101,7 @@ time. A missing premise becomes a question, never a default.
 4. `verdict: revise` returns a new `BRD` version.
 5. `scopeDelta` is not empty when `verdict` is `revise`.
 6. The premises are complete: `peakQps` and `gbPerYear` are greater than zero, the team names at least one language and a maturity level, `budgetMonthly.amount` is greater than zero, `deadlineDays` is greater than zero, and `availability` is at least 99.0 and below 100. A TEJ without the premises cannot score a design decision.
+7. No `options[].summary` names an architecture style: the style is a decision of the HLD.
 
 ## Object use
 
