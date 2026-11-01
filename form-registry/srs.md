@@ -24,9 +24,13 @@ notification are steps of a flow, so each one is a requirement of its own.
 3. Which output does the behavior give?
 4. Which state changes after the behavior?
 5. Which priority does the requirement have?
+6. What happens when two callers reach the same record at once: none, per key, or any?
+7. Is a repeated press safe: is an idempotency key required or not?
+8. Does the result return at once, or as a message with at-most-once, at-least-once or exactly-once delivery?
 
-**Answer:** `payload.fr[]` — `{ id, statement: Statement, actor, trigger, response, stateChange, priority, traceGoal }`.
+**Answer:** `payload.fr[]` — `{ id, statement: Statement, actor, trigger, response, stateChange, concurrency, idempotency, delivery, failureMode, priority, traceGoal }`.
 **Answer:** `fr[].statement` names the actor as the subject: "The client signs in with a phone code".
+**Answer:** `concurrency` is `none`, `per_key` or `any`; `idempotency` is `none` or `required`; `delivery` is `sync`, `at_most_once`, `at_least_once` or `exactly_once`; `failureMode` is `fail_fast`, `retry` or `compensate`.
 
 ### Paragraph 2 — Acceptance scenario
 
@@ -99,6 +103,9 @@ notification are steps of a flow, so each one is a requirement of its own.
 7. The `fr` list covers the flow of every actor of the BRD: a sign-in or sign-up, a
    cabinet action, and one requirement for each task the BRD names. A role with no
    requirement is a role the design drops.
+8. Each `fr` answers the four behaviour premises: `concurrency`, `idempotency`,
+   `delivery` and `failureMode`. The later decisions are scored against them, so an
+   empty answer is a requirement the design cannot place.
 
 ## Delta
 

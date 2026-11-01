@@ -69,6 +69,26 @@ func validateFunctionalRequirements(list []FunctionalRequirement, prefix string)
 		if fr.Priority != PriorityMust && fr.Priority != PriorityHigh && fr.Priority != PriorityLow {
 			errs = append(errs, invalid(field+".priority", fmt.Sprintf("unknown value %q", fr.Priority)))
 		}
+		switch fr.Concurrency {
+		case ConcurrencyNone, ConcurrencyPerKey, ConcurrencyAny:
+		default:
+			errs = append(errs, invalid(field+".concurrency", fmt.Sprintf("unknown value %q", fr.Concurrency)))
+		}
+		switch fr.Idempotency {
+		case IdempotencyNone, IdempotencyRequired:
+		default:
+			errs = append(errs, invalid(field+".idempotency", fmt.Sprintf("unknown value %q", fr.Idempotency)))
+		}
+		switch fr.Delivery {
+		case DeliverySync, DeliveryAtMostOnce, DeliveryAtLeastOnce, DeliveryExactlyOnce:
+		default:
+			errs = append(errs, invalid(field+".delivery", fmt.Sprintf("unknown value %q", fr.Delivery)))
+		}
+		switch fr.FailureMode {
+		case FailureFailFast, FailureRetry, FailureCompensate:
+		default:
+			errs = append(errs, invalid(field+".failureMode", fmt.Sprintf("unknown value %q", fr.FailureMode)))
+		}
 		if len(fr.Acceptance) == 0 {
 			errs = append(errs, invalid(field+".acceptance", "must contain at least one scenario"))
 		}

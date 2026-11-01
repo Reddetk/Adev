@@ -14,14 +14,61 @@ type ErrorSpec struct {
 	Limit     *float64 `json:"limit,omitempty"`
 }
 
+// Concurrency says how many callers may reach the same key at once: none means
+// one caller at a time, per_key serializes one key and lets the rest run, any
+// means the operation is safe in parallel.
+type Concurrency string
+
+const (
+	ConcurrencyNone   Concurrency = "none"
+	ConcurrencyPerKey Concurrency = "per_key"
+	ConcurrencyAny    Concurrency = "any"
+)
+
+// Idempotency says whether the operation may run twice with the same effect.
+type Idempotency string
+
+const (
+	IdempotencyNone     Idempotency = "none"
+	IdempotencyRequired Idempotency = "required"
+)
+
+// Delivery says how the operation reaches whoever depends on it: a sync call, or
+// a message with at most once, at least once or exactly once delivery.
+type Delivery string
+
+const (
+	DeliverySync        Delivery = "sync"
+	DeliveryAtMostOnce  Delivery = "at_most_once"
+	DeliveryAtLeastOnce Delivery = "at_least_once"
+	DeliveryExactlyOnce Delivery = "exactly_once"
+)
+
+// FailureMode says what the system does when the operation fails: stop, retry, or
+// compensate an already completed step.
+type FailureMode string
+
+const (
+	FailureFailFast   FailureMode = "fail_fast"
+	FailureRetry      FailureMode = "retry"
+	FailureCompensate FailureMode = "compensate"
+)
+
 // FunctionalRequirement is one observable behavior of the target system.
 type FunctionalRequirement struct {
-	ID          string      `json:"id"`
-	Statement   Statement   `json:"statement"`
-	Actor       string      `json:"actor"`
-	Trigger     string      `json:"trigger"`
-	Response    string      `json:"response"`
-	StateChange string      `json:"stateChange"`
+	ID          string    `json:"id"`
+	Statement   Statement `json:"statement"`
+	Actor       string    `json:"actor"`
+	Trigger     string    `json:"trigger"`
+	Response    string    `json:"response"`
+	StateChange string    `json:"stateChange"`
+	// The four answers the later decisions are scored against: how many callers
+	// reach one key, whether a repeat is safe, how the result travels, and what a
+	// failure does.
+	Concurrency Concurrency `json:"concurrency"`
+	Idempotency Idempotency `json:"idempotency"`
+	Delivery    Delivery    `json:"delivery"`
+	FailureMode FailureMode `json:"failureMode"`
 	Priority    Priority    `json:"priority"`
 	TraceGoal   string      `json:"traceGoal,omitempty"`
 	Acceptance  []Scenario  `json:"acceptance,omitempty"`

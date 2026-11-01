@@ -224,6 +224,7 @@ func skeletonInstruction(stage domain.Stage, output domain.FormType) string {
 	if output == domain.TypeSRS {
 		base += " Write one fr entry for EVERY step of the real user flow of EVERY actor in the BRD: the sign-up or the sign-in from actors[].tasks[1] (registration, authentication, password reset), the cabinet action from actors[].tasks[2], one fr for each remaining task in actors[].tasks, one fr for the payment the BRD assumptions name (charge, refund, receipt), and one fr for the notification the BRD assumptions name. " +
 			"The statement of such an fr names that actor as the subject and the business object as the object. " +
+			"Every fr names four behaviour premises: concurrency (none, per_key, any), idempotency (none, required), delivery (sync, at_most_once, at_least_once, exactly_once) and failureMode (fail_fast, retry, compensate). A premise the flow does not decide is a question, not a default. " +
 			"Write one nfr entry for every measurable quality the BRD constraints or the context name. " +
 			"Do not return empty fr and nfr lists. outOfScope lists only behaviour this SRS excludes: leave it empty when nothing is excluded."
 	}

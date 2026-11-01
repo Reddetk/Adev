@@ -254,6 +254,8 @@ func validSRS(t *testing.T) json.RawMessage {
 			Statement: domain.Statement{ID: "FR-1", Text: "The system shall register a book.", Modality: domain.ModalityShall, Priority: domain.PriorityMust},
 			Actor:     "librarian", Trigger: "a book arrives", Response: "the system stores the book",
 			StateChange: "book registered", Priority: domain.PriorityMust,
+			Concurrency: domain.ConcurrencyPerKey, Idempotency: domain.IdempotencyRequired,
+			Delivery: domain.DeliverySync, FailureMode: domain.FailureFailFast,
 			Acceptance: []domain.Scenario{{Given: "a librarian", When: "a book arrives", Then: "the book is stored"}},
 		}},
 		NFR: []domain.NonFunctionalRequirement{{
