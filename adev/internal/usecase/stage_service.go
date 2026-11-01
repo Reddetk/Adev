@@ -867,6 +867,11 @@ func (s *StageService) detailCall(
 	instruction := detailInstruction(output, stage, plan, labels, entry)
 	context := focusContext(output, stageContext, labels, entry)
 	document, keys := focusDocument(output, document, labels)
+	if tech := containerTech(document); tech != "" {
+		if template, ok := domain.PathTemplate(tech); ok {
+			instruction += fmt.Sprintf(" The container runs on %s: every package path follows %s.", tech, template)
+		}
+	}
 	if len(keys) > 0 {
 		instruction += "\nThe names the document already uses (do not reuse one for a new entry; a package key is its container and its path, so the same path in another container is not a duplicate): " + string(keys)
 	}

@@ -1,0 +1,204 @@
+package domain
+
+import (
+	"math/rand"
+	"strings"
+	"testing"
+)
+
+// D1/D4/D6: the class of a context, the storage class and the architecture style
+// are decisions of the design, not fields scattered over it. Each one is an entry
+// with its area, its evidence and its rejected options.
+
+// design builds an HLD with one context, n application containers, an optional
+// store container and the decisions the caller names.
+func design(style ArchitectureStyle, appContainers int, store string) HLD {
+	contexts := []BoundedContext{{
+		ID: "bc-1", Name: "Delivery", Purpose: Text{Value: "Move parcels.", Lang: LangSTE100},
+		PACELC: PACELCPaEl,
+	}}
+	containers := make([]Container, 0, appContainers+1)
+	for i := 0; i < appContainers; i++ {
+		containers = append(containers, Container{
+			ObjectID: "c-" + string(rune('a'+i)), BoundedContextID: "bc-1",
+			Purpose: Text{Value: "Serve the client.", Lang: LangSTE100}, Tech: TechGo,
+		})
+	}
+	if store != "" {
+		containers = append(containers, Container{
+			ObjectID: "c-store", BoundedContextID: "bc-1",
+			Purpose: Text{Value: "Keep the records.", Lang: LangSTE100}, Tech: store,
+		})
+	}
+	contexts[0].ContainerIds = make([]string, 0, len(containers))
+	for _, container := range containers {
+		contexts[0].ContainerIds = append(contexts[0].ContainerIds, container.ObjectID)
+	}
+
+	decisions := []Decision{{
+		ID: "d-consistency", Area: AreaConsistency, ContextRef: "bc-1",
+		Title:    Text{Value: "Consistency", Lang: LangSTE100},
+		Decision: Text{Value: "The context answers after the write.", Lang: LangSTE100},
+		Alternatives: []Alternative{{
+			Option:          Text{Value: "Eventual", Lang: LangSTE100},
+			RejectedBecause: Text{Value: "The client confirms the receipt.", Lang: LangSTE100},
+		}},
+	}}
+	if store != "" {
+		decisions = append(decisions, Decision{
+			ID: "d-storage", Area: AreaStorage, Title: Text{Value: "Storage", Lang: LangSTE100},
+			Decision: Text{Value: "PostgreSQL.", Lang: LangSTE100},
+			Alternatives: []Alternative{{
+				Option:          Text{Value: "MongoDB", Lang: LangSTE100},
+				RejectedBecause: Text{Value: "The route needs transactions.", Lang: LangSTE100},
+			}},
+			ObjectRefs: []string{"c-store"}, Techs: []string{store},
+		})
+	}
+	decisions = append(decisions, Decision{
+		ID: "d-architecture", Area: AreaArchitecture, Style: style,
+		Title:    Text{Value: "Architecture", Lang: LangSTE100},
+		Decision: Text{Value: "The style the design implements.", Lang: LangSTE100},
+		Alternatives: []Alternative{{
+			Option:          Text{Value: "The other style", Lang: LangSTE100},
+			RejectedBecause: Text{Value: "The team size and the budget decide.", Lang: LangSTE100},
+		}},
+	})
+
+	aggregates := make([]Aggregate, 0, appContainers)
+	for i := 0; i < appContainers; i++ {
+		aggregates = append(aggregates, Aggregate{
+			ID: "a-" + string(rune('a'+i)), ContainerID: "c-" + string(rune('a'+i)),
+			Root: "shipment", ModuleRef: "m-1",
+			Invariants: []Statement{{Text: "A shipment has one route.", Modality: "shall", Priority: "must"}},
+		})
+	}
+
+	hld := hldWith(contexts, containers, nil)
+	hld.Decisions = decisions
+	hld.Aggregates = aggregates
+	return hld
+}
+
+// TestHLDNeedsAStorageDecisionWhenItHasAStore: a store container without a storage
+// decision is a product nobody chose.
+func TestHLDNeedsAStorageDecisionWhenItHasAStore(t *testing.T) {
+	hld := design(StyleModularMonolith, 1, TechPostgres)
+	hld.Decisions = withoutArea(hld.Decisions, AreaStorage)
+	if err := ValidateHLD(hld); err == nil || !strings.Contains(err.Error(), "storage") {
+		t.Fatalf("a design with a store must decide the storage, got %v", err)
+	}
+
+	noStore := design(StyleModularMonolith, 1, "")
+	if err := ValidateHLD(noStore); err != nil {
+		t.Fatalf("a design without a store needs no storage decision, got %v", err)
+	}
+}
+
+// TestHLDNeedsAConsistencyDecisionPerContext: the class lives on the context and in
+// a decision with its rejected options, so the choice has an audit trail.
+func TestHLDNeedsAConsistencyDecisionPerContext(t *testing.T) {
+	hld := design(StyleModularMonolith, 1, "")
+	hld.Decisions = withoutArea(hld.Decisions, AreaConsistency)
+	if err := ValidateHLD(hld); err == nil || !strings.Contains(err.Error(), "bc-1") {
+		t.Fatalf("a context without a consistency decision must fail, got %v", err)
+	}
+
+	foreign := design(StyleModularMonolith, 1, "")
+	foreign.Decisions[0].ContextRef = "bc-9"
+	if err := ValidateHLD(foreign); err == nil || !strings.Contains(err.Error(), "bc-9") {
+		t.Fatalf("a decision about a context that does not exist must fail, got %v", err)
+	}
+}
+
+// TestHLDArchitectureStyleMatchesTheContainers: the style is a claim about the
+// deployment, and the containers prove or break it.
+func TestHLDArchitectureStyleMatchesTheContainers(t *testing.T) {
+	cases := []struct {
+		style      ArchitectureStyle
+		containers int
+		wantError  bool
+	}{
+		{StyleModularMonolith, 1, false},
+		{StyleModularMonolith, 2, true},
+		{StyleMonolith, 1, false},
+		{StyleMicroservices, 2, false},
+		{StyleMicroservices, 3, false},
+		{StyleMicroservices, 1, true},
+		{StyleEventDriven, 1, true},
+		{StyleServerless, 2, false},
+	}
+	for _, tc := range cases {
+		hld := design(tc.style, tc.containers, "")
+		err := ValidateHLD(hld)
+		if tc.wantError && err == nil {
+			t.Fatalf("%s over %d containers must fail", tc.style, tc.containers)
+		}
+		if !tc.wantError && err != nil {
+			t.Fatalf("%s over %d containers must pass, got %v", tc.style, tc.containers, err)
+		}
+	}
+}
+
+// TestHLDDecisionAreaIsAClosedList: an area name outside the ten says nothing and
+// cannot be scored.
+func TestHLDDecisionAreaIsAClosedList(t *testing.T) {
+	hld := design(StyleModularMonolith, 1, "")
+	hld.Decisions[0].Area = "magic"
+	if err := ValidateHLD(hld); err == nil || !strings.Contains(err.Error(), "area") {
+		t.Fatalf("an unknown area must fail, got %v", err)
+	}
+}
+
+// TestHLDNeedsExactlyOneArchitectureDecision: two styles are no style.
+func TestHLDNeedsExactlyOneArchitectureDecision(t *testing.T) {
+	hld := design(StyleModularMonolith, 1, "")
+	duplicate := hld.Decisions[len(hld.Decisions)-1]
+	duplicate.ID = "d-architecture-2"
+	hld.Decisions = append(hld.Decisions, duplicate)
+	if err := ValidateHLD(hld); err == nil || !strings.Contains(err.Error(), "architecture") {
+		t.Fatalf("two architecture decisions must fail, got %v", err)
+	}
+}
+
+// TestDecisionRulesSurviveARandomDesign: the gate agrees with an oracle on any
+// style and container count, and a store always brings its decision. The seed is
+// fixed so a failure reproduces.
+func TestDecisionRulesSurviveARandomDesign(t *testing.T) {
+	random := rand.New(rand.NewSource(31))
+	styles := []ArchitectureStyle{StyleModularMonolith, StyleMonolith, StyleMicroservices, StyleEventDriven, StyleServerless, StyleHexagonal, StyleCellBased}
+	stores := []string{"", TechPostgres, TechMongo, TechCassandra}
+
+	for i := 0; i < 200; i++ {
+		style := styles[random.Intn(len(styles))]
+		containers := 1 + random.Intn(4)
+		store := stores[random.Intn(len(stores))]
+		hld := design(style, containers, store)
+
+		wantRefused := false
+		switch style {
+		case StyleModularMonolith, StyleMonolith, StyleHexagonal:
+			wantRefused = containers > 1
+		case StyleMicroservices, StyleEventDriven, StyleCellBased, StyleServerless:
+			wantRefused = containers < 2
+		}
+		err := ValidateHLD(hld)
+		if wantRefused && err == nil {
+			t.Fatalf("iteration %d: %s over %d containers must fail", i, style, containers)
+		}
+		if !wantRefused && err != nil {
+			t.Fatalf("iteration %d: %s over %d containers must pass, got %v", i, style, containers, err)
+		}
+	}
+}
+
+// withoutArea drops every decision of one area.
+func withoutArea(decisions []Decision, area DecisionArea) []Decision {
+	kept := make([]Decision, 0, len(decisions))
+	for _, decision := range decisions {
+		if decision.Area != area {
+			kept = append(kept, decision)
+		}
+	}
+	return kept
+}

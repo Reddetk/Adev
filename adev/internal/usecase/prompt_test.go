@@ -150,7 +150,10 @@ func TestFeasibilityQuestionsAskForTheWorld(t *testing.T) {
 // layout and no capability, so the outline names the list and the class.
 func TestSkeletonInstructionNamesTheClosedTechList(t *testing.T) {
 	got := skeletonInstruction(domain.Stage{ID: "03"}, domain.TypeHLD)
-	for _, want := range []string{"PACELC", "PA/EL", "PC/EC", "postgresql", "cassandra", "closed list"} {
+	for _, want := range []string{
+		"PACELC", "PA/EL", "PC/EC", "postgresql", "cassandra", "closed list",
+		"area consistency", "contextRef", "area architecture", "modular_monolith", "event_driven",
+	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("the HLD outline misses %q: %s", want, got)
 		}
@@ -181,8 +184,8 @@ func TestSkeletonInstructionAsksForTheDecisions(t *testing.T) {
 	got := skeletonInstruction(domain.Stage{ID: "03"}, domain.TypeHLD)
 	for _, want := range []string{
 		"List the decisions this design makes",
-		"the storage product",
-		"the message bus",
+		"area storage",
+		"area architecture",
 		"objectRefs",
 	} {
 		if !strings.Contains(got, want) {

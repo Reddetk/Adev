@@ -17,12 +17,17 @@ const (
 
 // Decision is one architecture decision record.
 type Decision struct {
-	ID         string         `json:"id"`
-	Title      Text           `json:"title"`
-	Status     DecisionStatus `json:"status"`
-	Supersedes string         `json:"supersedes,omitempty"`
-	Context    Text           `json:"context,omitempty"`
-	ObjectRefs []string       `json:"objectRefs,omitempty"`
+	ID     string         `json:"id"`
+	Area   DecisionArea   `json:"area,omitempty"`
+	Title  Text           `json:"title"`
+	Status DecisionStatus `json:"status"`
+	// ContextRef names the bounded context a consistency decision belongs to.
+	ContextRef string `json:"contextRef,omitempty"`
+	// Style is the deployment style of an architecture decision.
+	Style      ArchitectureStyle `json:"style,omitempty"`
+	Supersedes string            `json:"supersedes,omitempty"`
+	Context    Text              `json:"context,omitempty"`
+	ObjectRefs []string          `json:"objectRefs,omitempty"`
 	// Techs are the products the decision fixes: the database, the bus, the cache,
 	// the proxy. Each one must be the tech of a container of the design, so a
 	// decision cannot name a component the design does not have.

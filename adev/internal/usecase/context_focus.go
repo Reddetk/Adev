@@ -470,3 +470,17 @@ func rowsOf(entry json.RawMessage, kind string) []json.RawMessage {
 	}
 	return jsonRows(object, kind)
 }
+
+// containerTech reads the tech of the branch container from the focused document.
+// A contract call carries no container, so it gets no layout line.
+func containerTech(document json.RawMessage) string {
+	var doc struct {
+		Containers []struct {
+			Tech string `json:"tech"`
+		} `json:"containers"`
+	}
+	if err := json.Unmarshal(document, &doc); err != nil || len(doc.Containers) == 0 {
+		return ""
+	}
+	return doc.Containers[0].Tech
+}

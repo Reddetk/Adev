@@ -11,6 +11,52 @@ import (
 // the tech is a closed set, and the gates check the pair.
 
 func hldWith(contexts []BoundedContext, containers []Container, relations []ContextRelation) HLD {
+	decisions := make([]Decision, 0, len(contexts)+2)
+	for _, context := range contexts {
+		decisions = append(decisions, Decision{
+			ID: "d-consistency-" + context.ID, Area: AreaConsistency, ContextRef: context.ID,
+			Title:    Text{Value: "Consistency", Lang: LangSTE100},
+			Decision: Text{Value: "The context answers as its class says.", Lang: LangSTE100},
+			Alternatives: []Alternative{{
+				Option:          Text{Value: "The other class", Lang: LangSTE100},
+				RejectedBecause: Text{Value: "The business needs this promise.", Lang: LangSTE100},
+			}},
+		})
+	}
+	code, store := 0, ""
+	for _, container := range containers {
+		if _, ok := PathRoot(container.Tech); ok {
+			code++
+		}
+		if storeTechs[strings.ToLower(container.Tech)] && store == "" {
+			store = container.Tech
+		}
+	}
+	style := StyleModularMonolith
+	if code > 1 {
+		style = StyleMicroservices
+	}
+	decisions = append(decisions, Decision{
+		ID: "d-architecture", Area: AreaArchitecture, Style: style,
+		Title:    Text{Value: "Architecture", Lang: LangSTE100},
+		Decision: Text{Value: "The style the containers carry.", Lang: LangSTE100},
+		Alternatives: []Alternative{{
+			Option:          Text{Value: "The other style", Lang: LangSTE100},
+			RejectedBecause: Text{Value: "The container count decides.", Lang: LangSTE100},
+		}},
+	})
+	if store != "" {
+		decisions = append(decisions, Decision{
+			ID: "d-storage", Area: AreaStorage,
+			Title:    Text{Value: "Storage", Lang: LangSTE100},
+			Decision: Text{Value: "The store the design carries.", Lang: LangSTE100},
+			Alternatives: []Alternative{{
+				Option:          Text{Value: "The other store", Lang: LangSTE100},
+				RejectedBecause: Text{Value: "The class decides.", Lang: LangSTE100},
+			}},
+			Techs: []string{store},
+		})
+	}
 	return HLD{
 		BoundedContexts: contexts,
 		Containers:      containers,
@@ -18,14 +64,8 @@ func hldWith(contexts []BoundedContext, containers []Container, relations []Cont
 			ID: "a-1", ContainerID: containers[0].ObjectID, Root: "shipment", ModuleRef: "m-1",
 			Invariants: []Statement{{Text: "A shipment has one route.", Modality: "shall", Priority: "must"}},
 		}},
-		ContextRelations: relations,
-		Decisions: []Decision{{
-			ID: "d-1", Title: Text{Value: "Storage", Lang: LangSTE100},
-			Decision:     Text{Value: "PostgreSQL.", Lang: LangSTE100},
-			Alternatives: []Alternative{{Option: Text{Value: "MongoDB", Lang: LangSTE100}, RejectedBecause: Text{Value: "Transactions.", Lang: LangSTE100}}},
-			ObjectRefs:   []string{"c-1"},
-			Techs:        []string{containers[0].Tech},
-		}},
+		ContextRelations:    relations,
+		Decisions:           decisions,
 		DegradationStrategy: []Degradation{{Failure: "The database is down", Degradation: "Last status", Detection: "Health check", TimeoutMs: 1000}},
 	}
 }
@@ -42,6 +82,41 @@ func shipmentContainers(tech string) []Container {
 		ObjectID: "c-1", BoundedContextID: "bc-1",
 		Purpose: Text{Value: "Serve the client.", Lang: LangSTE100}, Tech: tech,
 	}}
+}
+
+// TestPathRootOfEveryCodeTech: the layout is a table, not an interpretation of a
+// sentence. A product with no code has no root.
+func TestPathRootOfEveryCodeTech(t *testing.T) {
+	cases := map[string]string{
+		TechGo: "internal", TechJava: "src/main/java", TechNode: "src", TechPython: "src",
+		TechReact: "src", TechAngular: "src", TechVue: "src",
+	}
+	for tech, want := range cases {
+		got, ok := PathRoot(tech)
+		if !ok || got != want {
+			t.Fatalf("root of %q: got %q %v, want %q", tech, got, ok, want)
+		}
+	}
+	for _, tech := range []string{TechPostgres, TechKafka, TechKeycloak, TechNginx, TechExternal, ""} {
+		if _, ok := PathRoot(tech); ok {
+			t.Fatalf("tech %q holds no code and must have no root", tech)
+		}
+	}
+}
+
+// TestPathTemplateFollowsTheTech: the template puts the module and the layer where
+// the technology expects them.
+func TestPathTemplateFollowsTheTech(t *testing.T) {
+	cases := map[string]string{
+		TechGo: "internal/<layer>/<module>", TechJava: "src/main/java/<module>/<layer>",
+		TechReact: "src/<layer>/<module>",
+	}
+	for tech, want := range cases {
+		got, ok := PathTemplate(tech)
+		if !ok || got != want {
+			t.Fatalf("template of %q: got %q %v, want %q", tech, got, ok, want)
+		}
+	}
 }
 
 // TestHLDNeedsAPACELCClass: every bounded context answers the class before the

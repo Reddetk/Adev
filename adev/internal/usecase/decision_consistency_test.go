@@ -28,7 +28,10 @@ const hldOutline = `{
 	],
 	"aggregates": [],
 	"decisions": [
-		{"id": "d-storage", "title": {"lang": "STE100", "text": "Storage"}, "objectRefs": ["c-data"], "techs": ["postgresql"]}
+		{"id": "d-consistency-app", "area": "consistency", "contextRef": "bc-app", "title": {"lang": "STE100", "text": "Consistency"}, "decision": {"lang": "STE100", "text": "The client reads its own write."}, "alternatives": [{"option": {"lang": "STE100", "text": "Eventual"}, "rejectedBecause": {"lang": "STE100", "text": "The client confirms the receipt."}}]},
+		{"id": "d-consistency-data", "area": "consistency", "contextRef": "bc-data", "title": {"lang": "STE100", "text": "Consistency"}, "decision": {"lang": "STE100", "text": "The store waits for the write."}, "alternatives": [{"option": {"lang": "STE100", "text": "Eventual"}, "rejectedBecause": {"lang": "STE100", "text": "The route needs transactions."}}]},
+		{"id": "d-storage", "area": "storage", "title": {"lang": "STE100", "text": "Storage"}, "decision": {"lang": "STE100", "text": "PostgreSQL."}, "alternatives": [{"option": {"lang": "STE100", "text": "MongoDB"}, "rejectedBecause": {"lang": "STE100", "text": "The route needs transactions."}}], "objectRefs": ["c-data"], "techs": ["postgresql"]},
+		{"id": "d-architecture", "area": "architecture", "style": "monolith", "title": {"lang": "STE100", "text": "Architecture"}, "decision": {"lang": "STE100", "text": "One deployable unit."}, "alternatives": [{"option": {"lang": "STE100", "text": "Microservices"}, "rejectedBecause": {"lang": "STE100", "text": "One team of two."}}]}
 	],
 	"degradationStrategy": [
 		{"failure": "The database is down", "degradation": "The client sees the last status", "detection": "A health check fails", "timeoutMs": 1000}
@@ -46,7 +49,9 @@ const containersWithoutData = `{
 	],
 	"aggregates": [],
 	"decisions": [
-		{"id": "d-storage", "title": {"lang": "STE100", "text": "Storage"}, "objectRefs": ["c-app"], "techs": ["postgresql"]}
+		{"id": "d-consistency-app", "area": "consistency", "contextRef": "bc-app", "title": {"lang": "STE100", "text": "Consistency"}, "decision": {"lang": "STE100", "text": "The client reads its own write."}, "alternatives": [{"option": {"lang": "STE100", "text": "Eventual"}, "rejectedBecause": {"lang": "STE100", "text": "The client confirms the receipt."}}]},
+		{"id": "d-storage", "area": "storage", "title": {"lang": "STE100", "text": "Storage"}, "decision": {"lang": "STE100", "text": "PostgreSQL."}, "alternatives": [{"option": {"lang": "STE100", "text": "MongoDB"}, "rejectedBecause": {"lang": "STE100", "text": "The route needs transactions."}}], "objectRefs": ["c-app"], "techs": ["postgresql"]},
+		{"id": "d-architecture", "area": "architecture", "style": "monolith", "title": {"lang": "STE100", "text": "Architecture"}, "decision": {"lang": "STE100", "text": "One deployable unit."}, "alternatives": [{"option": {"lang": "STE100", "text": "Microservices"}, "rejectedBecause": {"lang": "STE100", "text": "One team of two."}}]}
 	],
 	"degradationStrategy": [
 		{"failure": "The database is down", "degradation": "The client sees the last status", "detection": "A health check fails", "timeoutMs": 1000}
@@ -59,14 +64,19 @@ func hldResponder(outline string) func(LLMRequest) (LLMResponse, error) {
 	return func(request LLMRequest) (LLMResponse, error) {
 		switch {
 		case strings.Contains(request.User, "the decisions entry with id"):
+			// The walk asks for one decision at a time: echo the one it named, so
+			// each decision keeps its own area and evidence.
+			id := ""
+			if marker := strings.LastIndex(request.User, `the decisions entry with id "`); marker >= 0 {
+				rest := request.User[marker+len(`the decisions entry with id "`):]
+				if end := strings.Index(rest, `"`); end > 0 {
+					id = rest[:end]
+				}
+			}
 			return LLMResponse{Payload: json.RawMessage(`{"entry":{
-				"id": "d-storage",
-				"title": {"lang": "STE100", "text": "Storage"},
-				"decision": {"lang": "STE100", "text": "PostgreSQL."},
-				"alternatives": [{"option": {"lang": "STE100", "text": "MongoDB"}, "rejectedBecause": {"lang": "STE100", "text": "The route needs transactions."}}],
-				"consequences": [{"lang": "STE100", "text": "Transactions."}],
-				"objectRefs": ["c-data"],
-				"techs": ["postgresql"]
+				"id": "` + id + `",
+				"decision": {"lang": "STE100", "text": "The design takes it."},
+				"alternatives": [{"option": {"lang": "STE100", "text": "The other option"}, "rejectedBecause": {"lang": "STE100", "text": "The premise decides."}}]
 			}}`)}, nil
 		case strings.Contains(request.User, `the containers entry with objectId "c-data"`):
 			return LLMResponse{Payload: json.RawMessage(`{"entry":{
@@ -128,10 +138,16 @@ func TestE2EDecisionKeepsItsContainer(t *testing.T) {
 	if err := json.Unmarshal(form.Payload, &hld); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(hld.Decisions) != 1 || len(hld.Decisions[0].Techs) != 1 || hld.Decisions[0].Techs[0] != "postgresql" {
-		t.Fatalf("the decision must keep its product, got %+v", hld.Decisions)
+	var storage *domain.Decision
+	for i := range hld.Decisions {
+		if hld.Decisions[i].ID == "d-storage" {
+			storage = &hld.Decisions[i]
+		}
 	}
-	if !designCarriesTech(hld, hld.Decisions[0].Techs[0]) {
+	if storage == nil || len(storage.Techs) != 1 || storage.Techs[0] != "postgresql" {
+		t.Fatalf("the storage decision must keep its product, got %+v", hld.Decisions)
+	}
+	if !designCarriesTech(hld, storage.Techs[0]) {
 		t.Fatal("the stored design must carry the product its decision names")
 	}
 }

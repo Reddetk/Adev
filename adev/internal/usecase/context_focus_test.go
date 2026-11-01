@@ -362,6 +362,31 @@ func TestDetailCallShipsOneContainerOfTheDocument(t *testing.T) {
 	}
 }
 
+// TestDetailCallShipsThePathRootOfTheContainer: the layout comes from the tech by
+// a table, so the prompt names the root and the template instead of letting the
+// model interpret a word.
+func TestDetailCallShipsThePathRootOfTheContainer(t *testing.T) {
+	t.Chdir("../..")
+	var seen LLMRequest
+	respond := func(request LLMRequest) (LLMResponse, error) {
+		seen = request
+		return LLMResponse{Payload: json.RawMessage(`{"entry":{"containerId":"c-app"},"layers":[]}`)}, nil
+	}
+	stages := NewStageService(nil, nil, FixedLLM(&calledLLM{next: respond}), nil)
+	stages.detailCall(
+		context.Background(), StageRequest{}, &calledLLM{next: respond}, domain.AgentConfig{},
+		domain.Stage{ID: "05"}, domain.TypeLLD, "", json.RawMessage(`{}`),
+		[]entryLabel{{plan: batchPlan{kind: "containers", idField: "containerId"}, idValue: "c-app"}},
+		json.RawMessage(`{"containerId":"c-app"}`),
+		batchPlan{kind: "layers", idField: "name"},
+		json.RawMessage(`{"containers":[{"containerId":"c-app","tech":"go"}],"contracts":[],"paths":[]}`),
+	)
+
+	if !strings.Contains(seen.User, "internal/<layer>/<module>") {
+		t.Fatalf("the prompt must name the path template of the container tech, got:\n%s", seen.User)
+	}
+}
+
 // TestDetailCallShipsTheBranchAndTheEntryAnswer: one contract call of the LLD
 // reads the branch of its relation, gets the contract paragraphs of the registry
 // page, and answers with the entry and its paths only.

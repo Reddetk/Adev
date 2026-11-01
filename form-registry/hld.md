@@ -113,9 +113,13 @@ no decision history, so its choices live in the design they shape.
 2. Which options does it reject, and which SRS requirement, NFR or constraint makes them wrong?
 3. Which containers does the decision fix?
 4. Which quality does the decision improve, and which does it cost?
+5. Which area of the design does the decision belong to: architecture, communication, storage, scaling, consistency, reliability, stack, ops, process or metrics?
+6. For a consistency decision: which bounded context does it settle?
+7. For an architecture decision: which style, from monolith, modular_monolith, hexagonal, microservices, event_driven, cell_based or serverless?
 
-**Answer:** `payload.decisions[]` — `{ id, title: Text, decision: Text, context: Text?, alternatives: [{option, rejectedBecause}], consequences: Text[], objectRefs: string[], techs: string[] }`.
+**Answer:** `payload.decisions[]` — `{ id, area, title: Text, decision: Text, context: Text?, alternatives: [{option, rejectedBecause}], consequences: Text[], objectRefs: string[], techs: string[], contextRef?, style? }`.
 **Answer:** `objectRefs` names containers of this design. `techs` names the products the decision chooses, and each product must be the `tech` of a container of this design.
+**Answer:** one consistency decision per bounded context (`contextRef`), one storage decision per design that has a store container, and exactly one architecture decision (`style`).
 
 ### Paragraph 8 — Degradation strategy (v2)
 
@@ -147,6 +151,10 @@ no decision history, so its choices live in the design they shape.
 14. Every `containers[].tech` is one of the technologies the registry lists.
 15. A consistent context (`PC/EC`, `PC/EL`) does not rest only on available-only stores (`cassandra`, `redis`).
 16. A consistent context that takes part in relations has at least one synchronous edge.
+17. Every `decisions[].area` is one of architecture, communication, storage, scaling, consistency, reliability, stack, ops, process, metrics.
+18. Every bounded context has a consistency decision whose `contextRef` names it.
+19. A design with a store container has a storage decision whose `techs` names that store.
+20. The design has exactly one architecture decision, `style` is one of the seven, and a monolith-like style carries at most one code container while a distributed style carries at least two.
 
 ## Delta
 

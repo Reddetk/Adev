@@ -53,12 +53,32 @@ func TestHLDKeepsTheDecisions(t *testing.T) {
 			ID: "a-1", ContainerID: "c-1", Root: "shipment", ModuleRef: "m-1",
 			Invariants: []Statement{{Text: "A shipment has one route.", Modality: "shall", Priority: "must"}},
 		}},
-		Decisions: []Decision{{
-			ID: "storage", Title: Text{Value: "Storage", Lang: LangSTE100},
-			Decision:     Text{Value: "PostgreSQL.", Lang: LangSTE100},
-			Alternatives: []Alternative{{Option: Text{Value: "MongoDB", Lang: LangSTE100}, RejectedBecause: Text{Value: "The route needs transactions.", Lang: LangSTE100}}},
-			ObjectRefs:   []string{"c-1"},
-		}},
+		Decisions: []Decision{
+			{
+				ID: "d-consistency", Area: AreaConsistency, ContextRef: "bc-1",
+				Title:    Text{Value: "Consistency", Lang: LangSTE100},
+				Decision: Text{Value: "The context answers after the write.", Lang: LangSTE100},
+				Alternatives: []Alternative{{
+					Option:          Text{Value: "Eventual", Lang: LangSTE100},
+					RejectedBecause: Text{Value: "The client confirms the receipt.", Lang: LangSTE100},
+				}},
+			},
+			{
+				ID: "d-architecture", Area: AreaArchitecture, Style: StyleModularMonolith,
+				Title:    Text{Value: "Architecture", Lang: LangSTE100},
+				Decision: Text{Value: "One deployable unit.", Lang: LangSTE100},
+				Alternatives: []Alternative{{
+					Option:          Text{Value: "Microservices", Lang: LangSTE100},
+					RejectedBecause: Text{Value: "The team is small.", Lang: LangSTE100},
+				}},
+			},
+			{
+				ID: "storage", Area: AreaStorage, Title: Text{Value: "Storage", Lang: LangSTE100},
+				Decision:     Text{Value: "PostgreSQL.", Lang: LangSTE100},
+				Alternatives: []Alternative{{Option: Text{Value: "MongoDB", Lang: LangSTE100}, RejectedBecause: Text{Value: "The route needs transactions.", Lang: LangSTE100}}},
+				ObjectRefs:   []string{"c-1"},
+			},
+		},
 		DegradationStrategy: []Degradation{{
 			Failure: "The database is down", Degradation: "The client sees the last known status",
 			Detection: "A health check fails", TimeoutMs: 1000,
