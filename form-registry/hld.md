@@ -7,7 +7,7 @@
 | owner | `architect` |
 | route | `greenfield`, `change` |
 | mode | `full`, `delta` |
-| inputs | `SRS`, `FEASIBILITY`, as-is `HLD`, object registry |
+| inputs | `SRS`, `BRD`, `FEASIBILITY`, as-is `HLD`, object registry |
 | next | `LLD`, `ADR` (change route) |
 
 ## Template
@@ -39,11 +39,32 @@
 **Answer:** `payload.boundedContexts[]` — `{ id, name, purpose: Text, pacelc, containerIds, owns, reason }`.
 **Answer:** `pacelc` is `PA/EL`, `PC/EC`, `PA/EC` or `PC/EL`. A context that promises consistency (`PC/...`) needs a consistent store and at least one synchronous edge.
 
-### Paragraph 3 — Container
+### Paragraph 3 — C4 context: actors and external systems
 
-**Scope:** One deployable unit. The user-facing services, the external systems and
-the infrastructure are all containers: a gateway, an identity provider and a message
-bus deploy and fail on their own, so they are not a box inside an application.
+**Scope:** The people and the systems outside the project boundary. An actor is a
+C4 person, not a container: it has no technology, no bounded context and no
+aggregate. An external system is a C4 external system, not a unit this design
+deploys: it has `tech: external`, no bounded context, no aggregate and no PACELC.
+
+**Questions:**
+1. Which actor of the BRD uses the system?
+2. Which business action does the actor perform?
+3. Which internal container accepts that action?
+4. Which SRS requirement needs that action?
+5. Which external system or physical device does the BRD assumption name?
+6. Which internal container calls it, and with which requirement?
+
+**Answer:** `payload.actors[]` — `{ id, name, brdActorRef, purpose: Text }`.
+**Answer:** `payload.actorInteractions[]` — `{ actorId, containerId, description: Text, causeRef }`.
+**Answer:** an external system is a `containers[]` entry with `tech: "external"`, no `boundedContextId`, no aggregate and no PACELC.
+**Answer:** `actorInteractions[].causeRef` is an SRS `fr` id; the FR actor and the HLD actor name are the same person.
+
+### Paragraph 4 — Container
+
+**Scope:** One deployable unit of this system. The user-facing services and the
+infrastructure are containers: a gateway, an identity provider and a message bus
+deploy and fail on their own, so they are not a box inside an application. An
+external system is not a container of this system; it belongs to Paragraph 3.
 
 **Questions:**
 1. Which `objectId` identifies the container?
@@ -57,9 +78,10 @@ bus deploy and fail on their own, so they are not a box inside an application.
 
 **Answer:** `payload.containers[]` — `{ objectId, purpose: Text, boundedContextId, tech, nfrRefs }`.
 **Answer:** `tech` is a closed list: `go`, `java`, `node`, `python`, `react`, `angular`, `vue`, `postgresql`, `mysql`, `mongodb`, `cassandra`, `redis`, `kafka`, `rabbitmq`, `nats`, `nginx`, `envoy`, `kong`, `keycloak`, `elasticsearch`, `minio`, `kubernetes`, `external`. A product outside the list has no container.
-**Answer:** an infrastructure container has its own `boundedContextId`, its own `tech` and its own degradation entry.
+**Answer:** every internal container has its own `boundedContextId`, its own `tech` and its own degradation entry. An external system has none of the first two.
+**Answer:** every container, internal or external, is reached by at least one actor interaction or context relation: a box with no arrow is not used.
 
-### Paragraph 4 — Aggregate
+### Paragraph 5 — Aggregate
 
 **Scope:** One consistency boundary inside a container found by invariant analysis.
 
@@ -75,21 +97,26 @@ bus deploy and fail on their own, so they are not a box inside an application.
 
 **Answer:** `payload.aggregates[]` — `{ id, containerId, boundedContextId, root, entityRefs, valueObjectRefs, invariants: Statement[], moduleRef, eventMaps }`.
 
-### Paragraph 5 — Context relation
+### Paragraph 6 — Context relation
 
-**Scope:** One dependency between two contexts.
+**Scope:** One edge of the flow between two containers, or between a container and
+an external system. The edge is not a guessed adjacency: it carries one business
+action and one SRS requirement.
 
 **Questions:**
-1. Which context is the upstream side?
-2. Which context is the downstream side?
+1. Which container is the upstream side?
+2. Which container or external system is the downstream side?
 3. Which contract or event carries the data?
-4. Is the call synchronous or asynchronous?
-5. What is the reason for this relationship (published language / conformist / ACL)?
+4. Is the call synchronous or asynchronous, and what does the SRS delivery premise say?
+5. What is the business action on the arrow?
+6. Which SRS requirement needs this edge?
 
-**Answer:** `payload.contextRelations[]` — `{ from, to, type: "sync" | "async", contractId?, eventRef?, relationshipType, reason }`.
-**Answer:** `sync` is a call that waits for the answer; `async` is an event the bus carries after the caller returns.
+**Answer:** `payload.contextRelations[]` — `{ from, to, type: "sync" | "async", description: Text, causeRef, contractId?, guarantee?, idempotencyKey?, retry?, dlq? }`.
+**Answer:** `sync` is a call that waits for the answer; `async` is an event the bus carries after the caller returns. The relation type follows the FR delivery: `sync` for `delivery: sync`, `async` for `at_most_once`, `at_least_once` or `exactly_once`, with the same guarantee.
+**Answer:** `causeRef` names the SRS `fr` id. An edge without `description` and `causeRef` is not a design.
+**Answer:** every SRS `fr` is carried by one actor interaction or one relation, and every container is reached by one of them.
 
-### Paragraph 6 — Semantic analysis
+### Paragraph 7 — Semantic analysis
 
 **Scope:** Record of the semantic analysis that led to context boundaries.
 
@@ -102,7 +129,7 @@ bus deploy and fail on their own, so they are not a box inside an application.
 
 **Answer:** `payload.semanticAnalysis[]` — `{ term, contexts: { boundedContextId, meaning, attributes, lifecycle }[], rationale, result }`.
 
-### Paragraph 7 — Decision
+### Paragraph 8 — Decision
 
 **Scope:** One fork the design settles: which product for the storage, the bus, the
 edge, the identity; which consistency; which failure handling. A greenfield system has
@@ -125,7 +152,7 @@ no decision history, so its choices live in the design they shape.
 **Answer:** `pattern` is one of the D7 mechanisms: `transactional_outbox`, `transaction_log_tailing`, `polling_publisher`, `dlq`, `parking_lot`, `bounded_queue_block`, `drop_new`, `degrade`, `scale_out`, `saga_orchestration`, `saga_choreography`, `two_phase_commit`. A pattern is present only when its premise is present.
 **Answer:** exactly one `ops` decision names `deployment`; the system writes its `checklist` from the pattern.
 
-### Paragraph 8 — Degradation strategy (v2)
+### Paragraph 9 — Degradation strategy (v2)
 
 **Scope:** One failure and the reduced behavior.
 
@@ -166,6 +193,12 @@ no decision history, so its choices live in the design they shape.
 23. An async relation that enters a message bus (`kafka`, `rabbitmq`, `nats`) has a decision whose `pattern` is `bounded_queue_block`, `drop_new`, `degrade` or `scale_out`.
 24. A chain of two relations across bounded contexts has a decision whose `pattern` is `saga_orchestration`, `saga_choreography` or `two_phase_commit`.
 25. A decision names a `pattern` only when its premise holds; exactly one `ops` decision names `deployment` from the closed list, the serverless style takes the serverless deployment, and its `checklist` is written by the system from the pattern.
+26. Every BRD actor is an HLD actor with the same name and `brdActorRef`; every actor has at least one interaction, and an interaction reaches an internal container, never an external system.
+27. An external system has `tech: "external"`, no `boundedContextId`, no aggregate and no PACELC; the `containerIds` of a bounded context never names it.
+28. Every internal container has a bounded context; every container, internal or external, is reached by one actor interaction or relation.
+29. Every relation names `description` and `causeRef`; `causeRef` is an SRS `fr`, the relation type follows the FR delivery, and an async guarantee equals that delivery.
+30. Every SRS `fr` is carried by one actor interaction or relation; an interaction's actor is the FR actor.
+31. A `ubiquitousLanguage[].boundedContextId` names a context of this design.
 
 ## Delta
 

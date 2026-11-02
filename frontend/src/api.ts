@@ -194,6 +194,18 @@ export type SRSPayload = {
   outOfScope?: { text?: Text }[] | null;
   traceToGoals?: string[] | null;
 };
+export type HLDActor = {
+  id: string;
+  name: string;
+  brdActorRef?: string;
+  purpose?: Text;
+};
+export type HLDActorInteraction = {
+  actorId: string;
+  containerId: string;
+  description?: Text;
+  causeRef?: string;
+};
 export type HLDContext = {
   id: string;
   name: string;
@@ -214,6 +226,10 @@ export type HLDRelation = {
   to: string;
   type?: string;
   contractId?: string;
+  // description is the business action on the C4 arrow; causeRef is the SRS
+  // requirement that needs the edge.
+  description?: Text;
+  causeRef?: string;
   // An async edge promises a delivery guarantee and names the key that makes a
   // repeated delivery safe; a sync edge answers with its return value.
   guarantee?: string;
@@ -256,6 +272,8 @@ export type HLDTerm = { term: string; definition?: Text; sourceRef?: string; bou
 export type HLDDegradation = { failure: string; degradation: string; detection?: string; timeoutMs?: number };
 export type HLDPayload = {
   ubiquitousLanguage?: HLDTerm[] | null;
+  actors?: HLDActor[] | null;
+  actorInteractions?: HLDActorInteraction[] | null;
   boundedContexts?: HLDContext[] | null;
   containers?: HLDContainer[] | null;
   aggregates?: HLDAggregate[] | null;

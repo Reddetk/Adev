@@ -37,7 +37,7 @@ var greenfieldStages = []Stage{
 	{ID: "02", Name: "Software Requirements Specification", Owner: RoleAnalyst,
 		Inputs: []FormType{TypeBRD, TypeFeasibility}, Outputs: []FormType{TypeSRS}},
 	{ID: "03", Name: "High-Level Design", Owner: RoleArchitect,
-		Inputs: []FormType{TypeSRS, TypeFeasibility}, Outputs: []FormType{TypeHLD}},
+		Inputs: []FormType{TypeSRS, TypeBRD, TypeFeasibility}, Outputs: []FormType{TypeHLD}},
 	{ID: "05", Name: "Low-Level Design", Owner: RoleAnalyst,
 		Inputs: []FormType{TypeHLD}, OptionalInputs: []FormType{TypeADR}, Outputs: []FormType{TypeLLD}},
 	{ID: "06", Name: "Task Plan", Owner: RoleAnalyst,

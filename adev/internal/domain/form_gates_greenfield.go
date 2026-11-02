@@ -112,6 +112,7 @@ func ValidateHLD(h HLD) error {
 		contextIDs[bc.ID] = true
 	}
 	containerIDs := map[string]bool{}
+	externalIDs := map[string]bool{}
 	containerTechs := map[string]bool{}
 	for i, c := range h.Containers {
 		if c.ObjectID == "" {
@@ -121,12 +122,26 @@ func ValidateHLD(h HLD) error {
 			errs = append(errs, invalid(fmt.Sprintf("containers[%d].tech", i),
 				fmt.Sprintf("unknown value %q; name one of the technologies the registry lists", c.Tech)))
 		}
-		if !contextIDs[c.BoundedContextID] {
+		if c.External() {
+			if c.BoundedContextID != "" {
+				errs = append(errs, invalid(fmt.Sprintf("containers[%d].boundedContextId", i),
+					fmt.Sprintf("an external system %q stands outside every bounded context", c.ObjectID)))
+			}
+			externalIDs[c.ObjectID] = true
+		} else if !contextIDs[c.BoundedContextID] {
 			errs = append(errs, invalid(fmt.Sprintf("containers[%d].boundedContextId", i), "does not exist in boundedContexts"))
 		}
 		containerIDs[c.ObjectID] = true
 		if c.Tech != "" {
 			containerTechs[strings.ToLower(c.Tech)] = true
+		}
+	}
+	errs = append(errs, validateSystemBoundary(h, containerIDs, externalIDs)...)
+	errs = append(errs, validateActors(h, containerIDs, externalIDs)...)
+	for i, term := range h.UbiquitousLanguage {
+		if term.BoundedContextID != "" && !contextIDs[term.BoundedContextID] {
+			errs = append(errs, invalid(fmt.Sprintf("ubiquitousLanguage[%d].boundedContextId", i),
+				fmt.Sprintf("%q does not exist in boundedContexts", term.BoundedContextID)))
 		}
 	}
 	errs = append(errs, validatePACELC(h)...)
@@ -179,6 +194,9 @@ func ValidateHLD(h HLD) error {
 		}
 		if a.ContainerID == "" || !containerIDs[a.ContainerID] {
 			errs = append(errs, invalid(fmt.Sprintf("aggregates[%d].containerId", i), "does not exist in containers"))
+		} else if externalIDs[a.ContainerID] {
+			errs = append(errs, invalid(fmt.Sprintf("aggregates[%d].containerId", i),
+				fmt.Sprintf("the external system %q holds no aggregate", a.ContainerID)))
 		}
 		if a.ModuleRef == "" {
 			errs = append(errs, invalid(fmt.Sprintf("aggregates[%d].moduleRef", i), "is empty"))
@@ -190,6 +208,12 @@ func ValidateHLD(h HLD) error {
 		}
 		if relation.Type != RelationSync && relation.Type != RelationAsync {
 			errs = append(errs, invalid(fmt.Sprintf("contextRelations[%d].type", i), fmt.Sprintf("unknown value %q", relation.Type)))
+		}
+		for _, endpoint := range []string{relation.From, relation.To} {
+			if endpoint != "" && !containerIDs[endpoint] && !contextIDs[endpoint] {
+				errs = append(errs, invalid(fmt.Sprintf("contextRelations[%d]", i),
+					fmt.Sprintf("%q is not a container or a bounded context of this design", endpoint)))
+			}
 		}
 	}
 	if len(h.DegradationStrategy) == 0 {

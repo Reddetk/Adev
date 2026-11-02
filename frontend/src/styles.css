@@ -742,7 +742,7 @@ tbody tr:hover {
   position: relative;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 14px;
+  gap: 40px 16px;
   align-items: start;
 }
 
@@ -751,6 +751,33 @@ tbody tr:hover {
   border-radius: 10px;
   padding: 10px;
   background: rgba(250, 250, 253, 0.7);
+}
+
+.c4-boundary-actors,
+.c4-boundary-external {
+  grid-column: 1 / -1;
+}
+
+.c4-boundary-actors .c4-nodes,
+.c4-boundary-external .c4-nodes {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.c4-boundary-actors .c4-node,
+.c4-boundary-external .c4-node {
+  flex: 0 1 260px;
+  width: auto;
+}
+
+.c4-boundary-actors {
+  border-color: #2a8f8a;
+  background: rgba(42, 143, 138, 0.05);
+}
+
+.c4-boundary-external {
+  border-color: #8a8a8a;
+  background: rgba(138, 138, 138, 0.05);
 }
 
 .c4-boundary-head {
@@ -768,7 +795,7 @@ tbody tr:hover {
 .c4-nodes {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 40px;
 }
 
 .c4-node {
@@ -795,6 +822,20 @@ tbody tr:hover {
 
 .c4-node.open {
   box-shadow: 0 0 0 2px rgba(45, 49, 66, 0.15);
+}
+
+.c4-node-static {
+  cursor: default;
+}
+
+.c4-node.c4-actor {
+  border-left-color: #2a8f8a;
+  background: #f4fbfa;
+}
+
+.c4-node.c4-external {
+  border-left-color: #8a8a8a;
+  background: #fafafa;
 }
 
 .c4-node-type {
@@ -871,6 +912,10 @@ tbody tr:hover {
   background: #fff;
 }
 
+.c4-actor-swatch {
+  border-left-color: #2a8f8a;
+}
+
 .c4-line {
   display: inline-block;
   width: 24px;
@@ -933,6 +978,16 @@ tbody tr:hover {
   padding: 4px 6px;
   border: 1px dashed var(--line);
   border-radius: 6px;
+}
+
+.c4-code {
+  margin: 6px 0 0 14px;
+}
+
+.c4-code summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .c4-head {

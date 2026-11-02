@@ -387,11 +387,22 @@ func (s *StageService) runForm(
 		var mismatch []string
 		var failures []domain.ValidationError
 		for repair := 0; ; repair++ {
-			err := s.forms.Submit(ctx, form)
-			if errors.Is(err, domain.ErrVersionExists) {
-				// The detail walk saved this draft after every finished entry: the
-				// accepted payload rewrites that version instead of a new one.
-				err = s.forms.UpdatePayload(ctx, form)
+			// The form gates judge the document alone; the HLD also has to agree
+			// with the BRD actors and the SRS flow it claims to carry.
+			var cross []error
+			if output == domain.TypeHLD && request.Route == domain.RouteGreenfield {
+				cross = s.hldCrossFormFailures(ctx, request.PipelineID, payload)
+			}
+			var err error
+			if len(cross) > 0 {
+				err = errors.Join(cross...)
+			} else {
+				err = s.forms.Submit(ctx, form)
+				if errors.Is(err, domain.ErrVersionExists) {
+					// The detail walk saved this draft after every finished entry: the
+					// accepted payload rewrites that version instead of a new one.
+					err = s.forms.UpdatePayload(ctx, form)
+				}
 			}
 			if err == nil {
 				break
@@ -1016,7 +1027,8 @@ func detailInstruction(output domain.FormType, stage domain.Stage, plan batchPla
 	switch plan.kind {
 	case "containers":
 		instruction += " Fill tech from the HLD context (Go, Spring, React, or the stack the context names); do not leave it empty. Every aggregate entry carries root (the entity name of the aggregate), moduleRef (the module that owns it) and at least one invariant as a Statement {text, modality, priority}; an aggregate without an invariant is not a domain rule. " +
-			"An infrastructure container (reverse proxy, API gateway, identity provider, message bus, load balancer, scheduler, external system) holds no aggregate and no invariant: leave its aggregates list empty, keep purpose one sentence on what it does for the other containers, and give it its own invariant-free degradation rule in the HLD."
+			"An infrastructure container (reverse proxy, API gateway, identity provider, message bus, load balancer, scheduler) holds no aggregate and no invariant: leave its aggregates list empty, keep purpose one sentence on what it does for the other containers, and give it its own invariant-free degradation rule in the HLD. " +
+			"An external system (tech external) is outside this system: it has no boundedContextId, no aggregate and no invariant, and the internal container that calls it owns the relation."
 	case "layers":
 		instruction += " Give every package in this layer a path. A Go container has the goca layers domain, usecase, repository, handler, di and middleware; a UI container has the atomic layers token, atom, molecule, organism, template and page. Put each HLD aggregate moduleRef in the domain layer of its container."
 	case "packages":
