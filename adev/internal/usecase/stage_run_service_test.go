@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -33,13 +34,14 @@ func TestStageRunService(t *testing.T) {
 	}
 
 	t.Run("a finished chain closes the run done", func(t *testing.T) {
-		service, _, runs := fixture(StageOutcome{Stage: "00", Attempts: 2}, nil)
+		service, chain, runs := fixture(StageOutcome{Stage: "00", Attempts: 2}, nil)
 		run, err := service.Start(t.Context(), request)
 		require.NoError(t, err)
 
 		row := waitFor(runs, run.ID)
 		assert.Equal(t, "done", row.Status)
 		assert.Equal(t, 2, row.Attempts)
+		assert.Equal(t, int(run.ID), chain.runID(), "the chain knows the run row its model calls belong to")
 	})
 
 	t.Run("a blocked chain closes the run blocked", func(t *testing.T) {
@@ -95,6 +97,7 @@ func TestStageRunService(t *testing.T) {
 
 		assert.Equal(t, 1, service.Resume(t.Context()), "one orphan row relaunches")
 		require.Eventually(t, func() bool { return chain.isCalled() }, 2*time.Second, 10*time.Millisecond)
+		assert.Equal(t, int(orphan.ID), chain.runID(), "the resumed chain keeps the row it resumes")
 
 		close(chain.hold) // the chain finishes on its own
 		row := waitFor(runs, orphan.ID)
@@ -151,6 +154,12 @@ func (f *fakeChain) isCalled() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.called
+}
+
+func (f *fakeChain) runID() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.request.RunID
 }
 
 type fakeRunStore struct {
@@ -215,6 +224,9 @@ func (f *fakeRunStore) FindAll() ([]domain.Run, error) {
 	for _, row := range f.rows {
 		out = append(out, *row)
 	}
+	// The real store answers ORDER BY id; a map iterates in random order, and the
+	// resume order decides which of two duplicate rows wins.
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
 

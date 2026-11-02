@@ -62,6 +62,8 @@ export type FormRef = { formId: string; formVersion: number };
 // AgentActivity mirrors the live book of stage runs: what an agent works on now.
 export type AgentActivity = {
   id: string;
+  // runId is the row of the runs table: every model call of this card carries it.
+  runId: number;
   pipelineId: string;
   stage: string;
   role: string;
@@ -124,10 +126,10 @@ export type ModelCheckResult = {
 };
 
 // ModelCall is one row of the cost book: one attempt of one agent role.
-// runid carries the pipeline id (shortcut: the run table stores no stage runs yet),
-// so the console filters the history by pipeline and role. Every row also keeps
-// its whole dialogue: the prompt the agent sent, the raw model answer, and the
-// gate verdicts that rejected the draft.
+// runid is the stage-run row (the same number the run card shows), so the console
+// separates the calls of every run. Every row also keeps its whole dialogue: the
+// prompt the agent sent, the raw model answer, and the gate verdicts that rejected
+// the draft.
 export type ModelCall = {
   id: number;
   runid: number;

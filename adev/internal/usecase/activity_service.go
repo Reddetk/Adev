@@ -12,6 +12,7 @@ import (
 // stage of which pipeline, how many model attempts it made, and where it ended.
 type Activity struct {
 	ID         string     `json:"id"`
+	RunID      int        `json:"runId"`
 	PipelineID string     `json:"pipelineId"`
 	Stage      string     `json:"stage"`
 	Role       string     `json:"role"`
@@ -49,12 +50,13 @@ func NewActivityService() *ActivityService {
 }
 
 // Start registers a running activity and returns its live handle.
-func (s *ActivityService) Start(pipelineID, stage, role, output string) *Activity {
+func (s *ActivityService) Start(runID int, pipelineID, stage, role, output string) *Activity {
 	if s == nil {
 		return nil
 	}
 	activity := &Activity{
 		ID:         "act-" + strconv.FormatInt(time.Now().UnixNano(), 36),
+		RunID:      runID,
 		PipelineID: pipelineID,
 		Stage:      stage,
 		Role:       role,

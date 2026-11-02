@@ -772,6 +772,12 @@ tbody tr:hover {
   width: 100%;
 }
 
+/* The request label is a sentence, not a code token: it wraps instead of pushing
+   the numeric columns off the card. */
+.model-calls .calls-request {
+  max-width: 340px;
+}
+
 .requirement-list dl.mock {
   display: grid;
   grid-template-columns: auto 1fr;

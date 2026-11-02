@@ -64,6 +64,7 @@ func (s *StageRunService) Start(ctx context.Context, request StageRequest) (*dom
 	if err := s.runs.Save(run); err != nil {
 		return nil, fmt.Errorf("stage runs: record run: %w", err)
 	}
+	request.RunID = int(run.ID)
 	s.claim(run.ID)
 	s.execute(ctx, request, run)
 	return run, nil
@@ -110,6 +111,7 @@ func (s *StageRunService) Resume(ctx context.Context) int {
 			TargetSystemID: int64(pipeline.TargetSystemID),
 			Route:          domain.Route(pipeline.Route),
 			StageID:        row.Stage,
+			RunID:          int(row.ID),
 		}
 		s.claim(row.ID)
 		s.execute(ctx, request, &row)

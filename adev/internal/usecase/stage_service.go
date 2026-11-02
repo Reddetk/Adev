@@ -28,6 +28,9 @@ type StageRequest struct {
 	TargetSystemID int64
 	Route          domain.Route
 	StageID        string
+	// RunID is the stage-run row that asked for this stage. The chain walks into
+	// the next stages of the same row, so every model call of one run carries it.
+	RunID int
 }
 
 // StageOutcome is the result of one stage run.
@@ -253,7 +256,7 @@ func (s *StageService) runForm(
 	}
 
 	// The dashboard reads the book to see what the agents work on right now.
-	activity := s.activities.Start(request.PipelineID, stage.ID, string(stage.Owner), string(output))
+	activity := s.activities.Start(request.RunID, request.PipelineID, stage.ID, string(stage.Owner), string(output))
 	defer func() {
 		if !activity.Finished() {
 			activity.Finish("failed", "the run stopped before the stage completed")
@@ -1502,10 +1505,14 @@ func (s *StageService) startModelCall(request StageRequest, agent domain.AgentCo
 		return nil
 	}
 	pipelineID, _ := strconv.Atoi(request.PipelineID)
+	runID := request.RunID
+	if runID == 0 {
+		// shortcut: a stage run outside the run service has no row of its own; the
+		// pipeline id keeps the history non-empty. Fix when every caller records a run.
+		runID = pipelineID
+	}
 	call := &domain.ModelCall{
-		// shortcut: run_id carries the pipeline id: the run table stores no stage
-		// runs yet. Point it at the run row when the recorder is wired.
-		RunID:   pipelineID,
+		RunID:   runID,
 		Profile: string(agent.Role),
 		Model:   agent.Model,
 		Stage:   request.StageID,
