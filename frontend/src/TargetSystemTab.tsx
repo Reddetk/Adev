@@ -33,6 +33,47 @@ function latestForm(list: FormDetail[]): FormDetail | null {
   return valid.find((form) => form.status === 'valid') ?? valid[0] ?? null;
 }
 
+// The labels of the HLD entities, read by the operator instead of the codes the
+// registry uses. An unknown value stays as it came: a new area must not vanish.
+const AREA_LABEL: Record<string, string> = {
+  architecture: 'архитектура',
+  communication: 'взаимодействие',
+  storage: 'хранилище',
+  scaling: 'масштабирование',
+  consistency: 'согласованность',
+  reliability: 'надёжность',
+  stack: 'стек',
+  ops: 'эксплуатация',
+  process: 'процесс',
+  metrics: 'метрики',
+};
+const STYLE_LABEL: Record<string, string> = {
+  monolith: 'монолит',
+  modular_monolith: 'модульный монолит',
+  hexagonal: 'гексагональная',
+  microservices: 'микросервисы',
+  event_driven: 'событийная',
+  cell_based: 'ячейки',
+  serverless: 'serverless',
+};
+const OWNERSHIP_LABEL: Record<string, string> = {
+  database_per_service: 'база на сервис',
+  shared_database: 'общая база',
+  read_model: 'read model из событий',
+};
+const DECISION_STATUS_LABEL: Record<string, string> = {
+  proposed: 'предложено',
+  accepted: 'принято',
+  superseded: 'заменено',
+};
+// PACELC: P is the network partition, E the normal case, L latency, C consistency.
+const PACELC_HINT: Record<string, string> = {
+  'PA/EL': 'при разделении сети отвечает, в норме быстрый: устаревшие данные допустимы',
+  'PC/EC': 'при разделении сети ждёт, в норме согласованный: платит ожиданием',
+  'PA/EC': 'при разделении сети отвечает, в норме согласованный',
+  'PC/EL': 'при разделении сети ждёт, в норме быстрый',
+};
+
 export function TargetSystemTab({ api, pipelineId }: { api: Api; pipelineId: string }) {
   const [rows, setRows] = useState<FormDetail[]>([]);
   const [loading, setLoading] = useState(false);
@@ -106,6 +147,19 @@ export function TargetSystemTab({ api, pipelineId }: { api: Api; pipelineId: str
   const hld = docs.hld;
   const lld = docs.lld;
   const relations = hld.contextRelations ?? [];
+  // The term-to-context link is optional in the form: a column of dashes is noise.
+  const termsWithContext = (hld.ubiquitousLanguage ?? []).some((term) => term.boundedContextId);
+  // A relation names either a bounded context or a container of the design: the
+  // table shows the name the operator knows, not only the id.
+  const contextName = (id: string) =>
+    (hld.boundedContexts ?? []).find((context) => context.id === id)?.name;
+  const endpoint = (id: string) => {
+    const context = contextName(id);
+    if (context) return `${id} · ${context}`;
+    const container = (hld.containers ?? []).find((item) => item.objectId === id);
+    const owner = container?.boundedContextId ? contextName(container.boundedContextId) : undefined;
+    return owner ? `${id} · ${owner}` : cell(id);
+  };
 
   return (
     <>
@@ -113,7 +167,8 @@ export function TargetSystemTab({ api, pipelineId }: { api: Api; pipelineId: str
         <h2>Документация проекта</h2>
         <p className="hint">
           Источник правды — сохранённые формы выбранного пайплайна. Разделы появляются по мере прохождения
-          стадий: требования из SRS, карта контекстов и инварианты из HLD, физика — из LLD.
+          стадий: требования из SRS, единый язык, решения, границы контекстов и инварианты из HLD, физика — из
+          LLD.
         </p>
         {loading && <p className="hint">Загружаю…</p>}
         {error && <p className="check bad">{error}</p>}
@@ -180,13 +235,50 @@ export function TargetSystemTab({ api, pipelineId }: { api: Api; pipelineId: str
         </section>
       )}
 
+      {(hld.ubiquitousLanguage?.length ?? 0) > 0 && (
+        <section>
+          <h3>Единый язык</h3>
+          <p className="hint">
+            Слова, у которых в этом проекте своё значение. Термин живёт в границах своего контекста: одно
+            слово в двух контекстах — это два разных понятия.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>термин</th>
+                <th>определение</th>
+                {termsWithContext && <th>контекст</th>}
+                <th>источник</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(hld.ubiquitousLanguage ?? []).map((term, index) => (
+                <tr key={`${term.term}-${index}`}>
+                  <td>
+                    <b>{term.term}</b>
+                  </td>
+                  <td>{text(term.definition)}</td>
+                  {termsWithContext && <td>{cell(term.boundedContextId)}</td>}
+                  <td className="mono">{cell(term.sourceRef)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
       {(hld.boundedContexts?.length ?? 0) > 0 && (
         <section>
           <h3>Context Map</h3>
           <div className="questions">
             {(hld.boundedContexts ?? []).map((context) => (
               <article className="question" key={context.id}>
-                <b>{context.name}</b> <span className="tag">{context.id}</span>
+                <b>{context.name}</b> <span className="tag">{context.id}</span>{' '}
+                {context.pacelc && (
+                  <span className="state ok" title={PACELC_HINT[context.pacelc] ?? 'класс PACELC'}>
+                    {context.pacelc}
+                  </span>
+                )}
                 <p>{text(context.purpose)}</p>
                 {(context.containerIds ?? []).length > 0 && (
                   <p className="hint">контейнеры: {(context.containerIds ?? []).join(', ')}</p>
@@ -202,20 +294,101 @@ export function TargetSystemTab({ api, pipelineId }: { api: Api; pipelineId: str
                   <th>приёмник</th>
                   <th>тип</th>
                   <th>контракт</th>
+                  <th>гарантия доставки</th>
+                  <th>ключ идемпотентности</th>
+                  <th>надёжность</th>
                 </tr>
               </thead>
               <tbody>
-                {relations.map((relation, index) => (
-                  <tr key={`${relation.from}-${relation.to}-${index}`}>
-                     <td>{cell(relation.from)}</td>
-                     <td>{cell(relation.to)}</td>
-                     <td>{cell(relation.type)}</td>
-                     <td className="mono">{cell(relation.contractId)}</td>
-                  </tr>
-                ))}
+                {relations.map((relation, index) => {
+                  const reliability = [
+                    relation.retry ? 'повтор при сбое' : '',
+                    relation.dlq ? `DLQ: ${relation.dlq}` : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ');
+                  return (
+                    <tr key={`${relation.from}-${relation.to}-${index}`}>
+                      <td>{endpoint(relation.from)}</td>
+                      <td>{endpoint(relation.to)}</td>
+                      <td>
+                        <span className="tag">{cell(relation.type)}</span>
+                        {relation.type === 'sync' && <span className="hint"> ждёт ответа</span>}
+                        {relation.type === 'async' && <span className="hint"> событие после ответа</span>}
+                      </td>
+                      <td className="mono">{cell(relation.contractId) || '—'}</td>
+                      <td className="mono">{cell(relation.guarantee) || '—'}</td>
+                      <td className="mono">{cell(relation.idempotencyKey) || '—'}</td>
+                      <td>{reliability || '—'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
+        </section>
+      )}
+
+      {(hld.decisions?.length ?? 0) > 0 && (
+        <section>
+          <h3>Решения (ADR)</h3>
+          <p className="hint">
+            Выборы, из которых собран HLD: что взяли, что отвергли и какое требование это решило.
+          </p>
+          <div className="questions">
+            {(hld.decisions ?? []).map((decision) => (
+              <article className="card" key={decision.id}>
+                <div className="question-meta">
+                  <span className="tag">{decision.id}</span>
+                  {decision.area && <span className="tag">{AREA_LABEL[decision.area] ?? decision.area}</span>}
+                  {decision.status && (
+                    <span className={`state ${decision.status === 'accepted' ? 'ok' : ''}`}>
+                      {DECISION_STATUS_LABEL[decision.status] ?? decision.status}
+                    </span>
+                  )}
+                  {decision.contextRef && <span className="tag">контекст {decision.contextRef}</span>}
+                  {decision.style && <span className="tag">стиль: {STYLE_LABEL[decision.style] ?? decision.style}</span>}
+                  {decision.ownership && (
+                    <span className="tag">данные: {OWNERSHIP_LABEL[decision.ownership] ?? decision.ownership}</span>
+                  )}
+                </div>
+                <b>{text(decision.title)}</b>
+                <p>{text(decision.decision)}</p>
+                {(decision.techs ?? []).length > 0 && (
+                  <p className="hint">продукты: {(decision.techs ?? []).join(', ')}</p>
+                )}
+                {(decision.objectRefs ?? []).length > 0 && (
+                  <p className="hint">контейнеры решения: {(decision.objectRefs ?? []).join(', ')}</p>
+                )}
+                <details>
+                  <summary>контекст, отвергнутые варианты и следствия</summary>
+                  {text(decision.context) && <p>{text(decision.context)}</p>}
+                  {(decision.alternatives ?? []).length > 0 && (
+                    <>
+                      <p className="hint">отвергнуто:</p>
+                      <ul>
+                        {(decision.alternatives ?? []).map((alternative, index) => (
+                          <li key={index}>
+                            <b>{text(alternative.option)}</b> — {text(alternative.rejectedBecause)}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  {(decision.consequences ?? []).length > 0 && (
+                    <>
+                      <p className="hint">следствия:</p>
+                      <ul>
+                        {(decision.consequences ?? []).map((consequence, index) => (
+                          <li key={index}>{text(consequence)}</li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </details>
+              </article>
+            ))}
+          </div>
         </section>
       )}
 
@@ -225,7 +398,18 @@ export function TargetSystemTab({ api, pipelineId }: { api: Api; pipelineId: str
           {(hld.aggregates ?? []).map((aggregate) => (
             <div className="card" key={aggregate.id}>
               <b>{aggregate.root}</b> <span className="tag">{aggregate.id}</span>{' '}
-              <span className="tag">контейнер {aggregate.containerId}</span>
+              <span className="tag">контейнер {aggregate.containerId}</span>{' '}
+              {aggregate.moduleRef && (
+                <span className="tag" title="модуль, который реализует корень агрегата">
+                  модуль {aggregate.moduleRef}
+                </span>
+              )}
+              {(aggregate.entityRefs ?? []).length > 0 && (
+                <p className="hint">сущности: {(aggregate.entityRefs ?? []).join(', ')}</p>
+              )}
+              {(aggregate.eventMaps ?? []).length > 0 && (
+                <p className="hint">события: {(aggregate.eventMaps ?? []).join(', ')}</p>
+              )}
               {(aggregate.invariants ?? []).length === 0 ? (
                 <p className="hint">инвариантов нет</p>
               ) : (
@@ -351,8 +535,8 @@ function ComponentMap({
     <section>
       <h3>Карта компонентов (C4)</h3>
       <p className="hint">
-        Метка каждой сущности: <span className="tag">to-be</span> создаётся этим пайплайном,{' '}
-        <span className="tag">as-is</span> — существующая система. Наведение — назначение, правый клик — контракт.
+        Всё на карте создаётся этим пайплайном (метка <span className="tag">to-be</span>). Наведение —
+        назначение, правый клик — контракт.
       </p>
       <div className="c4">
         {containerIds.map((id) => {
@@ -372,7 +556,13 @@ function ComponentMap({
                 <span className="tag">{id}</span>
                 <span className="tag">C4 Container</span>
                 <span className="tag">to-be</span>
-                {hldContainer?.tech && <span className="tag">scope: {hldContainer.tech}</span>}
+                {hldContainer?.tech && <span className="tag">tech: {hldContainer.tech}</span>}
+                {hldContainer?.boundedContextId && (
+                  <span className="tag">контекст {hldContainer.boundedContextId}</span>
+                )}
+                {(hldContainer?.nfrRefs ?? []).length > 0 && (
+                  <span className="hint">NFR: {(hldContainer?.nfrRefs ?? []).join(', ')}</span>
+                )}
                 {related.length > 0 && <span className="hint">связи: {related.join('; ')}</span>}
               </div>
               {hldContainer && <p className="c4-purpose">{text(hldContainer.purpose)}</p>}

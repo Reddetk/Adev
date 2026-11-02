@@ -194,7 +194,14 @@ export type SRSPayload = {
   outOfScope?: { text?: Text }[] | null;
   traceToGoals?: string[] | null;
 };
-export type HLDContext = { id: string; name: string; purpose?: Text; containerIds?: string[] | null };
+export type HLDContext = {
+  id: string;
+  name: string;
+  purpose?: Text;
+  containerIds?: string[] | null;
+  // PACELC is the consistency promise of the boundary: PA/EL, PC/EC, PA/EC or PC/EL.
+  pacelc?: string;
+};
 export type HLDContainer = {
   objectId: string;
   purpose?: Text;
@@ -202,20 +209,53 @@ export type HLDContainer = {
   tech?: string;
   nfrRefs?: string[] | null;
 };
-export type HLDRelation = { from: string; to: string; type?: string; contractId?: string };
+export type HLDRelation = {
+  from: string;
+  to: string;
+  type?: string;
+  contractId?: string;
+  // An async edge promises a delivery guarantee and names the key that makes a
+  // repeated delivery safe; a sync edge answers with its return value.
+  guarantee?: string;
+  idempotencyKey?: string;
+  retry?: boolean;
+  dlq?: string;
+};
 export type HLDAggregate = {
   id: string;
   containerId: string;
   root: string;
   moduleRef?: string;
+  entityRefs?: string[] | null;
+  eventMaps?: string[] | null;
   invariants?: { text: string; modality?: string }[] | null;
 };
+export type HLDAlternative = { option?: Text; rejectedBecause?: Text };
+export type HLDDecision = {
+  id: string;
+  area?: string;
+  title?: Text;
+  status?: string;
+  contextRef?: string;
+  style?: string;
+  supersedes?: string;
+  context?: Text;
+  objectRefs?: string[] | null;
+  ownership?: string;
+  techs?: string[] | null;
+  decision?: Text;
+  alternatives?: HLDAlternative[] | null;
+  consequences?: Text[] | null;
+};
+export type HLDTerm = { term: string; definition?: Text; sourceRef?: string; boundedContextId?: string };
 export type HLDDegradation = { failure: string; degradation: string; detection?: string; timeoutMs?: number };
 export type HLDPayload = {
+  ubiquitousLanguage?: HLDTerm[] | null;
   boundedContexts?: HLDContext[] | null;
   containers?: HLDContainer[] | null;
   aggregates?: HLDAggregate[] | null;
   contextRelations?: HLDRelation[] | null;
+  decisions?: HLDDecision[] | null;
   degradationStrategy?: HLDDegradation[] | null;
 };
 export type LLDModule = { objectId: string; path: string; deps?: { providerObjectId: string; type?: string }[] | null };
