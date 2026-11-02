@@ -697,32 +697,230 @@ tbody tr:hover {
 
 /* ── Target System: карта компонентов (C4) ─────────────────────────────── */
 
-.c4 {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* Arrows sit above the boundary fill but below the boxes: the boundary is not a
+   stacking context, so the node z-index wins. */
+.c4-canvas {
+  position: relative;
 }
 
-.c4-container,
-.c4-layer,
-.c4-package {
+.c4-arrows {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.c4-arrows .c4-edge path {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+
+.c4-arrows .c4-edge.async path {
+  stroke-dasharray: 5 4;
+}
+
+.c4-arrows marker path {
+  fill: var(--muted);
+}
+
+.c4-edge-label-bg {
+  fill: #fff;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.c4-edge-label {
+  fill: var(--muted);
+  font-size: 11px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.c4-boundaries {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.c4-boundary {
+  border: 1px dashed #9aa4b8;
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(250, 250, 253, 0.7);
+}
+
+.c4-boundary-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.c4-boundary-name {
+  font-weight: 600;
+}
+
+.c4-nodes {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.c4-node {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
   border: 1px solid var(--line);
+  border-left: 4px solid var(--muted);
   border-radius: 8px;
-  padding: 8px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.c4-node:hover {
+  border-color: #9aa4b8;
+}
+
+.c4-node.open {
+  box-shadow: 0 0 0 2px rgba(45, 49, 66, 0.15);
+}
+
+.c4-node-type {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.c4-node-name {
+  font-weight: 600;
+}
+
+.c4-node-desc {
+  font-size: 12px;
+}
+
+.c4-node-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.c4-tech-code {
+  border-left-color: #2f6fb0;
+}
+
+.c4-tech-ui {
+  border-left-color: #2a8f8a;
+}
+
+.c4-tech-store {
+  border-left-color: #b07a2f;
+}
+
+.c4-tech-bus {
+  border-left-color: #6a4fb0;
+}
+
+.c4-tech-edge {
+  border-left-color: #4f5d75;
+}
+
+.c4-tech-platform {
+  border-left-color: #3d8b4a;
+}
+
+.c4-tech-external {
+  border-left-color: #8a8a8a;
+}
+
+.c4-tech-unknown {
+  border-left-color: #b9b9c0;
+}
+
+.c4-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.c4-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.c4-swatch {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--muted);
+  border-radius: 2px;
   background: #fff;
 }
 
-.c4-container {
-  border-width: 2px;
+.c4-line {
+  display: inline-block;
+  width: 24px;
+  border-top: 2px solid var(--muted);
+}
+
+.c4-line.async {
+  border-top-style: dashed;
+}
+
+.c4-detail {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.c4-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.c4-close {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .c4-layer {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background: #fafafd;
-  margin-left: 18px;
 }
 
 .c4-package {
-  margin-left: 18px;
+  margin: 8px 0 0 14px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background: #fff;
 }
 
@@ -731,7 +929,7 @@ tbody tr:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin: 4px 0 0 18px;
+  margin: 6px 0 0 14px;
   padding: 4px 6px;
   border: 1px dashed var(--line);
   border-radius: 6px;

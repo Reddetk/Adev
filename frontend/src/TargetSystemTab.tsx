@@ -2,13 +2,15 @@
 // read from the stored forms of one pipeline. Every section is a dynamic document
 // (FR, NFR, the HLD extracts) plus the component map: the future C4 view where a
 // container bundles its layers, a layer its packages, and a package its modules.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
   Api,
   FormDetail,
   HLDDegradation,
   HLDPayload,
+  HLDRelation,
   LLDPayload,
+  LLDContainer,
   LLDModule,
   SRSPayload,
   SRSFr,
@@ -73,6 +75,63 @@ const PACELC_HINT: Record<string, string> = {
   'PA/EC': 'при разделении сети отвечает, в норме согласованный',
   'PC/EL': 'при разделении сети ждёт, в норме быстрый',
 };
+
+// C4 draws one box shape for every container, so the color has to say what it
+// is. The classes mirror the closed tech list of the domain.
+type TechClass = 'code' | 'ui' | 'store' | 'bus' | 'edge' | 'platform' | 'external' | 'unknown';
+const TECH_CLASS: Record<string, TechClass> = {
+  go: 'code',
+  java: 'code',
+  node: 'code',
+  python: 'code',
+  react: 'ui',
+  angular: 'ui',
+  vue: 'ui',
+  postgresql: 'store',
+  mysql: 'store',
+  mongodb: 'store',
+  cassandra: 'store',
+  redis: 'store',
+  kafka: 'bus',
+  rabbitmq: 'bus',
+  nats: 'bus',
+  nginx: 'edge',
+  envoy: 'edge',
+  kong: 'edge',
+  keycloak: 'platform',
+  elasticsearch: 'platform',
+  minio: 'platform',
+  kubernetes: 'platform',
+  external: 'external',
+};
+const TECH_CLASS_LABEL: Record<TechClass, string> = {
+  code: 'код',
+  ui: 'интерфейс',
+  store: 'хранилище',
+  bus: 'шина',
+  edge: 'шлюз',
+  platform: 'платформа',
+  external: 'внешняя система',
+  unknown: 'без технологии',
+};
+const techClass = (tech?: string): TechClass => TECH_CLASS[(tech ?? '').toLowerCase()] ?? 'unknown';
+
+const relationLabel = (relation: HLDRelation): string => {
+  const kind =
+    relation.type === 'async' ? 'событие' : relation.type === 'sync' ? 'вызов' : relation.type || 'связь';
+  return relation.guarantee ? `${kind} · ${relation.guarantee}` : kind;
+};
+const relationHint = (relation: HLDRelation): string =>
+  [
+    relation.type === 'async' ? 'асинхронное событие' : relation.type === 'sync' ? 'синхронный вызов' : 'связь',
+    relation.contractId ? `контракт ${relation.contractId}` : '',
+    relation.guarantee ? `гарантия доставки ${relation.guarantee}` : '',
+    relation.idempotencyKey ? `ключ идемпотентности ${relation.idempotencyKey}` : '',
+    relation.retry ? 'повтор при сбое' : '',
+    relation.dlq ? `DLQ ${relation.dlq}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
 export function TargetSystemTab({ api, pipelineId }: { api: Api; pipelineId: string }) {
   const [rows, setRows] = useState<FormDetail[]>([]);
@@ -481,9 +540,53 @@ export function TargetSystemTab({ api, pipelineId }: { api: Api; pipelineId: str
   );
 }
 
-// ComponentMap renders the C4 tree: container boxes carry their layers, layers
-// their packages, packages their modules. Hover shows the purpose, right-click
-// opens the contract menu of the object.
+// ComponentMap is C4 level 2: bounded contexts as boundaries, containers as
+// typed boxes, context relations as labelled orthogonal arrows. A click opens
+// levels 3-4 of that container: layers, packages, modules.
+type C4Rect = { x: number; y: number; w: number; h: number };
+type C4Arrow = {
+  key: string;
+  d: string;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  vertical: boolean;
+  async: boolean;
+  hint: string;
+};
+type C4Node = {
+  id: string;
+  purpose: string;
+  tech: string;
+  contextId: string;
+  nfrRefs: string[];
+};
+type C4Group = { id: string; name: string; pacelc?: string; nodes: C4Node[] };
+
+// routeArrow keeps the connector orthogonal and exits the side the target lies
+// on: horizontal when the boxes are side by side, vertical when they are stacked.
+// shortcut: an arrow may cross a boundary it does not belong to and parallel
+// edges overlap; a layered layout is worth it only past ~9 boxes and ~12 arrows.
+function routeArrow(a: C4Rect, b: C4Rect): { d: string; x: number; y: number; vertical: boolean } {
+  const ax = a.x + a.w / 2;
+  const ay = a.y + a.h / 2;
+  const bx = b.x + b.w / 2;
+  const by = b.y + b.h / 2;
+  if (Math.abs(bx - ax) >= Math.abs(by - ay)) {
+    const right = bx >= ax;
+    const x1 = right ? a.x + a.w : a.x;
+    const x2 = right ? b.x : b.x + b.w;
+    const mid = (x1 + x2) / 2;
+    return { d: `M ${x1} ${ay} H ${mid} V ${by} H ${x2}`, x: mid, y: (ay + by) / 2, vertical: false };
+  }
+  const down = by >= ay;
+  const y1 = down ? a.y + a.h : a.y;
+  const y2 = down ? b.y : b.y + b.h;
+  const mid = (y1 + y2) / 2;
+  return { d: `M ${ax} ${y1} V ${mid} H ${bx} V ${y2}`, x: (ax + bx) / 2, y: mid, vertical: true };
+}
+
 function ComponentMap({
   hld,
   lld,
@@ -495,19 +598,105 @@ function ComponentMap({
   contracts: NonNullable<LLDPayload['contracts']>;
   onContract: (menu: { x: number; y: number; lines: string[]; title: string }) => void;
 }) {
+  const relations = useMemo(() => hld.contextRelations ?? [], [hld]);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [canvas, setCanvas] = useState<{ w: number; h: number; arrows: C4Arrow[] }>({
+    w: 0,
+    h: 0,
+    arrows: [],
+  });
+
   // Merge the two sources of physical structure: the HLD names the container and
   // its purpose, the LLD fills the inside. An LLD container without an HLD twin
   // still shows.
-  const hldById = new Map((hld.containers ?? []).map((container) => [container.objectId, container]));
-  const containerIds: string[] = [];
-  const seen = new Set<string>();
-  for (const container of [...(hld.containers ?? []), ...(lld.containers ?? [])]) {
-    const id = 'objectId' in container ? container.objectId : container.containerId;
-    if (!seen.has(id)) {
-      seen.add(id);
-      containerIds.push(id);
+  const { groups, nodes } = useMemo(() => {
+    const hldById = new Map((hld.containers ?? []).map((container) => [container.objectId, container]));
+    const ids: string[] = [];
+    const seen = new Set<string>();
+    for (const container of [...(hld.containers ?? []), ...(lld.containers ?? [])]) {
+      const id = 'objectId' in container ? container.objectId : container.containerId;
+      if (!seen.has(id)) {
+        seen.add(id);
+        ids.push(id);
+      }
     }
-  }
+    const contexts = hld.boundedContexts ?? [];
+    const all: C4Node[] = ids.map((id) => {
+      const container = hldById.get(id);
+      return {
+        id,
+        purpose: text(container?.purpose),
+        tech: container?.tech ?? '',
+        contextId: container?.boundedContextId ?? '',
+        nfrRefs: container?.nfrRefs ?? [],
+      };
+    });
+    const result: C4Group[] = contexts.map((context) => {
+      const order = context.containerIds ?? [];
+      const own = all.filter((node) => node.contextId === context.id);
+      const ordered = [
+        ...order
+          .map((id) => own.find((node) => node.id === id))
+          .filter((node): node is C4Node => Boolean(node)),
+        ...own.filter((node) => !order.includes(node.id)),
+      ];
+      return { id: context.id, name: context.name, pacelc: context.pacelc, nodes: ordered };
+    });
+    const grouped = new Set(result.flatMap((group) => group.nodes.map((node) => node.id)));
+    const loose = all.filter((node) => !grouped.has(node.id));
+    if (loose.length > 0) {
+      result.push({ id: '__loose', name: 'Вне границ контекста', nodes: loose });
+    }
+    return { groups: result, nodes: all };
+  }, [hld, lld]);
+
+  // Arrows depend on where the browser laid the boxes out: measure after layout
+  // and again whenever the canvas resizes, because the boxes reflow.
+  useLayoutEffect(() => {
+    const root = canvasRef.current;
+    if (!root) return;
+    const measure = () => {
+      const base = root.getBoundingClientRect();
+      const rects = new Map<string, C4Rect>();
+      root.querySelectorAll<HTMLElement>('[data-c4-id]').forEach((element) => {
+        const id = element.dataset.c4Id;
+        if (!id) return;
+        const rect = element.getBoundingClientRect();
+        rects.set(id, {
+          x: rect.left - base.left,
+          y: rect.top - base.top,
+          w: rect.width,
+          h: rect.height,
+        });
+      });
+      const arrows: C4Arrow[] = [];
+      for (const relation of relations) {
+        const from = rects.get(relation.from);
+        const to = rects.get(relation.to);
+        if (!from || !to || relation.from === relation.to) continue;
+        const route = routeArrow(from, to);
+        const label = relationLabel(relation);
+        arrows.push({
+          key: `${relation.from}->${relation.to}-${arrows.length}`,
+          ...route,
+          label,
+          width: label.length * 6.4 + 12,
+          async: relation.type === 'async',
+          hint: relationHint(relation),
+        });
+      }
+      setCanvas({ w: base.width, h: base.height, arrows });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [relations, openId]);
+
+  const openNode = nodes.find((node) => node.id === openId) ?? null;
+  const openLld = (lld.containers ?? []).find((container) => container.containerId === openNode?.id);
+  const presentClasses = [...new Set(nodes.map((node) => techClass(node.tech)))];
 
   const openMenu = (event: React.MouseEvent, title: string, lines: string[]) => {
     event.preventDefault();
@@ -535,85 +724,200 @@ function ComponentMap({
     <section>
       <h3>Карта компонентов (C4)</h3>
       <p className="hint">
-        Всё на карте создаётся этим пайплайном (метка <span className="tag">to-be</span>). Наведение —
-        назначение, правый клик — контракт.
+        C4, уровень 2 — контейнеры и связи. Граница — bounded context, цвет — класс технологии.
+        Наведение — назначение, клик — уровни 3–4 этого контейнера, правый клик — контракт.
       </p>
-      <div className="c4">
-        {containerIds.map((id) => {
-          const hldContainer = hldById.get(id);
-          const lldContainer = (lld.containers ?? []).find((item) => item.containerId === id);
-          const related = (hld.contextRelations ?? [])
-            .filter((relation) => relation.from === id || relation.to === id)
-            .map((relation) => (relation.from === id ? `→ ${relation.to}` : `← ${relation.from}`));
-          return (
+      <div className="c4-canvas" ref={canvasRef}>
+        <svg className="c4-arrows" width={canvas.w} height={canvas.h} aria-hidden="true">
+          <defs>
+            <marker
+              id="c4-arrowhead"
+              viewBox="0 0 8 8"
+              refX="7"
+              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto"
+            >
+              <path d="M 0 0 L 8 4 L 0 8 z" />
+            </marker>
+          </defs>
+          {canvas.arrows.map((arrow) => {
+            // A vertical edge is short: the label sits beside it, not on top of it.
+            const labelX = arrow.vertical ? arrow.x + arrow.width / 2 + 10 : arrow.x;
+            return (
+              <g key={arrow.key} className={arrow.async ? 'c4-edge async' : 'c4-edge'}>
+                <path d={arrow.d} markerEnd="url(#c4-arrowhead)">
+                  <title>{arrow.hint}</title>
+                </path>
+                <rect
+                  className="c4-edge-label-bg"
+                  x={labelX - arrow.width / 2}
+                  y={arrow.y - 9}
+                  width={arrow.width}
+                  height={18}
+                  rx={4}
+                />
+                <text className="c4-edge-label" x={labelX} y={arrow.y}>
+                  {arrow.label}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+        <div className="c4-boundaries">
+          {groups.map((group) => (
+            <div className="c4-boundary" data-c4-id={group.id} key={group.id}>
+              <div className="c4-boundary-head">
+                <span className="c4-boundary-name">{group.name}</span>
+                <span className="tag">{group.id}</span>
+                {group.pacelc && (
+                  <span className="state ok" title={PACELC_HINT[group.pacelc] ?? 'класс PACELC'}>
+                    {group.pacelc}
+                  </span>
+                )}
+              </div>
+              <div className="c4-nodes">
+                {group.nodes.length === 0 && <p className="hint">контейнеров нет</p>}
+                {group.nodes.map((node) => (
+                  <button
+                    type="button"
+                    key={node.id}
+                    className={`c4-node c4-tech-${techClass(node.tech)}${openId === node.id ? ' open' : ''}`}
+                    data-c4-id={node.id}
+                    title={`C4 Container · ${node.id}${node.tech ? ' · ' + node.tech : ''}${
+                      node.purpose ? ' · ' + node.purpose : ''
+                    }`}
+                    onClick={() => setOpenId(openId === node.id ? null : node.id)}
+                    onContextMenu={(event) =>
+                      openMenu(event, `Контейнер ${node.id}`, contractLines(`/containers/${node.id}`))
+                    }
+                  >
+                    <span className="c4-node-type">[Контейнер: {node.tech || 'без технологии'}]</span>
+                    <span className="c4-node-name">{node.id}</span>
+                    {node.purpose && <span className="c4-node-desc">{node.purpose}</span>}
+                    {node.nfrRefs.length > 0 && (
+                      <span className="c4-node-meta">NFR: {node.nfrRefs.join(', ')}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="c4-legend">
+        {presentClasses.map((cls) => (
+          <span className="c4-legend-item" key={cls}>
+            <span className={`c4-swatch c4-tech-${cls}`} />
+            {TECH_CLASS_LABEL[cls]}
+          </span>
+        ))}
+        <span className="c4-legend-item">
+          <span className="c4-line" />
+          синхронный вызов
+        </span>
+        <span className="c4-legend-item">
+          <span className="c4-line async" />
+          асинхронное событие
+        </span>
+      </div>
+      {openNode && (
+        <ContainerDetail
+          node={openNode}
+          container={openLld}
+          contracts={contracts}
+          contractLines={contractLines}
+          onMenu={openMenu}
+          onClose={() => setOpenId(null)}
+        />
+      )}
+    </section>
+  );
+}
+
+// ContainerDetail is C4 levels 3-4 inside one container: its layers, the packages
+// of a layer and the modules of a package.
+function ContainerDetail({
+  node,
+  container,
+  contracts,
+  contractLines,
+  onMenu,
+  onClose,
+}: {
+  node: C4Node;
+  container?: LLDContainer;
+  contracts: NonNullable<LLDPayload['contracts']>;
+  contractLines: (pointer: string) => string[];
+  onMenu: (event: React.MouseEvent, title: string, lines: string[]) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="c4-detail">
+      <div className="c4-detail-head">
+        <b>{node.id}</b>
+        <span className="tag">C4 Container</span>
+        {node.tech && <span className="tag">tech: {node.tech}</span>}
+        {node.nfrRefs.length > 0 && <span className="tag">NFR: {node.nfrRefs.join(', ')}</span>}
+        <span className="hint">уровни 3–4</span>
+        <button type="button" className="c4-close" onClick={onClose} title="закрыть">
+          закрыть
+        </button>
+      </div>
+      {node.purpose && <p className="c4-purpose">{node.purpose}</p>}
+      {(container?.layers ?? []).length === 0 && (
+        <p className="hint">слои появятся на стадии 05 (LLD)</p>
+      )}
+      {(container?.layers ?? []).map((layer, layerIndex) => (
+        <div
+          className="c4-layer"
+          key={layer.name}
+          title={`C4 Container Layer · ${layer.name}`}
+          onContextMenu={(event) =>
+            onMenu(
+              event,
+              `Слой ${layer.name} контейнера ${node.id}`,
+              contractLines(`/containers/${node.id}/layers/${layer.name}`),
+            )
+          }
+        >
+          <div className="c4-head">
+            <span className="tag">{layer.name}</span>
+            <span className="tag">C4 Container Layer</span>
+            <span className="hint">пакетов: {(layer.packages ?? []).length}</span>
+          </div>
+          {(layer.packages ?? []).map((pack, packageIndex) => (
             <div
-              className="c4-container"
-              key={id}
-              title={`С4 Container · con-id ${id}${hldContainer ? ' · ' + text(hldContainer.purpose) : ''}`}
-              onContextMenu={(event) => openMenu(event, `Контейнер ${id}`, contractLines(`/containers/${id}`))}
+              className="c4-package"
+              key={pack.path}
+              title={`C4 Component · ${pack.path}`}
+              onContextMenu={(event) =>
+                onMenu(
+                  event,
+                  `Пакет ${pack.path}`,
+                  contractLines(`/containers/${node.id}/layers/${layer.name}/packages/${pack.path}`),
+                )
+              }
             >
               <div className="c4-head">
-                <span className="tag">{id}</span>
-                <span className="tag">C4 Container</span>
-                <span className="tag">to-be</span>
-                {hldContainer?.tech && <span className="tag">tech: {hldContainer.tech}</span>}
-                {hldContainer?.boundedContextId && (
-                  <span className="tag">контекст {hldContainer.boundedContextId}</span>
-                )}
-                {(hldContainer?.nfrRefs ?? []).length > 0 && (
-                  <span className="hint">NFR: {(hldContainer?.nfrRefs ?? []).join(', ')}</span>
-                )}
-                {related.length > 0 && <span className="hint">связи: {related.join('; ')}</span>}
+                <span className="tag">{pack.path}</span>
+                <span className="tag">C4 Component</span>
               </div>
-              {hldContainer && <p className="c4-purpose">{text(hldContainer.purpose)}</p>}
-              {(lldContainer?.layers ?? []).length === 0 && <p className="hint">слои появятся на стадии 05 (LLD)</p>}
-              {(lldContainer?.layers ?? []).map((layer, layerIndex) => (
-                <div
-                  className="c4-layer"
-                  key={layer.name}
-                  title={`С4 Container Layer · ${layer.name}`}
-                  onContextMenu={(event) =>
-                    openMenu(event, `Слой ${layer.name} контейнера ${id}`, contractLines(`/containers/${id}/layers/${layer.name}`))
-                  }
-                >
-                  <div className="c4-head">
-                    <span className="tag">{layer.name}</span>
-                    <span className="tag">C4 Container Layer</span>
-                    <span className="tag">to-be</span>
-                    <span className="hint">пакетов: {(layer.packages ?? []).length}</span>
-                  </div>
-                  {(layer.packages ?? []).map((pack, packageIndex) => (
-                    <div
-                      className="c4-package"
-                      key={pack.path}
-                      title={`С4 Component · ${pack.path}`}
-                      onContextMenu={(event) =>
-                        openMenu(event, `Пакет ${pack.path}`, contractLines(`/containers/${id}/layers/${layer.name}/packages/${pack.path}`))
-                      }
-                    >
-                      <div className="c4-head">
-                        <span className="tag">{pack.path}</span>
-                        <span className="tag">C4 Component</span>
-                        <span className="tag">to-be</span>
-                      </div>
-                      {(pack.modules ?? []).map((module) => (
-                        <ModuleRow
-                          key={module.objectId}
-                          module={module}
-                          pointer={`/containers/${id}/layers/${layerIndex}/packages/${packageIndex}/modules`}
-                          contracts={contracts}
-                          onMenu={(event, lines) => openMenu(event, `Модуль ${module.path}`, lines)}
-                        />
-                      ))}
-                    </div>
-                  ))}
-                </div>
+              {(pack.modules ?? []).map((module) => (
+                <ModuleRow
+                  key={module.objectId}
+                  module={module}
+                  pointer={`/containers/${node.id}/layers/${layerIndex}/packages/${packageIndex}/modules`}
+                  contracts={contracts}
+                  onMenu={(event, lines) => onMenu(event, `Модуль ${module.path}`, lines)}
+                />
               ))}
             </div>
-          );
-        })}
-      </div>
-    </section>
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }
 
