@@ -68,6 +68,29 @@ const DECISION_STATUS_LABEL: Record<string, string> = {
   accepted: 'принято',
   superseded: 'заменено',
 };
+// D7 mechanisms and D8 deployment patterns, named as the catalogue names them.
+const PATTERN_LABEL: Record<string, string> = {
+  transactional_outbox: 'транзакционный outbox',
+  transaction_log_tailing: 'чтение журнала БД',
+  polling_publisher: 'периодический публикатор',
+  dlq: 'очередь недоставленных (DLQ)',
+  parking_lot: 'парковка сообщений',
+  bounded_queue_block: 'ограниченная очередь с блокировкой',
+  drop_new: 'сброс новых сообщений',
+  degrade: 'деградация',
+  scale_out: 'масштабирование',
+  saga_orchestration: 'сага (оркестрация)',
+  saga_choreography: 'сага (хореография)',
+  two_phase_commit: 'двухфазная фиксация',
+};
+const DEPLOYMENT_LABEL: Record<string, string> = {
+  multiple_services_per_host: 'несколько сервисов на хосте',
+  service_per_host: 'сервис на хост',
+  service_per_vm: 'сервис на VM',
+  service_per_container: 'сервис на контейнер',
+  serverless: 'serverless',
+  service_deployment_platform: 'платформа развёртывания',
+};
 // PACELC: P is the network partition, E the normal case, L latency, C consistency.
 const PACELC_HINT: Record<string, string> = {
   'PA/EL': 'при разделении сети отвечает, в норме быстрый: устаревшие данные допустимы',
@@ -410,6 +433,16 @@ export function TargetSystemTab({ api, pipelineId }: { api: Api; pipelineId: str
                   {decision.ownership && (
                     <span className="tag">данные: {OWNERSHIP_LABEL[decision.ownership] ?? decision.ownership}</span>
                   )}
+                  {decision.pattern && (
+                    <span className="tag" title="механизм распределённых данных (D7)">
+                      механизм: {PATTERN_LABEL[decision.pattern] ?? decision.pattern}
+                    </span>
+                  )}
+                  {decision.deployment && (
+                    <span className="tag" title="паттерн развёртывания (D8)">
+                      развёртывание: {DEPLOYMENT_LABEL[decision.deployment] ?? decision.deployment}
+                    </span>
+                  )}
                 </div>
                 <b>{text(decision.title)}</b>
                 <p>{text(decision.decision)}</p>
@@ -420,8 +453,18 @@ export function TargetSystemTab({ api, pipelineId }: { api: Api; pipelineId: str
                   <p className="hint">контейнеры решения: {(decision.objectRefs ?? []).join(', ')}</p>
                 )}
                 <details>
-                  <summary>контекст, отвергнутые варианты и следствия</summary>
+                  <summary>контекст, чек-лист, отвергнутые варианты и следствия</summary>
                   {text(decision.context) && <p>{text(decision.context)}</p>}
+                  {(decision.checklist ?? []).length > 0 && (
+                    <>
+                      <p className="hint">чек-лист развёртывания:</p>
+                      <ul>
+                        {(decision.checklist ?? []).map((item, index) => (
+                          <li key={index}>{item}</li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
                   {(decision.alternatives ?? []).length > 0 && (
                     <>
                       <p className="hint">отвергнуто:</p>

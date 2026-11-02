@@ -360,6 +360,9 @@ func (s *StageService) runForm(
 		payload = inheritAccepted(accepted, payload)
 		// Unaskable gaps must leave the payload before the gates see it.
 		payload = purgeUnaskableGaps(output, payload)
+		// The deployment checklist is catalogue knowledge, not model prose: the
+		// pattern the model chose decides the steps the system writes.
+		payload = fillPatternFields(output, payload)
 		if err := form.SetRawPayload(payload); err != nil {
 			activity.Finish("failed", err.Error())
 			s.record(ctx, request, stage, "failed", attempt, err.Error())
@@ -1023,7 +1026,7 @@ func detailInstruction(output domain.FormType, stage domain.Stage, plan batchPla
 	case "options":
 		instruction += " Fill the summary, the cost {currency, amount}, the scheduleDays and the confidence (low, medium or high). Estimate the cost and the schedule yourself from the scope; do not ask the operator for them."
 	case "decisions":
-		instruction += " Fill the title, the context, the decision, at least two alternatives with their option and rejectedBecause, and the consequences. The context names the SRS requirement, the SRS NFR or the constraint the HLD names that forces this decision; the rejectedBecause names the same evidence, never a BRD rule. Put in techs the products this decision chooses, each one the tech of a container of this design; a product without a container is a component the design does not have. Do not repeat the id."
+		instruction += " Fill the title, the context, the decision, at least two alternatives with their option and rejectedBecause, and the consequences. Keep the area, the pattern and the deployment the skeleton named: they are the fork the design already made. Do not fill checklist; the system writes it from the deployment pattern. The context names the SRS requirement, the SRS NFR, the FEASIBILITY premise or the constraint the HLD names that forces this decision; the rejectedBecause names the same evidence, never a BRD rule. Put in techs the products this decision chooses, each one the tech of a container of this design; a product without a container is a component the design does not have. Do not repeat the id."
 	case "tests":
 		instruction += " Fill the targetTest {kind, path}, the scenario given, when and then (each a list of Text), and expectedErrorCode on a negative path. Do not repeat the test id."
 	case "fr":

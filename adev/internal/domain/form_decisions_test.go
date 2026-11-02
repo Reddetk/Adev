@@ -64,6 +64,19 @@ func design(style ArchitectureStyle, appContainers int, store string) HLD {
 			RejectedBecause: Text{Value: "The team size and the budget decide."},
 		}},
 	})
+	deployment := DeploymentServicePerContainer
+	if style == StyleServerless {
+		deployment = DeploymentServerless
+	}
+	decisions = append(decisions, Decision{
+		ID: "d-deployment", Area: AreaOps, Deployment: deployment,
+		Title:    Text{Value: "Deployment"},
+		Decision: Text{Value: "The containers run as the pattern says."},
+		Alternatives: []Alternative{{
+			Option:          Text{Value: "The other pattern"},
+			RejectedBecause: Text{Value: "The style decides."},
+		}},
+	})
 
 	aggregates := make([]Aggregate, 0, appContainers)
 	for i := 0; i < appContainers; i++ {
@@ -153,9 +166,15 @@ func TestHLDDecisionAreaIsAClosedList(t *testing.T) {
 // TestHLDNeedsExactlyOneArchitectureDecision: two styles are no style.
 func TestHLDNeedsExactlyOneArchitectureDecision(t *testing.T) {
 	hld := design(StyleModularMonolith, 1, "")
-	duplicate := hld.Decisions[len(hld.Decisions)-1]
-	duplicate.ID = "d-architecture-2"
-	hld.Decisions = append(hld.Decisions, duplicate)
+	var architecture Decision
+	for _, decision := range hld.Decisions {
+		if decision.Area == AreaArchitecture {
+			architecture = decision
+			break
+		}
+	}
+	architecture.ID = "d-architecture-2"
+	hld.Decisions = append(hld.Decisions, architecture)
 	if err := ValidateHLD(hld); err == nil || !strings.Contains(err.Error(), "architecture") {
 		t.Fatalf("two architecture decisions must fail, got %v", err)
 	}
@@ -276,6 +295,9 @@ func TestAsyncRelationNamesAGuarantee(t *testing.T) {
 	}
 
 	hld.ContextRelations[0].Guarantee = DeliveryAtLeastOnce
+	hld.Decisions = append(hld.Decisions,
+		patternDecision("d-outbox", AreaReliability, "", PatternTransactionalOutbox),
+		patternDecision("d-dlq", AreaReliability, "", PatternDLQ))
 	if err := ValidateHLD(hld); err != nil {
 		t.Fatalf("at-least-once must pass, got %v", err)
 	}
@@ -304,6 +326,9 @@ func TestAsyncIntoAConsistentContextNeedsAKey(t *testing.T) {
 		{From: "bc-1", To: "bc-1", Type: RelationSync},
 		{From: "bc-1", To: "bc-1", Type: RelationAsync, Guarantee: DeliveryAtLeastOnce},
 	}
+	hld.Decisions = append(hld.Decisions,
+		patternDecision("d-outbox", AreaReliability, "", PatternTransactionalOutbox),
+		patternDecision("d-dlq", AreaReliability, "", PatternDLQ))
 	if err := ValidateHLD(hld); err == nil || !strings.Contains(err.Error(), "idempotencyKey") {
 		t.Fatalf("a consistent context needs the idempotency key, got %v", err)
 	}
@@ -339,6 +364,12 @@ func TestOwnershipAndGuaranteeSurviveARandomDesign(t *testing.T) {
 		hld.ContextRelations = []ContextRelation{{
 			From: "bc-1", To: "bc-1", Type: RelationAsync, Guarantee: guarantee,
 		}}
+		hld.Decisions = append(hld.Decisions,
+			patternDecision("d-outbox", AreaReliability, "", PatternTransactionalOutbox))
+		if guarantee == DeliveryAtLeastOnce || guarantee == DeliveryExactlyOnce {
+			hld.Decisions = append(hld.Decisions,
+				patternDecision("d-dlq", AreaReliability, "", PatternDLQ))
+		}
 
 		err := ValidateHLD(hld)
 		wantRefused := guarantee == ""

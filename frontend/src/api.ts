@@ -243,6 +243,11 @@ export type HLDDecision = {
   objectRefs?: string[] | null;
   ownership?: string;
   techs?: string[] | null;
+  // pattern is the D7 mechanism, deployment the D8 pattern; checklist is
+  // written by the system from the deployment pattern.
+  pattern?: string;
+  deployment?: string;
+  checklist?: string[] | null;
   decision?: Text;
   alternatives?: HLDAlternative[] | null;
   consequences?: Text[] | null;

@@ -458,6 +458,17 @@ The aggregate is the unit every other pattern assumes: one command touches one
 aggregate, two aggregates in two services need a saga, and a cross-aggregate
 reference is an id.
 
+## 7. Implementation status
+
+- **D0 premises**: stored on `FEASIBILITY`; stage 03 now reads `FEASIBILITY` with the SRS, so the team language, budget, QPS, volume and availability reach the design.
+- **D1/D4/D6**: PACELC per context, the closed tech list, storage ownership and the architecture style are decisions with a gate.
+- **D5**: a relation carries its guarantee and idempotency key; the LLD `deps` ↔ relation check is still open (H4).
+- **D7**: four branches are implemented and gated: outbox (an async relation leaves a container with an aggregate), DLQ (at-least-once), backpressure (an async relation enters a bus), saga (a relation chain crosses contexts). A decision names a `pattern`; a pattern whose premise is absent is refused. Branches that need a premise no form holds yet — concurrency control, saga isolation, outcome reporting, query shape, event sourcing, lease/fencing — are not offered.
+- **D8**: exactly one `ops` decision names `deployment`; the serverless style matches the serverless pattern; the checklist is written by the system from the pattern (`DeploymentChecklist`) and reaches the payload as `decisions[].checklist`.
+- **Classifier**: the palettes are exported (`DistributedPatterns`, `DeploymentPatterns`) and the branch map is the single source; the adapter with confidence, threshold and operator fallback is the next step.
+
+The live pipeline 3 checked during this pass: HLD v8 is valid and its decisions carry `area`/`style`, so the structural retry was not needed; the new D8 gate will ask for the deployment decision on the next HLD run. The LLD still shows H2/H4/H5 leaks: packages without modules in two containers, contracts pointing at the HLD form instead of a module, and relations with no `contractId`.
+
 ## Sources
 
 - [microservices.io/patterns](https://microservices.io/patterns/index.html) — the

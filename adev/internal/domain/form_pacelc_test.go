@@ -45,6 +45,19 @@ func hldWith(contexts []BoundedContext, containers []Container, relations []Cont
 			RejectedBecause: Text{Value: "The container count decides."},
 		}},
 	})
+	deployment := DeploymentServicePerContainer
+	if style == StyleServerless {
+		deployment = DeploymentServerless
+	}
+	decisions = append(decisions, Decision{
+		ID: "d-deployment", Area: AreaOps, Deployment: deployment,
+		Title:    Text{Value: "Deployment"},
+		Decision: Text{Value: "The containers run as the pattern says."},
+		Alternatives: []Alternative{{
+			Option:          Text{Value: "The other pattern"},
+			RejectedBecause: Text{Value: "The style decides."},
+		}},
+	})
 	if store != "" {
 		decisions = append(decisions, Decision{
 			ID: "d-storage", Area: AreaStorage, Ownership: OwnershipPerService,
@@ -199,6 +212,9 @@ func TestPACELCClassAgainstTheRelations(t *testing.T) {
 		{From: "bc-1", To: "bc-2", Type: RelationAsync, Guarantee: DeliveryAtLeastOnce, IdempotencyKey: "shipmentId"},
 		{From: "bc-2", To: "bc-1", Type: RelationSync},
 	})
+	withSync.Decisions = append(withSync.Decisions,
+		patternDecision("d-outbox", AreaReliability, "", PatternTransactionalOutbox),
+		patternDecision("d-dlq", AreaReliability, "", PatternDLQ))
 	withSync.Aggregates = append(withSync.Aggregates, Aggregate{
 		ID: "a-2", ContainerID: "c-2", Root: "invoice", ModuleRef: "m-2",
 		Invariants: []Statement{{Text: "One invoice per shipment.", Modality: "shall", Priority: "must"}},

@@ -7,7 +7,7 @@
 | owner | `architect` |
 | route | `greenfield`, `change` |
 | mode | `full`, `delta` |
-| inputs | `SRS`, as-is `HLD`, object registry |
+| inputs | `SRS`, `FEASIBILITY`, as-is `HLD`, object registry |
 | next | `LLD`, `ADR` (change route) |
 
 ## Template
@@ -116,10 +116,14 @@ no decision history, so its choices live in the design they shape.
 5. Which area of the design does the decision belong to: architecture, communication, storage, scaling, consistency, reliability, stack, ops, process or metrics?
 6. For a consistency decision: which bounded context does it settle?
 7. For an architecture decision: which style, from monolith, modular_monolith, hexagonal, microservices, event_driven, cell_based or serverless?
+8. Which distributed-data premise does the design hold: an async write (outbox), an at-least-once delivery (DLQ), an async step through a bus (backpressure), or a chain of relations across services (saga)? Name the mechanism of that branch in `pattern`.
+9. Where do the containers run, from multiple_services_per_host, service_per_host, service_per_vm, service_per_container, serverless or service_deployment_platform?
 
-**Answer:** `payload.decisions[]` — `{ id, area, title: Text, decision: Text, context: Text?, alternatives: [{option, rejectedBecause}], consequences: Text[], objectRefs: string[], techs: string[], contextRef?, style? }`.
+**Answer:** `payload.decisions[]` — `{ id, area, title: Text, decision: Text, context: Text?, alternatives: [{option, rejectedBecause}], consequences: Text[], objectRefs: string[], techs: string[], contextRef?, style?, pattern?, deployment?, checklist? }`.
 **Answer:** `objectRefs` names containers of this design. `techs` names the products the decision chooses, and each product must be the `tech` of a container of this design.
 **Answer:** one consistency decision per bounded context (`contextRef`), one storage decision per design that has a store container (`ownership`: `database_per_service`, `shared_database` or `read_model`), and exactly one architecture decision (`style`).
+**Answer:** `pattern` is one of the D7 mechanisms: `transactional_outbox`, `transaction_log_tailing`, `polling_publisher`, `dlq`, `parking_lot`, `bounded_queue_block`, `drop_new`, `degrade`, `scale_out`, `saga_orchestration`, `saga_choreography`, `two_phase_commit`. A pattern is present only when its premise is present.
+**Answer:** exactly one `ops` decision names `deployment`; the system writes its `checklist` from the pattern.
 
 ### Paragraph 8 — Degradation strategy (v2)
 
@@ -157,6 +161,11 @@ no decision history, so its choices live in the design they shape.
 18. Every bounded context has a consistency decision whose `contextRef` names it.
 19. A design with a store container has a storage decision whose `techs` names that store.
 20. The design has exactly one architecture decision, `style` is one of the seven, and a monolith-like style carries at most one code container while a distributed style carries at least two.
+21. An async relation that leaves a container with an aggregate has a decision whose `pattern` is `transactional_outbox`, `transaction_log_tailing` or `polling_publisher`.
+22. An async relation with `at_least_once` or `exactly_once` has a decision whose `pattern` is `dlq` or `parking_lot`.
+23. An async relation that enters a message bus (`kafka`, `rabbitmq`, `nats`) has a decision whose `pattern` is `bounded_queue_block`, `drop_new`, `degrade` or `scale_out`.
+24. A chain of two relations across bounded contexts has a decision whose `pattern` is `saga_orchestration`, `saga_choreography` or `two_phase_commit`.
+25. A decision names a `pattern` only when its premise holds; exactly one `ops` decision names `deployment` from the closed list, the serverless style takes the serverless deployment, and its `checklist` is written by the system from the pattern.
 
 ## Delta
 

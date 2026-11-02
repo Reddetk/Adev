@@ -163,7 +163,7 @@ func questionsMessages(instruction string, context json.RawMessage) (system, use
 	system = "You collect the operator questions for one form of a software project. " +
 		"Answer with JSON only. Do not write code. Do not fill the document. " +
 		`The answer shape is: {"openGaps":[{"id":"...","pointer":"/field/0",` +
-		`"question":{"lang":"STE100","text":"..."},"options":["..."],"blocking":false}]}`
+		`"question":{"text":"..."},"options":["..."],"blocking":false}]}`
 	return system, instruction + "\nInput forms:\n" + string(context)
 }
 
@@ -175,7 +175,7 @@ func detailMessages(formType domain.FormType, instruction string, context, docum
 		"You detail one entry of the %s form of a software project. Answer with JSON only. Do not write code. "+
 			"Answer with one object: the key \"entry\" holds the fields of the entry you are given (the same keys), "+
 			"and the key \"openGaps\" holds the questions: "+
-			`{"entry":{...},"openGaps":[{"id":"...","pointer":"...","question":{"lang":"STE100","text":"..."},"options":["..."],"blocking":false}]}. `+
+			`{"entry":{...},"openGaps":[{"id":"...","pointer":"...","question":{"text":"..."},"options":["..."],"blocking":false}]}. `+
 			"Do not repeat the whole document and do not add fields the entry does not have.",
 		formType)
 	var builder strings.Builder
@@ -231,7 +231,10 @@ func skeletonInstruction(stage domain.Stage, output domain.FormType) string {
 	if output == domain.TypeHLD {
 		base += " For HLD: fill ubiquitousLanguage with every glossary term of the BRD (term, definition, sourceRef). " +
 			"Fill semanticAnalysis with every BRD term that carries a different meaning in two parts of the business (a shipment for the client is a delivery for the courier): name the contexts, the difference in attributes and lifecycle, and let the result choose the boundedContexts. " +
+			"Read the FEASIBILITY premises with the SRS before you choose anything: the team languages are the default tech of the code containers, the team size and the budget decide the architecture style, the availability and the latency budget decide the relations, the peak QPS and the storage volume decide the store and the bus. A choice that contradicts a premise is wrong; the context of its decision names the premise it uses. " +
 			"List the decisions this design makes, one entry per fork, and give each one an area from this list: architecture, communication, storage, scaling, consistency, reliability, stack, ops, process, metrics. Required: one consistency decision for EVERY bounded context (area consistency, contextRef the context id), one storage decision when the design has a store container (area storage, techs names that store, ownership one of database_per_service, shared_database, read_model), and exactly one architecture decision (area architecture, style one of monolith, modular_monolith, hexagonal, microservices, event_driven, cell_based, serverless). Give each decision its id and title now and leave alternatives and consequences to the detail calls. A decision names in objectRefs the containers it fixes, and in techs the products it chooses: a product must be the tech of a container of this design, so a database or a cache the system needs becomes a container of its own. " +
+			"Add the distributed-data decisions the design fires, one entry per branch, and name the branch in the pattern field: an async relation that leaves a container writing state takes transactional_outbox, transaction_log_tailing or polling_publisher; an async relation that promises at_least_once or exactly_once takes dlq or parking_lot; an async relation that enters a message bus takes bounded_queue_block, drop_new, degrade or scale_out; a chain of two relations that crosses bounded contexts takes saga_orchestration, saga_choreography or two_phase_commit. A pattern whose premise the design does not hold is a gate failure: do not add it. " +
+			"Add exactly one area ops decision with deployment from multiple_services_per_host, service_per_host, service_per_vm, service_per_container, serverless, service_deployment_platform. The serverless style takes the serverless deployment and no other. Leave the checklist of that decision empty: the system writes it. " +
 			"List every external system or physical device the BRD assumptions name (payment terminal, card reader, email, accounting) as a container with tech 'external', and connect it to the containers it serves with a contextRelation. " +
 			"Add the infrastructure containers the distributed system needs, each as its own container with its own boundedContext and its own purpose: exactly ONE reverse proxy or API Gateway container for the whole system at the edge, in front of every client container, and never one gateway per role; the identity provider (Keycloak) when the BRD has a sign-up or a sign-in; the message bus (Kafka) when an operation runs asynchronously; exactly ONE load balancer container in front of the API gateway, so no single instance is a point of failure; and a scheduler for the notifications and the timed status changes. " +
 			"Do not fold an infrastructure component into the application container: the gateway, the provider and the bus are deployable containers with their own tech and their own degradation rule. " +
@@ -324,7 +327,7 @@ func questionsInstruction(stage domain.Stage, output domain.FormType) string {
 			"\"Which name does the receptionist have in this business?\" asks about a receptionist, not about a field. "+
 			"At most 24 gaps in this answer; the rest follow after the answers. Answer the whole list above for the roles first, then the payment, the notification, the words, the devices, the capabilities and the limit. "+
 			"Every gap names its concrete pointer, gives options when the answer is one of a few choices, and sets blocking false. "+
-			"One gap looks like this: {\"id\":\"GAP-1\",\"pointer\":\"/actors/0/name\",\"blocking\":false,\"options\":[],\"question\":{\"lang\":\"STE100\",\"text\":\"Which name does the receptionist have in this business?\"}}. "+
+			"One gap looks like this: {\"id\":\"GAP-1\",\"pointer\":\"/actors/0/name\",\"blocking\":false,\"options\":[],\"question\":{\"text\":\"Which name does the receptionist have in this business?\"}}. "+
 			"Do not ask for an id, an internal name, a unit or a baseline: the operator cannot decide those. "+
 			"A question never contains the characters < or >: they mark a template, not a question. "+
 			"Replace every placeholder with the real word of the request: the request says the client, the courier and the administrator, so the question says the client, the courier and the administrator. "+

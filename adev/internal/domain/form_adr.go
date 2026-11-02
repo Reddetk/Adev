@@ -39,6 +39,15 @@ type Decision struct {
 	Alternatives []Alternative `json:"alternatives"`
 	Consequences []Text        `json:"consequences,omitempty"`
 	Links        []Ref         `json:"links,omitempty"`
+	// Pattern is the D7 mechanism this decision takes. It answers the premise
+	// that fired the branch: outbox, at-least-once duplicate, bus backpressure,
+	// or a chain across services. Empty on a decision that is not a D7 branch.
+	Pattern DistributedPattern `json:"pattern,omitempty"`
+	// Deployment is the D8 pattern: where the containers run. Empty on every
+	// decision except the one deployment decision.
+	Deployment DeploymentPattern `json:"deployment,omitempty"`
+	// Checklist is system-written from Deployment, never from the model.
+	Checklist []string `json:"checklist,omitempty"`
 }
 
 // ADR is the set of architecture decisions of the design.

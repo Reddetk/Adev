@@ -23,6 +23,25 @@ func TestSystemOwnedPointerDropsTheMoneyChoice(t *testing.T) {
 	}
 }
 
+// TestD7AndD8FieldsAreNotQuestions: the mechanism and the deployment pattern are
+// the model's fork from the catalogue; the operator answers the business, never a
+// pattern name or a checklist item.
+func TestD7AndD8FieldsAreNotQuestions(t *testing.T) {
+	for _, pointer := range []string{
+		"/decisions/0/pattern", "/decisions/0/deployment", "/decisions/0/checklist/0",
+		"/decisions/0/area", "/decisions/0/contextRef", "/decisions/0/style", "/decisions/0/ownership",
+	} {
+		if !systemOwnedPointer(domain.TypeHLD, pointer) {
+			t.Fatalf("%s is a system field, not a question", pointer)
+		}
+	}
+	for _, pointer := range []string{"/decisions/0/decision", "/decisions/0/context", "/decisions/0/title"} {
+		if systemOwnedPointer(domain.TypeHLD, pointer) {
+			t.Fatalf("%s is the meaning the model writes", pointer)
+		}
+	}
+}
+
 // TestSRSStructuralFieldsAreNotQuestions: actor, trigger, response, stateChange and
 // the scenarios are what the requirement says, and the model writes them from the
 // BRD. The four behaviour premises stay questions, because the business decides

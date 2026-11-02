@@ -78,6 +78,11 @@ func TestHLDKeepsTheDecisions(t *testing.T) {
 				Alternatives: []Alternative{{Option: Text{Value: "MongoDB"}, RejectedBecause: Text{Value: "The route needs transactions."}}},
 				ObjectRefs:   []string{"c-1"},
 			},
+			{
+				ID: "deployment", Area: AreaOps, Deployment: DeploymentServicePerContainer, Title: Text{Value: "Deployment"},
+				Decision:     Text{Value: "One container."},
+				Alternatives: []Alternative{{Option: Text{Value: "One host"}, RejectedBecause: Text{Value: "The image is the unit."}}},
+			},
 		},
 		DegradationStrategy: []Degradation{{
 			Failure: "The database is down", Degradation: "The client sees the last known status",

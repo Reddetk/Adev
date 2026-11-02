@@ -801,6 +801,11 @@ func systemOwnedPointer(formType domain.FormType, pointer string) bool {
 	if len(segments) == 0 || segments[0] == "" {
 		return false
 	}
+	// A checklist item is written by the system from the deployment pattern: no
+	// operator answer lands on an entry of the list.
+	if formType == domain.TypeHLD && strings.Contains(normalizePointer(pointer), "/checklist") {
+		return true
+	}
 	// A cost estimate of an option belongs to the analyst; the monthly budget of
 	// the operator is a premise and must stay a question.
 	if last := segments[len(segments)-1]; last == "currency" || last == "amount" {
@@ -823,7 +828,8 @@ func systemOwnedPointer(formType domain.FormType, pointer string) bool {
 		}
 	case domain.TypeLLD, domain.TypeHLD:
 		switch segments[len(segments)-1] {
-		case "name", "path", "tech", "kind", "timeoutMs", "failure", "degradation", "detection":
+		case "name", "path", "tech", "kind", "timeoutMs", "failure", "degradation", "detection",
+			"pattern", "deployment", "checklist", "area", "contextRef", "style", "ownership":
 			return true
 		}
 	}
