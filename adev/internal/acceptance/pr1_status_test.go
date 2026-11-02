@@ -66,7 +66,7 @@ func TestPR1TheHLDGateRequiresInvariantsAndDegradation(t *testing.T) {
 			Purpose: ste("Serve the lending desk."), Tech: "go",
 		}},
 		Aggregates: []domain.Aggregate{{
-			ID: "agg-1", ContainerID: "obj-container-1", Root: "Book", ModuleRef: "obj-module-1",
+			ID: "agg-1", ContainerID: "obj-container-1", Root: "Book",
 		}},
 	})
 	require.NoError(t, err)

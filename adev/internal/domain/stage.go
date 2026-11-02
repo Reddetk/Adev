@@ -25,6 +25,10 @@ type Stage struct {
 	// Conditional stages are detours: the route lists them, but a straight run
 	// skips them. Stage 08.R runs only after a failed verdict.
 	Conditional bool `json:"conditional,omitempty"`
+	// Disabled keeps a stage in the registry for a later release. The planner
+	// hides it and StageByID refuses it: the operator cannot run what the project
+	// does not implement yet.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 var greenfieldStages = []Stage{
@@ -40,15 +44,15 @@ var greenfieldStages = []Stage{
 		Inputs: []FormType{TypeSRS, TypeBRD, TypeFeasibility}, Outputs: []FormType{TypeHLD}},
 	{ID: "05", Name: "Low-Level Design", Owner: RoleAnalyst,
 		Inputs: []FormType{TypeHLD}, OptionalInputs: []FormType{TypeADR}, Outputs: []FormType{TypeLLD}},
-	{ID: "06", Name: "Task Plan", Owner: RoleAnalyst,
-		Inputs: []FormType{TypeLLD, TypeSRS}, Outputs: []FormType{TypeTaskPlan}},
-	{ID: "07", Name: "Test Contract", Owner: RoleQA,
+	{ID: "06", Name: "Task Plan", Owner: RoleAnalyst, Disabled: true,
+		Inputs: []FormType{TypeLLD, TypeSRS, TypeHLD}, Outputs: []FormType{TypeTaskPlan}},
+	{ID: "07", Name: "Test Contract", Owner: RoleQA, Disabled: true,
 		Inputs: []FormType{TypeLLD, TypeTaskPlan}, Outputs: []FormType{TypeTestContract}},
-	{ID: "08", Name: "Implementation Spec", Owner: RoleDev,
+	{ID: "08", Name: "Implementation Spec", Owner: RoleDev, Disabled: true,
 		Inputs: []FormType{TypeTestContract, TypeLLD}, Outputs: []FormType{TypeImplementationSpec}},
-	{ID: "08.R", Name: "Refactor Spec", Owner: RoleDev, Conditional: true,
+	{ID: "08.R", Name: "Refactor Spec", Owner: RoleDev, Conditional: true, Disabled: true,
 		Inputs: []FormType{TypeVerdict, TypeTestContract}, Outputs: []FormType{TypeRefactorSpec}},
-	{ID: "09", Name: "QA Verdict", Owner: RoleQA,
+	{ID: "09", Name: "QA Verdict", Owner: RoleQA, Disabled: true,
 		Inputs: []FormType{TypeImplementationSpec, TypeTestContract}, Outputs: []FormType{TypeVerdict}},
 }
 
@@ -95,7 +99,8 @@ func changeTails(ids ...string) []Stage {
 	return result
 }
 
-// Stages returns the stages of a route.
+// Stages returns the stages of a route, including the ones kept for a later
+// release. The registry names them; the operator does not run them.
 func Stages(route Route) ([]Stage, error) {
 	stages, ok := stagesByRoute[route]
 	if !ok {
@@ -104,7 +109,24 @@ func Stages(route Route) ([]Stage, error) {
 	return cloneStages(stages), nil
 }
 
-// StageByID returns one stage of a route.
+// AvailableStages returns the stages an operator can run now. A disabled stage
+// stays in the registry for a later release and is hidden from the plan.
+func AvailableStages(route Route) ([]Stage, error) {
+	stages, err := Stages(route)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Stage, 0, len(stages))
+	for _, stage := range stages {
+		if !stage.Disabled {
+			out = append(out, stage)
+		}
+	}
+	return out, nil
+}
+
+// StageByID returns one stage of a route. A disabled stage is not available yet:
+// the operator cannot start what the project does not implement.
 func StageByID(route Route, id string) (Stage, error) {
 	stages, err := Stages(route)
 	if err != nil {
@@ -112,38 +134,55 @@ func StageByID(route Route, id string) (Stage, error) {
 	}
 	for _, stage := range stages {
 		if stage.ID == id {
+			if stage.Disabled {
+				return Stage{}, fmt.Errorf("stage %q is not available yet", id)
+			}
 			return stage, nil
 		}
 	}
 	return Stage{}, fmt.Errorf("stage %q does not exist in route %q", id, route)
 }
 
-// NextStage returns the stage that follows the given stage, or an error when the
-// stage is the last one. The route belongs to the registry, never to the agent.
+// NextStage returns the next stage an operator can run, or an error when the
+// stage is the last one. Disabled stages are skipped.
 func NextStage(route Route, id string) (Stage, error) {
 	stages, err := Stages(route)
 	if err != nil {
 		return Stage{}, err
 	}
 	for index, stage := range stages {
-		if stage.ID == id {
-			if index+1 >= len(stages) {
-				return Stage{}, fmt.Errorf("stage %q has no next stage in route %q", id, route)
-			}
-			return stages[index+1], nil
+		if stage.ID != id {
+			continue
 		}
+		for next := index + 1; next < len(stages); next++ {
+			if !stages[next].Disabled {
+				return stages[next], nil
+			}
+		}
+		return Stage{}, fmt.Errorf("stage %q has no next available stage in route %q", id, route)
 	}
 	return Stage{}, fmt.Errorf("stage %q does not exist in route %q", id, route)
 }
 
-// IsLastStage reports whether the stage ends its route, so a successful run of it
-// completes the pipeline.
+// IsLastStage reports whether the stage ends its route among the available
+// stages, so a successful run of it completes the pipeline.
 func IsLastStage(route Route, id string) bool {
 	stages, err := Stages(route)
 	if err != nil || len(stages) == 0 {
 		return false
 	}
-	return stages[len(stages)-1].ID == id
+	for index, stage := range stages {
+		if stage.ID != id {
+			continue
+		}
+		for next := index + 1; next < len(stages); next++ {
+			if !stages[next].Disabled {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // IsAhead reports whether stage comes after cursor in the route order: the
@@ -168,12 +207,12 @@ func IsAhead(route Route, cursor, stage string) bool {
 	return cursorIdx >= 0 && stageIdx > cursorIdx
 }
 
-// Roles returns the distinct owner roles of the stages, in stage order.
+// Roles returns the distinct owner roles of the available stages, in stage order.
 func Roles(stages []Stage) []Role {
 	seen := map[Role]bool{}
 	var result []Role
 	for _, stage := range stages {
-		if seen[stage.Owner] {
+		if stage.Disabled || seen[stage.Owner] {
 			continue
 		}
 		seen[stage.Owner] = true

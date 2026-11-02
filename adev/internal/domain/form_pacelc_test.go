@@ -74,7 +74,7 @@ func hldWith(contexts []BoundedContext, containers []Container, relations []Cont
 		BoundedContexts: contexts,
 		Containers:      containers,
 		Aggregates: []Aggregate{{
-			ID: "a-1", ContainerID: containers[0].ObjectID, Root: "shipment", ModuleRef: "m-1",
+			ID: "a-1", ContainerID: containers[0].ObjectID, Root: "shipment",
 			Invariants: []Statement{{Text: "A shipment has one route.", Modality: "shall", Priority: "must"}},
 		}},
 		ContextRelations:    relations,
@@ -201,7 +201,7 @@ func TestPACELCClassAgainstTheRelations(t *testing.T) {
 		{From: "bc-1", To: "bc-2", Type: RelationAsync, Guarantee: DeliveryAtLeastOnce, IdempotencyKey: "shipmentId"},
 	})
 	asyncOnly.Aggregates = append(asyncOnly.Aggregates, Aggregate{
-		ID: "a-2", ContainerID: "c-2", Root: "invoice", ModuleRef: "m-2",
+		ID: "a-2", ContainerID: "c-2", Root: "invoice",
 		Invariants: []Statement{{Text: "One invoice per shipment.", Modality: "shall", Priority: "must"}},
 	})
 	if err := ValidateHLD(asyncOnly); err == nil || !strings.Contains(err.Error(), "sync") {
@@ -216,7 +216,7 @@ func TestPACELCClassAgainstTheRelations(t *testing.T) {
 		patternDecision("d-outbox", AreaReliability, "", PatternTransactionalOutbox),
 		patternDecision("d-dlq", AreaReliability, "", PatternDLQ))
 	withSync.Aggregates = append(withSync.Aggregates, Aggregate{
-		ID: "a-2", ContainerID: "c-2", Root: "invoice", ModuleRef: "m-2",
+		ID: "a-2", ContainerID: "c-2", Root: "invoice",
 		Invariants: []Statement{{Text: "One invoice per shipment.", Modality: "shall", Priority: "must"}},
 	})
 	if err := ValidateHLD(withSync); err != nil {

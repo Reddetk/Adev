@@ -9,8 +9,8 @@ import (
 // inheritAccepted keeps the values of the accepted version when a rewrite of the
 // same document leaves them empty. Stage 04 rewrites the HLD that stage 03
 // already passed: the model sees the accepted version and still returns an entry
-// without its root or moduleRef, and the gate then asks the operator about a
-// field the document already answered.
+// without its root, and the gate then asks the operator about a field the
+// document already answered.
 func inheritAccepted(accepted, next json.RawMessage) json.RawMessage {
 	if len(accepted) == 0 || len(next) == 0 {
 		return next

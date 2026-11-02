@@ -28,7 +28,7 @@ func NewPlanner(settings *SettingsService) *Planner {
 
 // Plan returns the stage sequence and the settings that the route still needs.
 func (s *Planner) Plan(ctx context.Context, targetSystemID int64, route domain.Route) (Plan, error) {
-	stages, err := domain.Stages(route)
+	stages, err := domain.AvailableStages(route)
 	if err != nil {
 		return Plan{}, err
 	}

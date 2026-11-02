@@ -573,11 +573,6 @@ export function TargetSystemTab({ api, pipelineId }: { api: Api; pipelineId: str
             <div className="card" key={aggregate.id}>
               <b>{aggregate.root}</b> <span className="tag">{aggregate.id}</span>{' '}
               <span className="tag">контейнер {aggregate.containerId}</span>{' '}
-              {aggregate.moduleRef && (
-                <span className="tag" title="модуль, который реализует корень агрегата">
-                  модуль {aggregate.moduleRef}
-                </span>
-              )}
               {(aggregate.entityRefs ?? []).length > 0 && (
                 <p className="hint">сущности: {(aggregate.entityRefs ?? []).join(', ')}</p>
               )}

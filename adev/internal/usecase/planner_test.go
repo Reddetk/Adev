@@ -36,7 +36,7 @@ func TestPlanReportsReadyWhenConfigured(t *testing.T) {
 	if !plan.Readiness.Ready {
 		t.Fatalf("want a ready plan, got %+v", plan.Readiness)
 	}
-	stages, err := domain.Stages(domain.RouteGreenfield)
+	stages, err := domain.AvailableStages(domain.RouteGreenfield)
 	if err != nil {
 		t.Fatalf("stages: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestPlanReportsMissingSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
-	stages, err := domain.Stages(domain.RouteGreenfield)
+	stages, err := domain.AvailableStages(domain.RouteGreenfield)
 	if err != nil {
 		t.Fatalf("stages: %v", err)
 	}

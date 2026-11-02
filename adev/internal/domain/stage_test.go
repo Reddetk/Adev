@@ -7,11 +7,28 @@ import (
 )
 
 func TestIsLastStageMarksTheEndOfTheRoute(t *testing.T) {
-	assert.True(t, IsLastStage(RouteGreenfield, "09"), "stage 09 ends the greenfield route")
-	assert.False(t, IsLastStage(RouteGreenfield, "08"))
+	assert.True(t, IsLastStage(RouteGreenfield, "05"), "stage 05 ends the route until 06-09 return")
+	assert.False(t, IsLastStage(RouteGreenfield, "03"))
 	assert.False(t, IsLastStage(RouteGreenfield, "99"), "an unknown stage ends nothing")
 	assert.False(t, IsLastStage(RouteChange, "06"), "the change head ends nothing")
 	assert.True(t, IsLastStage(RouteChange, "01"), "the impact assessment closes the head route")
+}
+
+// TestStagesAfterLLDAreNotAvailable: the task plan and the stages after it are
+// kept in the registry for a later release, but the operator cannot run them and
+// the plan does not offer them.
+func TestStagesAfterLLDAreNotAvailable(t *testing.T) {
+	stages, err := AvailableStages(RouteGreenfield)
+	assert.NoError(t, err)
+	assert.Equal(t, "05", stages[len(stages)-1].ID, "LLD is the last available stage")
+
+	for _, id := range []string{"06", "07", "08", "08.R", "09"} {
+		_, err := StageByID(RouteGreenfield, id)
+		assert.Error(t, err, "stage %s is disabled", id)
+	}
+	if _, err := NextStage(RouteGreenfield, "05"); err == nil {
+		t.Fatal("a disabled next stage must not be returned")
+	}
 }
 
 // TestGreenfieldHasNoADRStage: a new system has no decision history to record. Its
@@ -50,7 +67,7 @@ func TestHLDKeepsTheDecisions(t *testing.T) {
 			ObjectID: "c-1", BoundedContextID: "bc-1", Purpose: Text{Value: "Serve the client."}, Tech: "go",
 		}},
 		Aggregates: []Aggregate{{
-			ID: "a-1", ContainerID: "c-1", Root: "shipment", ModuleRef: "m-1",
+			ID: "a-1", ContainerID: "c-1", Root: "shipment",
 			Invariants: []Statement{{Text: "A shipment has one route.", Modality: "shall", Priority: "must"}},
 		}},
 		Decisions: []Decision{

@@ -384,7 +384,7 @@ func TestPlanReportsWhatIsMissing(t *testing.T) {
 		Stages []domain.Stage `json:"stages"`
 	}
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &plan))
-	stages, err := domain.Stages(domain.RouteGreenfield)
+	stages, err := domain.AvailableStages(domain.RouteGreenfield)
 	require.NoError(t, err)
 	assert.False(t, plan.Readiness.Ready)
 	assert.Len(t, plan.Readiness.Missing, 1+len(domain.Roles(stages)),

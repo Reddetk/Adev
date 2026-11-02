@@ -28,9 +28,9 @@ func patternDesign() HLD {
 		{ObjectID: "c-bus", BoundedContextID: "bc-b", Tech: TechKafka, Purpose: Text{Value: "Deliver the events."}},
 	}
 	aggregates := []Aggregate{
-		{ID: "a-a", ContainerID: "c-a", Root: "Enrolment", ModuleRef: "m-a", Invariants: []Statement{{Text: "A student enrols once.", Modality: "shall", Priority: "must"}}},
-		{ID: "a-b", ContainerID: "c-b", Root: "Progress", ModuleRef: "m-b", Invariants: []Statement{{Text: "Progress moves forward.", Modality: "shall", Priority: "must"}}},
-		{ID: "a-c", ContainerID: "c-c", Root: "Payment", ModuleRef: "m-c", Invariants: []Statement{{Text: "A payment has one amount.", Modality: "shall", Priority: "must"}}},
+		{ID: "a-a", ContainerID: "c-a", Root: "Enrolment", Invariants: []Statement{{Text: "A student enrols once.", Modality: "shall", Priority: "must"}}},
+		{ID: "a-b", ContainerID: "c-b", Root: "Progress", Invariants: []Statement{{Text: "Progress moves forward.", Modality: "shall", Priority: "must"}}},
+		{ID: "a-c", ContainerID: "c-c", Root: "Payment", Invariants: []Statement{{Text: "A payment has one amount.", Modality: "shall", Priority: "must"}}},
 	}
 	decisions := []Decision{
 		patternDecision("d-architecture", AreaArchitecture, "", ""),

@@ -273,7 +273,7 @@ func validHLD(t *testing.T) json.RawMessage {
 			Purpose: ste("Serve the lending desk."), Tech: "go",
 		}},
 		Aggregates: []domain.Aggregate{{
-			ID: "agg-1", ContainerID: "obj-container-1", Root: "Book", ModuleRef: "obj-module-1",
+			ID: "agg-1", ContainerID: "obj-container-1", Root: "Book",
 			Invariants: []domain.Statement{{ID: "INV-1", Text: "A book has one holder.", Modality: domain.ModalityShall, Priority: domain.PriorityMust}},
 		}},
 		ContextRelations: []domain.ContextRelation{{From: "bc-1", To: "bc-1", Type: domain.RelationSync}},

@@ -241,7 +241,6 @@ export type HLDAggregate = {
   id: string;
   containerId: string;
   root: string;
-  moduleRef?: string;
   entityRefs?: string[] | null;
   eventMaps?: string[] | null;
   invariants?: { text: string; modality?: string }[] | null;

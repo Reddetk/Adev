@@ -46,7 +46,7 @@ func contextHLD() HLD {
 			{ObjectID: "c-mail", Tech: TechExternal, Purpose: Text{Value: "Send the notices."}},
 		},
 		Aggregates: []Aggregate{{
-			ID: "a-enrolment", ContainerID: "c-app", Root: "Enrolment", ModuleRef: "m-1",
+			ID: "a-enrolment", ContainerID: "c-app", Root: "Enrolment",
 			Invariants: []Statement{{Text: "A student enrols once.", Modality: "shall", Priority: "must"}},
 		}},
 		ContextRelations: []ContextRelation{
@@ -211,7 +211,7 @@ func TestExternalSystemStandsOutsideTheContext(t *testing.T) {
 
 	aggregate := contextDesign()
 	aggregate.Aggregates = append(aggregate.Aggregates, Aggregate{
-		ID: "a-mail", ContainerID: "c-mail", Root: "Message", ModuleRef: "m-mail",
+		ID: "a-mail", ContainerID: "c-mail", Root: "Message",
 		Invariants: []Statement{{Text: "A message has one recipient.", Modality: "shall", Priority: "must"}},
 	})
 	if err := ValidateHLD(aggregate); err == nil || !containsProblem([]error{err}, "external") {

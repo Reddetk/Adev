@@ -360,9 +360,29 @@ func (s *StageService) runForm(
 		payload = inheritAccepted(accepted, payload)
 		// Unaskable gaps must leave the payload before the gates see it.
 		payload = purgeUnaskableGaps(output, payload)
+		// The system keeps the structural fork in the field that owns it: the
+		// architecture style on its decision, one ops deployment, and the store
+		// container the storage decision names.
+		payload = normalizeHLDPayload(output, payload)
+		if output == domain.TypeHLD {
+			if brd, ok := latestPayload[domain.BRD](s, ctx, request.PipelineID, domain.TypeBRD); ok {
+				if srs, ok := latestPayload[domain.SRS](s, ctx, request.PipelineID, domain.TypeSRS); ok {
+					payload = addExternalSystemsPayload(payload, brd, srs)
+				}
+			}
+		}
 		// The deployment checklist is catalogue knowledge, not model prose: the
 		// pattern the model chose decides the steps the system writes.
 		payload = fillPatternFields(output, payload)
+		// The task plan gets only the HLD edges its containers touch, so TDD reads
+		// the integration premise of the task and not the whole context map.
+		if output == domain.TypeTaskPlan {
+			if hld, ok := latestPayload[domain.HLD](s, ctx, request.PipelineID, domain.TypeHLD); ok {
+				if encoded, err := json.Marshal(hld); err == nil {
+					payload = fillTaskRelations(output, payload, encoded)
+				}
+			}
+		}
 		if err := form.SetRawPayload(payload); err != nil {
 			activity.Finish("failed", err.Error())
 			s.record(ctx, request, stage, "failed", attempt, err.Error())
@@ -1026,11 +1046,11 @@ func detailInstruction(output domain.FormType, stage domain.Stage, plan batchPla
 	}
 	switch plan.kind {
 	case "containers":
-		instruction += " Fill tech from the HLD context (Go, Spring, React, or the stack the context names); do not leave it empty. Every aggregate entry carries root (the entity name of the aggregate), moduleRef (the module that owns it) and at least one invariant as a Statement {text, modality, priority}; an aggregate without an invariant is not a domain rule. " +
+		instruction += " Fill tech from the HLD context (Go, Spring, React, or the stack the context names); do not leave it empty. Every aggregate entry carries root (the entity name of the aggregate) and at least one invariant as a Statement {text, modality, priority}; an aggregate without an invariant is not a domain rule. " +
 			"An infrastructure container (reverse proxy, API gateway, identity provider, message bus, load balancer, scheduler) holds no aggregate and no invariant: leave its aggregates list empty, keep purpose one sentence on what it does for the other containers, and give it its own invariant-free degradation rule in the HLD. " +
 			"An external system (tech external) is outside this system: it has no boundedContextId, no aggregate and no invariant, and the internal container that calls it owns the relation."
 	case "layers":
-		instruction += " Give every package in this layer a path. A Go container has the goca layers domain, usecase, repository, handler, di and middleware; a UI container has the atomic layers token, atom, molecule, organism, template and page. Put each HLD aggregate moduleRef in the domain layer of its container."
+		instruction += " Give every package in this layer a path. A Go container has the goca layers domain, usecase, repository, handler, di and middleware; a UI container has the atomic layers token, atom, molecule, organism, template and page. Give each HLD aggregate root a module in the domain layer of its container, named from the root."
 	case "packages":
 		instruction += " Fill the path of this package and the path of every module it holds; a module path extends the package path. The tech of the container decides the root: a Go container uses internal/<layer>/<module>, a Spring container uses src/main/java/<module>/<layer>, a UI container uses src/<layer>/<module>."
 	case "contracts":
@@ -1041,6 +1061,8 @@ func detailInstruction(output domain.FormType, stage domain.Stage, plan batchPla
 		instruction += " Fill the title, the context, the decision, at least two alternatives with their option and rejectedBecause, and the consequences. Keep the area, the pattern and the deployment the skeleton named: they are the fork the design already made. Do not fill checklist; the system writes it from the deployment pattern. The context names the SRS requirement, the SRS NFR, the FEASIBILITY premise or the constraint the HLD names that forces this decision; the rejectedBecause names the same evidence, never a BRD rule. Put in techs the products this decision chooses, each one the tech of a container of this design; a product without a container is a component the design does not have. Do not repeat the id."
 	case "tests":
 		instruction += " Fill the targetTest {kind, path}, the scenario given, when and then (each a list of Text), and expectedErrorCode on a negative path. Do not repeat the test id."
+	case "tasks":
+		instruction += " Fill the title, the taskType, the owner, the acceptance statements, and the contractRefs or acceptanceRefs this task proves. Name in containerRefs the HLD containers the task changes or calls; an integration task names both sides of the relation. Do not write contextRelations: the system copies the related HLD edges."
 	case "fr":
 		instruction += " Fill the statement, the actor, the trigger, the response, the stateChange, the priority and at least one acceptance scenario {given, when, then}. The statement names the actor as the subject and the business object as the object: \"The receptionist checks the guest in\". Name the actor and the business objects with the words of the BRD glossary. Add one errors entry for one invalid input. Do not ask the operator for a scenario: write it from the trigger and the response. " +
 			"Fill the four behaviour premises from the flow: concurrency (two callers on one key), idempotency (a repeated call), delivery (how the result travels) and failureMode (what a failure does). Choose from the enum in the shape; leave one empty only when the flow truly does not say, and then ask."

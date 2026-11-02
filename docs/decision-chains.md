@@ -277,7 +277,8 @@ Idempotent Consumer or an idempotent sink.
 ### D7.5. Aggregate: the unit the patterns assume
 
 Every pattern above assumes a consistency boundary. In adev it already exists: the
-HLD `Aggregate` carries `root`, `invariants` and `moduleRef`. The pattern adds two
+HLD `Aggregate` carries `root` and `invariants`; the module that implements the
+root is an LLD decision, not an HLD field. The pattern adds two
 rules the gate can check:
 
 - one command changes one aggregate; a command that must change two is a saga;
@@ -466,8 +467,11 @@ reference is an id.
 - **D7**: four branches are implemented and gated: outbox (an async relation leaves a container with an aggregate), DLQ (at-least-once), backpressure (an async relation enters a bus), saga (a relation chain crosses contexts). A decision names a `pattern`; a pattern whose premise is absent is refused. Branches that need a premise no form holds yet — concurrency control, saga isolation, outcome reporting, query shape, event sourcing, lease/fencing — are not offered.
 - **D8**: exactly one `ops` decision names `deployment`; the serverless style matches the serverless pattern; the checklist is written by the system from the pattern (`DeploymentChecklist`) and reaches the payload as `decisions[].checklist`.
 - **C4 context**: the HLD reads the BRD and SRS; `actors[]` are C4 persons, `actorInteractions[]` are their entry actions, and `contextRelations[]` carry `description` and `causeRef`. An external system is a `tech: external` container outside every bounded context, with no aggregate. Stage 03 checks the seam against the BRD actors and the SRS flow: every actor, every FR and every container is carried, and the FR delivery decides sync/async and the guarantee.
-- **LLD C4 level**: the console stops at level 3 (components). Modules stay in the LLD payload for contracts, but they are code and are folded, not drawn as a C4 level. Moving code units to the task plan is the next LLD refactor.
-- **Classifier**: the palettes are exported (`DistributedPatterns`, `DeploymentPatterns`) and the branch map is the single source; the adapter with confidence, threshold and operator fallback is the next step.
+- **LLD C4 level**: the console stops at level 3 (components). Modules stay in the LLD payload for contracts, but they are code and are folded, not drawn as a C4 level. Moving code units to the task plan is the next LLD refactor. `Aggregate.ModuleRef` is removed from the HLD: the LLD assigns the module that implements a root.
+- **Stage availability**: the greenfield route stops at 05 (LLD). Stages 06–09 stay in the registry as `Disabled`, are hidden from the plan, and `StageByID` refuses them until the task plan and the QA tail are implemented.
+- **Task relations**: the task plan names `containerRefs`; `RelationsForTasks` copies only the HLD edges that touch those containers into `TaskPlan.contextRelations`, so TDD gets the integration premise of the task, not the whole context map.
+- **HLD normalizer**: after the detail walk the system keeps the fork in the field that owns it: the architecture style returns to its decision, one `ops` decision carries the deployment (classified from the style), and the store container the storage decision names is created. The model writes meaning; the system writes structure.
+- **Classifier**: the palettes are exported (`DistributedPatterns`, `DeploymentPatterns`), the branch map is the single source, and `ClassifyDeployment` is the first deterministic classifier; the rest of the adapter with confidence, threshold and operator fallback is the next step.
 
 The live pipeline 3 checked during this pass: HLD v8 is valid and its decisions carry `area`/`style`, so the structural retry was not needed; the new D8 gate will ask for the deployment decision on the next HLD run. The LLD still shows H2/H4/H5 leaks: packages without modules in two containers, contracts pointing at the HLD form instead of a module, and relations with no `contractId`.
 

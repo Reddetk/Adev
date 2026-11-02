@@ -82,7 +82,7 @@ func design(style ArchitectureStyle, appContainers int, store string) HLD {
 	for i := 0; i < appContainers; i++ {
 		aggregates = append(aggregates, Aggregate{
 			ID: "a-" + string(rune('a'+i)), ContainerID: "c-" + string(rune('a'+i)),
-			Root: "shipment", ModuleRef: "m-1",
+			Root:       "shipment",
 			Invariants: []Statement{{Text: "A shipment has one route.", Modality: "shall", Priority: "must"}},
 		})
 	}

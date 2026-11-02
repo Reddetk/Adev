@@ -6,21 +6,21 @@ import (
 )
 
 // TestRewriteKeepsTheAcceptedAggregate: stage 04 rewrites the accepted HLD and
-// returns an aggregate without root and moduleRef. The accepted values fill the
-// hole, the model's own answer wins where it is not empty, and the answered
-// questions do not come back.
+// returns an aggregate without root. The accepted values fill the hole, the
+// model's own answer wins where it is not empty, and the answered questions do
+// not come back.
 func TestRewriteKeepsTheAcceptedAggregate(t *testing.T) {
 	accepted := json.RawMessage(`{
 		"aggregates": [
-			{"id": "a-1", "root": "booking", "moduleRef": "module-booking", "invariants": [{"text": "old"}]},
-			{"id": "a-2", "root": "tariff", "moduleRef": "module-tariff", "invariants": [{"text": "tariff rule"}]}
+			{"id": "a-1", "root": "booking", "invariants": [{"text": "old"}]},
+			{"id": "a-2", "root": "tariff", "invariants": [{"text": "tariff rule"}]}
 		],
 		"openGaps": [{"pointer": "/aggregates/0/root"}]
 	}`)
 	rewrite := json.RawMessage(`{
 		"aggregates": [
 			{"id": "a-2", "root": "", "invariants": [{"text": "new tariff rule"}]},
-			{"id": "a-1", "root": "room", "moduleRef": "module-booking"}
+			{"id": "a-1", "root": "room"}
 		]
 	}`)
 
@@ -28,7 +28,6 @@ func TestRewriteKeepsTheAcceptedAggregate(t *testing.T) {
 		Aggregates []struct {
 			ID         string `json:"id"`
 			Root       string `json:"root"`
-			ModuleRef  string `json:"moduleRef"`
 			Invariants []struct {
 				Text string `json:"text"`
 			} `json:"invariants"`
@@ -50,9 +49,6 @@ func TestRewriteKeepsTheAcceptedAggregate(t *testing.T) {
 	tariff := got.Aggregates[byID["a-2"]]
 	if tariff.Root != "tariff" {
 		t.Fatalf("the empty root must come from the accepted version, got %q", tariff.Root)
-	}
-	if tariff.ModuleRef != "module-tariff" {
-		t.Fatalf("the missing moduleRef must come from the accepted version, got %q", tariff.ModuleRef)
 	}
 	if len(tariff.Invariants) != 1 || tariff.Invariants[0].Text != "new tariff rule" {
 		t.Fatalf("the model answer must win over the accepted value, got %+v", tariff.Invariants)

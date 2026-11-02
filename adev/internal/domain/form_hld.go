@@ -69,7 +69,6 @@ type Aggregate struct {
 	Root        string      `json:"root"`
 	EntityRefs  []string    `json:"entityRefs,omitempty"`
 	EventMaps   []string    `json:"eventMaps,omitempty"`
-	ModuleRef   string      `json:"moduleRef"`
 	Invariants  []Statement `json:"invariants,omitempty"`
 }
 

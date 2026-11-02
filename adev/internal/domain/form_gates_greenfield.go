@@ -198,9 +198,6 @@ func ValidateHLD(h HLD) error {
 			errs = append(errs, invalid(fmt.Sprintf("aggregates[%d].containerId", i),
 				fmt.Sprintf("the external system %q holds no aggregate", a.ContainerID)))
 		}
-		if a.ModuleRef == "" {
-			errs = append(errs, invalid(fmt.Sprintf("aggregates[%d].moduleRef", i), "is empty"))
-		}
 	}
 	for i, relation := range h.ContextRelations {
 		if relation.From == "" || relation.To == "" {

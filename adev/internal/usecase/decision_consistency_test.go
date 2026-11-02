@@ -84,13 +84,13 @@ func hldResponder(outline string) func(LLMRequest) (LLMResponse, error) {
 			return LLMResponse{Payload: json.RawMessage(`{"entry":{
 				"objectId": "c-data", "tech": "postgresql", "boundedContextId": "bc-data",
 				"purpose": {"lang": "STE100", "text": "Store the records."}
-			},"aggregates":[{"id": "a-data", "root": "shipment", "moduleRef": "mod-data",
+			},"aggregates":[{"id": "a-data", "root": "shipment",
 				"invariants": [{"text": "A record has one owner.", "modality": "shall", "priority": "must"}]}]}`)}, nil
 		case strings.Contains(request.User, `the containers entry with objectId "c-app"`):
 			return LLMResponse{Payload: json.RawMessage(`{"entry":{
 				"objectId": "c-app", "tech": "java", "boundedContextId": "bc-app",
 				"purpose": {"lang": "STE100", "text": "Serve the client."}
-			},"aggregates":[{"id": "a-app", "root": "shipment", "moduleRef": "mod-app",
+			},"aggregates":[{"id": "a-app", "root": "shipment",
 				"invariants": [{"text": "A shipment has one route.", "modality": "shall", "priority": "must"}]}]}`)}, nil
 		default:
 			return LLMResponse{Payload: json.RawMessage(outline)}, nil
@@ -154,28 +154,28 @@ func TestE2EDecisionKeepsItsContainer(t *testing.T) {
 	}
 }
 
-// TestE2EDecisionWithoutAContainerBlocks: the same decision without the database
-// container is refused by the gate, the stage retries and then blocks, and the
-// draft keeps the work instead of throwing it away.
-func TestE2EDecisionWithoutAContainerBlocks(t *testing.T) {
+// TestE2EDecisionWithoutAContainerIsCompleted: a storage decision that names a
+// product no container carries gets the container the decision implies. The
+// system writes the box; the design and its decision agree, and the stage passes.
+func TestE2EDecisionWithoutAContainerIsCompleted(t *testing.T) {
 	outcome, _, forms := runHLDStage(t, hldResponder(containersWithoutData))
 
-	if !outcome.Blocked {
-		t.Fatal("a decision that names a product no container carries must block the stage")
+	if outcome.Blocked {
+		t.Fatalf("the system must add the store the decision names, gaps: %v", outcome.Gaps)
 	}
 	form, err := forms.Get(context.Background(), "FRM-1-03", 1)
 	if err != nil {
-		t.Fatalf("the draft must stay stored: %v", err)
+		t.Fatalf("read the form: %v", err)
 	}
-	if form.Status == domain.StatusValid {
-		t.Fatal("the refused design must not be valid")
+	if form.Status != domain.StatusValid {
+		t.Fatalf("want a valid form, got %s", form.Status)
 	}
 	var hld domain.HLD
 	if err := json.Unmarshal(form.Payload, &hld); err != nil {
-		t.Fatalf("decode the draft: %v", err)
+		t.Fatalf("decode: %v", err)
 	}
-	if len(hld.Decisions) == 0 {
-		t.Fatal("the draft must keep the decision the model wrote")
+	if !designCarriesTech(hld, "postgresql") {
+		t.Fatal("the stored design must carry the store its decision names")
 	}
 }
 
@@ -204,7 +204,7 @@ func TestE2EStopKeepsTheAnswers(t *testing.T) {
 			return LLMResponse{Payload: json.RawMessage(`{"entry":{
 				"objectId": "c-app", "tech": "java", "boundedContextId": "bc-app",
 				"purpose": {"lang": "STE100", "text": "Serve the client fast."}
-			},"aggregates":[{"id": "a-app", "root": "shipment", "moduleRef": "mod-app",
+			},"aggregates":[{"id": "a-app", "root": "shipment",
 				"invariants": [{"text": "A shipment has one route.", "modality": "shall", "priority": "must"}]}]}`)}, nil
 		default:
 			return LLMResponse{Payload: json.RawMessage(hldOutline)}, nil

@@ -93,9 +93,9 @@ external system is not a container of this system; it belongs to Paragraph 3.
 5. Which business invariant must this aggregate protect?
 6. Which operation would break that invariant?
 7. Which event does the aggregate publish?
-8. Which module implements the root entity?
 
-**Answer:** `payload.aggregates[]` — `{ id, containerId, boundedContextId, root, entityRefs, valueObjectRefs, invariants: Statement[], moduleRef, eventMaps }`.
+**Answer:** `payload.aggregates[]` — `{ id, containerId, boundedContextId, root, entityRefs, valueObjectRefs, invariants: Statement[], eventMaps }`.
+**Answer:** an aggregate names its root and its invariants; the module that implements the root is an LLD decision, not an HLD field.
 
 ### Paragraph 6 — Context relation
 
@@ -169,7 +169,7 @@ no decision history, so its choices live in the design they shape.
 1. Each `container.boundedContextId` exists in `boundedContexts`.
 2. Each `aggregate.containerId` exists in `containers`.
 3. Each `aggregate.boundedContextId` exists in `boundedContexts`.
-4. Each `aggregate.root` has a `moduleRef` in the object registry or a new `TargetRef`.
+4. Each `aggregate.root` is a business entity of its container; the LLD names the module that implements it.
 5. Each `contextRelations[].contractId` or `contextRelations[].eventRef` exists.
 6. Each aggregate has at least one invariant that protects its consistency boundary.
 7. Each container with an external dependency has a degradation strategy.

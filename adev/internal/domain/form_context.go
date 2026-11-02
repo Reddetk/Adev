@@ -196,6 +196,11 @@ func ValidateHLDAgainstInputs(h HLD, brd BRD, srs SRS) []error {
 		}
 	}
 
+	if ExternalSystemPremise(brd) && !HasExternalSystem(h) {
+		errs = append(errs, invalid("containers",
+			"the BRD assumptions name a system this design does not deploy (payment, email, push); add a tech:external container and connect it to the internal container that uses it"))
+	}
+
 	used := map[string]bool{}
 	for _, relation := range h.ContextRelations {
 		used[relation.From] = true
@@ -205,10 +210,17 @@ func ValidateHLDAgainstInputs(h HLD, brd BRD, srs SRS) []error {
 		used[interaction.ContainerID] = true
 	}
 	for i, container := range h.Containers {
-		if !used[container.ObjectID] {
-			errs = append(errs, invalid(fmt.Sprintf("containers[%d]", i),
-				fmt.Sprintf("container %q is not reached by any relation or actor interaction", container.ObjectID)))
+		if used[container.ObjectID] {
+			continue
 		}
+		// A store is reached by the container that owns it, not by an actor edge;
+		// the HLD does not model the internal read/write. A bus, a gateway and an
+		// application container still need an arrow.
+		if storeTechs[strings.ToLower(container.Tech)] {
+			continue
+		}
+		errs = append(errs, invalid(fmt.Sprintf("containers[%d]", i),
+			fmt.Sprintf("container %q is not reached by any relation or actor interaction", container.ObjectID)))
 	}
 	return errs
 }
