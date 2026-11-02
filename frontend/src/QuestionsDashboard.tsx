@@ -27,6 +27,19 @@ export function QuestionsDashboard({
   const open = questions
     .filter((question) => question.status !== 'completed')
     .sort((left, right) => Number(right.blocking) - Number(left.blocking) || left.id - right.id);
+  // A pipeline filter: every pipeline keeps its own questions, and the operator
+  // works on one system at a time. The chips hold only the pipelines that still
+  // have open questions, plus the one selected, so an emptied filter stays
+  // visible with a zero instead of silently jumping to another pipeline.
+  const [only, setOnly] = useState<number | 'all'>('all');
+  const withOpen = [...new Set(open.map((question) => question.pipelineid))].sort((a, b) => a - b);
+  const filterable = withOpen.length > 1 || (only !== 'all' && withOpen.length > 0);
+  const active = filterable ? only : 'all';
+  const chips =
+    only === 'all' || withOpen.includes(only) ? withOpen : [...withOpen, only].sort((a, b) => a - b);
+  const shown = active === 'all' ? open : open.filter((question) => question.pipelineid === active);
+  const countOf = (pipelineId: number) =>
+    open.filter((question) => question.pipelineid === pipelineId).length;
 
   return (
     <section>
@@ -60,8 +73,32 @@ export function QuestionsDashboard({
       )}
       {!loading && !error && open.length === 0 && <p className="hint">Открытых вопросов нет.</p>}
 
+      {filterable && (
+        <div className="question-options">
+          <button
+            className={`chip${active === 'all' ? ' on' : ''}`}
+            onClick={() => setOnly('all')}
+          >
+            все пайплайны ({open.length})
+          </button>
+          {chips.map((pipelineId) => (
+            <button
+              key={pipelineId}
+              className={`chip${active === pipelineId ? ' on' : ''}`}
+              onClick={() => setOnly(pipelineId)}
+            >
+              пайплайн {pipelineId} ({countOf(pipelineId)})
+            </button>
+          ))}
+        </div>
+      )}
+
+      {open.length > 0 && shown.length === 0 && (
+        <p className="hint">В пайплайне {active} открытых вопросов нет: выберите другой или ответьте на остальные.</p>
+      )}
+
       <div className="questions">
-        {open.map((question) => (
+        {shown.map((question) => (
           <QuestionCard
             key={question.id}
             question={question}
